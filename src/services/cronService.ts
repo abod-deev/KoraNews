@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { fetchLiveMatches, fetchUpcomingMatches } from './footballService.ts';
+import { fetchLiveMatches, fetchUpcomingMatches } from './footballApi.ts';
 
 export function startCronJobs() {
   console.log("Starting Football API Cron Jobs...");

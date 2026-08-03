@@ -19,10 +19,9 @@ export const getMatches = async (date?: string, status?: string, leagueId?: stri
 };
 
 export const getLeagues = async (): Promise<League[]> => {
-  return [
-    { id: 'ext_l1', name: 'الدوري الإسباني', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/LaLiga_Santander.svg/120px-LaLiga_Santander.svg.png' },
-    { id: 'ext_l2', name: 'الدوري الإنجليزي', logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f2/Premier_League_Logo.svg/120px-Premier_League_Logo.svg.png' }
-  ];
+  const res = await fetch(`${API_URL}/api/leagues`);
+  if (!res.ok) throw new Error('Failed to fetch leagues');
+  return res.json();
 };
 
 export const getStandings = async (leagueId: string): Promise<Standing[]> => { return []; };

@@ -10,7 +10,7 @@ export default function MatchesWidget() {
 
   useEffect(() => {
     // Get live matches, or top matches for today
-    getMatches(new Date().toISOString())
+    getMatches(new Date().toISOString().split('T')[0])
       .then(data => setMatches(data.slice(0, 3)))
       .finally(() => setLoading(false));
   }, []);
@@ -23,7 +23,23 @@ export default function MatchesWidget() {
     );
   }
 
-  if (matches.length === 0) return null;
+  if (matches.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 mb-8 shadow-sm text-center">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-extrabold flex items-center gap-2 text-gray-900 dark:text-white">
+            <Calendar className="w-6 h-6 text-brand" />
+            مباريات اليوم
+          </h2>
+          <Link to="/matches" className="text-sm text-brand font-semibold hover:underline flex items-center">
+            عرض كل المباريات
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        </div>
+        <p className="text-gray-500 font-medium py-4 text-sm">لا توجد مباريات جارية أو مجدولة لهذا اليوم.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 mb-8 shadow-sm">
@@ -66,13 +82,13 @@ export default function MatchesWidget() {
               <div className="w-1/3 flex flex-col items-center justify-center">
                 {match.status === 'SCHEDULED' ? (
                   <div className="text-xl font-bold bg-white dark:bg-gray-700 px-3 py-1.5 rounded-lg shadow-sm text-gray-800 dark:text-white border border-gray-200 dark:border-gray-600">
-                    {match.matchTime}
+                    {new Date(match.matchDate).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-2xl font-black text-gray-900 dark:text-white tracking-wider">
-                    <span>{match.homeScore}</span>
+                    <span>{match.homeScore ?? 0}</span>
                     <span className="text-gray-400">-</span>
-                    <span>{match.awayScore}</span>
+                    <span>{match.awayScore ?? 0}</span>
                   </div>
                 )}
                 <span className={`text-[10px] sm:text-xs font-bold mt-2 px-2.5 py-1 rounded-full ${

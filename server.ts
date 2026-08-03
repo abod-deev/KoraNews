@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
 import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
 import { db } from "./src/db/index.ts";
-import { news, categories, comments, users } from "./src/db/schema.ts";
+import { news, categories, comments, users, leagues, teams } from "./src/db/schema.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 import { eq, desc, and } from "drizzle-orm";
 import { matches } from "./src/db/schema.ts";
@@ -175,6 +175,17 @@ async function startServer() {
   });
 
   
+  // === Leagues ===
+  app.get("/api/leagues", async (req, res) => {
+    try {
+      const allLeagues = await db.select().from(leagues).orderBy(leagues.name);
+      res.json(allLeagues);
+    } catch (error) {
+      console.error("Error fetching leagues:", error);
+      res.status(500).json({ error: "Failed to fetch leagues" });
+    }
+  });
+
   // === Matches ===
   app.get("/api/matches", async (req, res) => {
     try {

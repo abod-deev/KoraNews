@@ -14,6 +14,7 @@ export default function Matches() {
   
   const [activeTab, setActiveTab] = useState<'all' | 'live' | 'finished' | 'scheduled'>('all');
   const [activeLeagueId, setActiveLeagueId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>('');
   
   const [isLoadingMatches, setIsLoadingMatches] = useState(true);
   const [isLoadingStandings, setIsLoadingStandings] = useState(false);
@@ -29,12 +30,12 @@ export default function Matches() {
       statusFilter = activeTab === 'live' ? 'LIVE' : activeTab === 'finished' ? 'FINISHED' : 'SCHEDULED';
     }
     
-    getMatches(undefined, statusFilter, activeLeagueId || undefined)
+    getMatches(selectedDate || undefined, statusFilter, activeLeagueId || undefined)
       .then(data => {
         setMatches(data);
       })
       .finally(() => setIsLoadingMatches(false));
-  }, [activeTab, activeLeagueId]);
+  }, [activeTab, activeLeagueId, selectedDate]);
 
   useEffect(() => {
     if (activeLeagueId) {
@@ -88,6 +89,35 @@ export default function Matches() {
                 {league.name}
               </button>
             ))}
+          </div>
+
+          {/* Date Picker Bar */}
+          <div className="bg-white dark:bg-gray-900 p-3 rounded-xl border border-gray-200 dark:border-gray-800 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5 text-brand" />
+              <span className="text-sm font-bold text-gray-700 dark:text-gray-300">فلتر حسب التاريخ:</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedDate('')}
+                className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${!selectedDate ? 'bg-brand/10 border-brand text-brand' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+              >
+                جميع التواريخ
+              </button>
+              <button
+                onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+                className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${selectedDate === new Date().toISOString().split('T')[0] ? 'bg-brand/10 border-brand text-brand' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+              >
+                مباريات اليوم
+              </button>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                className="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-xs font-bold outline-none focus:ring-2 focus:ring-brand"
+              />
+            </div>
           </div>
 
           {/* Status Tabs */}
@@ -146,13 +176,13 @@ export default function Matches() {
                       <div className="flex-1 flex flex-col items-center justify-center px-4">
                         {match.status === 'SCHEDULED' ? (
                           <div className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-black text-xl px-4 py-2 rounded-xl">
-                            {match.matchTime}
+                            {new Date(match.matchDate).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
                           </div>
                         ) : (
                           <div className="flex items-center gap-3">
-                            <span className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white">{match.homeScore}</span>
+                            <span className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white">{match.homeScore ?? 0}</span>
                             <span className="text-xl text-gray-400 font-bold">-</span>
-                            <span className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white">{match.awayScore}</span>
+                            <span className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white">{match.awayScore ?? 0}</span>
                           </div>
                         )}
                         
@@ -160,7 +190,7 @@ export default function Matches() {
                           {match.status === 'LIVE' && (
                             <span className="flex items-center gap-1.5 text-xs font-bold text-red-500 bg-red-50 dark:bg-red-500/10 px-2.5 py-1 rounded-md">
                               <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
-                              {match.matchTime}
+                              {match.matchTime || 'مباشر'}
                             </span>
                           )}
                           {match.status === 'FINISHED' && (
