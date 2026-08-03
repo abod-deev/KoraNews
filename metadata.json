@@ -1,0 +1,6 @@
+{
+  "name": "كورة نيوز",
+  "description": "منصة احترافية لأخبار ومباريات كرة القدم",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
