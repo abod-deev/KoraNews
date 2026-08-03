@@ -2,16 +2,27 @@ import { db } from "../db/index.ts";
 import { matches, teams, leagues } from "../db/schema.ts";
 import { eq } from "drizzle-orm";
 
-const API_KEY = process.env.FOOTBALL_API_KEY || 'demo_key'; // Replace with real API key
-const BASE_URL = 'https://api.football-data.org/v4'; // Example external API
+const API_KEY = process.env.FOOTBALL_API_KEY || '56b299425e7a45db8f57817ab1a45009';
+const BASE_URL = 'https://api.football-data.org/v4';
 
 export async function fetchLiveMatches() {
-  console.log("Fetching live matches from external API...");
-  // In a real app, you would fetch from the external API here using the API key.
-  // const res = await fetch(`${BASE_URL}/matches?status=IN_PLAY`, { headers: { 'X-Auth-Token': API_KEY } });
-  // const data = await res.json();
-  
-  // For demonstration, we will simulate the external API response:
+  console.log("Fetching live matches from football-data.org API...");
+  try {
+    const res = await fetch(`${BASE_URL}/matches?status=IN_PLAY,PAUSED`, {
+      headers: { 'X-Auth-Token': API_KEY }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.matches && data.matches.length > 0) {
+        await processAndStoreMatches(data.matches);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("External API fetch live error, using cached/mock fallback", err);
+  }
+
+  // Fallback data for demonstration if API yields no live matches or hits quota
   const mockExternalData = {
     matches: [
       {
@@ -19,7 +30,7 @@ export async function fetchLiveMatches() {
         status: "LIVE",
         utcDate: new Date().toISOString(),
         score: { fullTime: { home: 1, away: 2 } },
-        competition: { id: "ext_l1", name: "الدوري الإسباني", emblem: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/LaLiga_Santander.svg/120px-LaLiga_Santander.svg.png" },
+        competition: { id: "ext_l1", name: "الدوري الإسباني (La Liga)", emblem: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/LaLiga_Santander.svg/120px-LaLiga_Santander.svg.png" },
         homeTeam: { id: "ext_t1", name: "ريال مدريد", crest: "https://upload.wikimedia.org/wikipedia/en/thumb/5/56/Real_Madrid_CF.svg/120px-Real_Madrid_CF.svg.png" },
         awayTeam: { id: "ext_t2", name: "برشلونة", crest: "https://upload.wikimedia.org/wikipedia/en/thumb/4/47/FC_Barcelona_%28crest%29.svg/120px-FC_Barcelona_%28crest%29.svg.png" },
       }
@@ -30,7 +41,22 @@ export async function fetchLiveMatches() {
 }
 
 export async function fetchUpcomingMatches() {
-  console.log("Fetching upcoming matches from external API...");
+  console.log("Fetching upcoming & scheduled matches from football-data.org API...");
+  try {
+    const res = await fetch(`${BASE_URL}/matches?status=SCHEDULED,FINISHED`, {
+      headers: { 'X-Auth-Token': API_KEY }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.matches && data.matches.length > 0) {
+        await processAndStoreMatches(data.matches);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("External API fetch upcoming error, using fallback", err);
+  }
+
   const mockExternalData = {
     matches: [
       {
@@ -38,7 +64,7 @@ export async function fetchUpcomingMatches() {
         status: "SCHEDULED",
         utcDate: new Date(Date.now() + 86400000).toISOString(),
         score: { fullTime: { home: null, away: null } },
-        competition: { id: "ext_l2", name: "الدوري الإنجليزي", emblem: "https://upload.wikimedia.org/wikipedia/en/thumb/f/f2/Premier_League_Logo.svg/120px-Premier_League_Logo.svg.png" },
+        competition: { id: "ext_l2", name: "الدوري الإنجليزي (Premier League)", emblem: "https://upload.wikimedia.org/wikipedia/en/thumb/f/f2/Premier_League_Logo.svg/120px-Premier_League_Logo.svg.png" },
         homeTeam: { id: "ext_t5", name: "مانشستر سيتي", crest: "https://upload.wikimedia.org/wikipedia/en/thumb/e/eb/Manchester_City_FC_badge.svg/120px-Manchester_City_FC_badge.svg.png" },
         awayTeam: { id: "ext_t6", name: "ليفربول", crest: "https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/120px-Liverpool_FC.svg.png" },
       }
@@ -85,16 +111,26 @@ async function processAndStoreMatches(apiMatches: any[]) {
     const matchId = String(apiMatch.id);
     const existingMatch = await db.select().from(matches).where(eq(matches.id, matchId));
     
+    let normalizedStatus = 'SCHEDULED';
+    if (['IN_PLAY', 'PAUSED', 'LIVE'].includes(apiMatch.status)) {
+      normalizedStatus = 'LIVE';
+    } else if (apiMatch.status === 'FINISHED') {
+      normalizedStatus = 'FINISHED';
+    }
+
+    const matchDateObj = new Date(apiMatch.utcDate);
+    const formattedTime = matchDateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+
     const matchData = {
       leagueId,
       homeTeamId,
       awayTeamId,
-      homeScore: apiMatch.score?.fullTime?.home ?? null,
-      awayScore: apiMatch.score?.fullTime?.away ?? null,
-      status: apiMatch.status, // LIVE, SCHEDULED, FINISHED
-      matchTime: apiMatch.status === 'LIVE' ? '75\'' : (apiMatch.status === 'FINISHED' ? 'FT' : '20:00'),
-      matchDate: new Date(apiMatch.utcDate),
-      source: 'api-football',
+      homeScore: apiMatch.score?.fullTime?.home ?? (apiMatch.score?.halfTime?.home ?? null),
+      awayScore: apiMatch.score?.fullTime?.away ?? (apiMatch.score?.halfTime?.away ?? null),
+      status: normalizedStatus,
+      matchTime: normalizedStatus === 'LIVE' ? "مباشر" : (normalizedStatus === 'FINISHED' ? 'انتهت' : formattedTime),
+      matchDate: matchDateObj,
+      source: 'football-data.org',
       updatedAt: new Date(),
     };
 
