@@ -39,8 +39,13 @@ export interface Match {
   homeScore: number | null;
   awayScore: number | null;
   status: 'SCHEDULED' | 'LIVE' | 'FINISHED' | 'POSTPONED';
+  rawStatus?: string;
+  minute?: number | null;
   matchTime: string; // ISO date string or '65\'' for live, 'FT' for finished
   matchDate: string; // ISO date
+  utcDate?: string; // ISO date string
+  kickoffTime?: string;
+  venue?: string | null;
   league?: League;
 }
 

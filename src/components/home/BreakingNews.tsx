@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zap } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { fetchNews } from '../../services/api';
 
 export default function BreakingNews() {
@@ -9,7 +10,8 @@ export default function BreakingNews() {
 
   useEffect(() => {
     fetchNews().then((data) => {
-      setBreakingNews(data.slice(0, 5));
+      const breaking = data.filter((n: any) => n.isBreaking);
+      setBreakingNews(breaking.length > 0 ? breaking : data.slice(0, 5));
     }).catch(console.error);
   }, []);
 
@@ -23,24 +25,33 @@ export default function BreakingNews() {
 
   if (breakingNews.length === 0) return null;
 
+  const currentItem = breakingNews[currentIndex];
+
   return (
-    <div className="flex items-center bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden mb-6 h-12 shadow-sm">
-      <div className="bg-red-600 text-white px-4 h-full flex items-center gap-2 font-bold whitespace-nowrap z-10 shrink-0">
-        <Zap className="w-5 h-5 fill-current" />
+    <div className="flex items-center bg-white dark:bg-gray-900 border border-red-200 dark:border-red-900/50 rounded-xl overflow-hidden mb-6 h-12 shadow-xs">
+      <div className="bg-red-600 text-white px-4 h-full flex items-center gap-2 font-black text-sm whitespace-nowrap z-10 shrink-0">
+        <Zap className="w-4 h-4 fill-current animate-pulse" />
         عاجل
       </div>
       <div className="flex-1 overflow-hidden relative flex items-center h-full px-4">
         <AnimatePresence mode="wait">
-          <motion.div
-            key={currentIndex}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.3 }}
-            className="text-sm md:text-base font-semibold text-gray-800 dark:text-gray-200 absolute w-full truncate pr-4"
-          >
-            {breakingNews[currentIndex]?.title}
-          </motion.div>
+          {currentItem && (
+            <motion.div
+              key={currentIndex}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.3 }}
+              className="w-full truncate"
+            >
+              <Link 
+                to={`/news/${currentItem.id}`} 
+                className="text-sm md:text-base font-bold text-gray-900 dark:text-gray-100 hover:text-red-600 transition-colors block truncate"
+              >
+                {currentItem.title}
+              </Link>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     </div>

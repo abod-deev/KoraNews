@@ -10,35 +10,35 @@ export default function News() {
   useSEO('الأخبار', 'أحدث أخبار كرة القدم العالمية والمحلية');
   
   const [allNews, setAllNews] = useState<any[]>([]);
-  const [visibleCount, setVisibleCount] = useState(6);
+  const [visibleCount, setVisibleCount] = useState(9);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadNews = async () => {
+    const loadData = async () => {
       try {
         setIsInitialLoading(true);
-        const data = await fetchNews();
-        setAllNews(data);
+        const newsData = await fetchNews();
+        setAllNews(newsData || []);
       } catch (err: any) {
         setError(err.message || 'حدث خطأ أثناء جلب الأخبار');
       } finally {
         setIsInitialLoading(false);
       }
     };
-    loadNews();
+    loadData();
   }, []);
 
-  const featuredNews = allNews.filter(n => n.isFeatured);
-  const standardNews = allNews.filter(n => !n.isFeatured);
+  const featuredNews = allNews.filter((n) => n.isFeatured);
+  const standardNews = allNews.filter((n) => !n.isFeatured);
 
   const loadMore = () => {
     setIsLoading(true);
     setTimeout(() => {
-      setVisibleCount(prev => prev + 6);
+      setVisibleCount((prev) => prev + 6);
       setIsLoading(false);
-    }, 800);
+    }, 400);
   };
 
   if (isInitialLoading) {
@@ -58,56 +58,74 @@ export default function News() {
   }
 
   return (
-    <div className="w-full animate-in fade-in duration-500 space-y-10">
+    <div className="w-full animate-in fade-in duration-500 space-y-6 sm:space-y-8">
       <BreakingNews />
 
       {/* Featured News Section */}
-      <section>
-        <h2 className="text-2xl font-extrabold mb-6 border-r-4 border-brand pr-3 text-gray-900 dark:text-white">
-          الأخبار المميزة
-        </h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {featuredNews.map((article, idx) => (
-            <motion.div 
-              key={article.id} 
-              initial={{ opacity: 0, y: 20 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              transition={{ delay: idx * 0.1 }}
-            >
-              <NewsCard article={article} />
-            </motion.div>
-          ))}
-        </div>
-      </section>
+      {featuredNews.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h2 className="text-lg sm:text-2xl font-extrabold border-r-4 border-brand pr-2.5 sm:pr-3 text-gray-900 dark:text-white">
+              الأخبار المميزة
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            {featuredNews.map((article, idx) => (
+              <motion.div 
+                key={article.id} 
+                initial={{ opacity: 0, y: 15 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                transition={{ delay: idx * 0.08 }}
+              >
+                <NewsCard article={article} />
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* All News Section */}
       <section>
-        <h2 className="text-2xl font-extrabold mb-6 border-r-4 border-brand pr-3 text-gray-900 dark:text-white">
-          جميع الأخبار
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {standardNews.slice(0, visibleCount).map((article, idx) => (
-            <motion.div 
-              key={article.id} 
-              initial={{ opacity: 0, scale: 0.95 }} 
-              animate={{ opacity: 1, scale: 1 }} 
-              transition={{ delay: (idx % 6) * 0.1 }}
-            >
-              <NewsCard article={article} />
-            </motion.div>
-          ))}
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <h2 className="text-lg sm:text-2xl font-extrabold border-r-4 border-brand pr-2.5 sm:pr-3 text-gray-900 dark:text-white">
+            جميع الأخبار والمستجدات
+          </h2>
+          <span className="text-xs font-bold text-gray-500">
+            {allNews.length} خبر متاح
+          </span>
         </div>
 
+        {allNews.length === 0 ? (
+          <div className="text-center py-12 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-8">
+            <p className="text-gray-500 dark:text-gray-400 font-bold">
+              لا توجد أخبار متاحة حالياً.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+            {(standardNews.length > 0 ? standardNews : allNews).slice(0, visibleCount).map((article, idx) => (
+              <motion.div 
+                key={article.id} 
+                initial={{ opacity: 0, scale: 0.96 }} 
+                animate={{ opacity: 1, scale: 1 }} 
+                transition={{ delay: (idx % 6) * 0.05 }}
+              >
+                <NewsCard article={article} />
+              </motion.div>
+            ))}
+          </div>
+        )}
+
         {/* Pagination / Load More */}
-        {visibleCount < standardNews.length && (
-          <div className="mt-10 text-center">
+        {visibleCount < (standardNews.length > 0 ? standardNews.length : allNews.length) && (
+          <div className="mt-6 sm:mt-8 text-center">
             <button
               onClick={loadMore}
               disabled={isLoading}
-              className="bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 hover:border-brand dark:hover:border-brand text-gray-700 dark:text-gray-300 hover:text-brand font-bold py-3 px-8 rounded-xl transition-all disabled:opacity-70 flex items-center justify-center gap-2 mx-auto shadow-sm"
+              className="bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 hover:border-brand dark:hover:border-brand text-gray-700 dark:text-gray-300 hover:text-brand font-bold py-2.5 sm:py-3 px-6 sm:px-8 rounded-xl transition-all disabled:opacity-70 flex items-center justify-center gap-2 mx-auto shadow-xs cursor-pointer text-xs sm:text-sm"
             >
-              {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
-              {isLoading ? 'جاري التحميل...' : 'عرض المزيد'}
+              {isLoading && <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />}
+              {isLoading ? 'جاري التحميل...' : 'عرض المزيد من الأخبار'}
             </button>
           </div>
         )}

@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom';
 import { getMatches, getStandings, getLeagues, League, Match, Standing } from '../services/sportsApi';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
+import TeamStatsChart from '../components/league/TeamStatsChart';
+import MatchCard from '../components/common/MatchCard';
+import { getArabicTeamName } from '../utils/teamTranslations';
 
 export default function LeagueDetails() {
   const { id } = useParams<{ id: string }>();
@@ -17,16 +20,42 @@ export default function LeagueDetails() {
     if (!id) return;
     setLoading(true);
 
+    const upperId = id.toUpperCase();
+    const defaultLeagueNames: Record<string, string> = {
+      'PL': 'الدوري الإنجليزي الممتاز',
+      'PD': 'الدوري الإسباني',
+      'SA': 'الدوري الإيطالي',
+      'BL1': 'الدوري الألماني',
+      'FL1': 'الدوري الفرنسي',
+      'CL': 'دوري أبطال أوروبا',
+      'ELC': 'دوري البطولة الإنجليزية',
+      'DED': 'الدوري الهولندي',
+      'PPL': 'الدوري البرتغالي',
+      'BSA': 'الدوري البرازيلي',
+      'CLI': 'كأس ليبرتادوريس',
+      'EC': 'بطولة أمم أوروبا',
+      'WC': 'كأس العالم',
+    };
+
     Promise.all([
-      getLeagues().then(ls => ls.find(l => l.id === id) || null),
-      getStandings(id),
-      getMatches(undefined, undefined, id)
+      getLeagues().then(ls => ls.find(l => l.id.toUpperCase() === upperId) || null).catch(() => null),
+      getStandings(upperId).catch(() => []),
+      getMatches(undefined, undefined, upperId).catch(() => [])
     ]).then(([l, s, m]) => {
-      setLeague(l);
-      setStandings(s);
-      setMatches(m);
+      const fallbackLeague: League = l || {
+        id: upperId,
+        name: defaultLeagueNames[upperId] || upperId,
+        logo: `https://crests.football-data.org/${upperId}.png`,
+        flag: '🏆'
+      };
+      setLeague(fallbackLeague);
+      setStandings(s || []);
+      setMatches(m || []);
       setLoading(false);
-    }).catch(console.error);
+    }).catch((err) => {
+      console.error(err);
+      setLoading(false);
+    });
   }, [id]);
 
   if (loading) {
@@ -46,64 +75,69 @@ export default function LeagueDetails() {
   }
 
   return (
-    <div className="w-full animate-in fade-in duration-500 space-y-8">
+    <div className="w-full animate-in fade-in duration-500 space-y-6 sm:space-y-8 max-w-full">
       {/* Header */}
-      <div className="flex flex-col md:flex-row items-center gap-6 bg-white dark:bg-gray-900 p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-        <div className="w-24 h-24 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center p-4 shadow-sm border border-gray-100 dark:border-gray-700">
+      <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 bg-white dark:bg-gray-900 p-4 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+        <div className="w-16 h-16 sm:w-24 sm:h-24 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center p-3 sm:p-4 shadow-sm border border-gray-100 dark:border-gray-700 shrink-0">
           <img loading="lazy" src={league.logo} alt={league.name} className="w-full h-full object-contain" />
         </div>
-        <div className="text-center md:text-right">
-          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2">{league.name}</h1>
-          <p className="text-gray-500 font-medium">الأخبار، الترتيب والمباريات</p>
+        <div className="text-center sm:text-right">
+          <h1 className="text-xl sm:text-3xl font-extrabold text-gray-900 dark:text-white mb-1">{league.name}</h1>
+          <p className="text-xs sm:text-sm text-gray-500 font-medium">الأخبار، الترتيب والمباريات</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Visual Analytics Section with Recharts */}
+      {standings.length > 0 && (
+        <TeamStatsChart standings={standings} />
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
         
         {/* Standings */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm">
-          <div className="p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex items-center gap-3">
-            <Trophy className="w-6 h-6 text-yellow-500" />
-            <h2 className="font-extrabold text-xl text-gray-900 dark:text-white">جدول الترتيب</h2>
+          <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex items-center gap-2.5">
+            <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" />
+            <h2 className="font-extrabold text-lg sm:text-xl text-gray-900 dark:text-white">جدول الترتيب</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-right">
-              <thead className="text-xs text-gray-500 bg-gray-50 dark:bg-gray-800/50 uppercase">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full text-xs sm:text-sm text-right">
+              <thead className="text-[11px] sm:text-xs text-gray-500 bg-gray-50 dark:bg-gray-800/60 font-extrabold uppercase">
                 <tr>
-                  <th className="px-6 py-4">المركز</th>
-                  <th className="px-4 py-4">الفريق</th>
-                  <th className="px-4 py-4 text-center">لعب</th>
-                  <th className="px-4 py-4 text-center">فاز</th>
-                  <th className="px-4 py-4 text-center">تعادل</th>
-                  <th className="px-4 py-4 text-center">خسر</th>
-                  <th className="px-4 py-4 text-center">ف.أ</th>
-                  <th className="px-6 py-4 text-center">النقاط</th>
+                  <th className="px-2.5 sm:px-5 py-3 text-center">المركز</th>
+                  <th className="px-2 sm:px-4 py-3">الفريق</th>
+                  <th className="px-2 sm:px-3 py-3 text-center">لعب</th>
+                  <th className="px-2 sm:px-3 py-3 text-center text-emerald-600 dark:text-emerald-400">فاز</th>
+                  <th className="px-2 sm:px-3 py-3 text-center text-amber-600 dark:text-amber-400">تعادل</th>
+                  <th className="px-2 sm:px-3 py-3 text-center text-rose-600 dark:text-rose-400">خسر</th>
+                  <th className="px-2 sm:px-3 py-3 text-center">ف.أ</th>
+                  <th className="px-2.5 sm:px-5 py-3 text-center font-black text-brand">النقاط</th>
                 </tr>
               </thead>
               <tbody>
                 {standings.map((team, idx) => (
-                  <tr key={team.id} className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                    <td className="px-6 py-4 font-bold text-gray-900 dark:text-white">
-                      <span className={`w-8 h-8 rounded-full flex items-center justify-center ${team.rank <= 4 ? 'bg-brand text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                  <tr key={`${team.id || team.team?.id || idx}-${idx}`} className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    <td className="px-2.5 sm:px-5 py-3 font-bold text-gray-900 dark:text-white text-center">
+                      <span className={`w-5 h-5 sm:w-7 sm:h-7 rounded-full inline-flex items-center justify-center font-bold text-[10px] sm:text-xs ${team.rank <= 4 ? 'bg-brand text-white shadow-xs' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
                         {team.rank}
                       </span>
                     </td>
-                    <td className="px-4 py-4 font-bold text-gray-800 dark:text-gray-200 flex items-center gap-3">
-                      <img loading="lazy" src={team.team.logo} alt={team.team.name} className="w-8 h-8 object-contain" />
-                      {team.team.name}
+                    <td className="px-2 sm:px-4 py-3 font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                      <img loading="lazy" src={team.team.logo} alt={team.team.name} className="w-5 h-5 sm:w-7 sm:h-7 object-contain shrink-0" />
+                      <span className="truncate max-w-[90px] sm:max-w-none">{getArabicTeamName(team.team.name)}</span>
                     </td>
-                    <td className="px-4 py-4 text-center text-gray-500">{team.played}</td>
-                    <td className="px-4 py-4 text-center text-gray-500">{team.won}</td>
-                    <td className="px-4 py-4 text-center text-gray-500">{team.drawn}</td>
-                    <td className="px-4 py-4 text-center text-gray-500">{team.lost}</td>
-                    <td className="px-4 py-4 text-center text-gray-500" dir="ltr">{team.goalDifference > 0 ? `+${team.goalDifference}` : team.goalDifference}</td>
-                    <td className="px-6 py-4 text-center font-black text-brand text-lg">{team.points}</td>
+                    <td className="px-2 sm:px-3 py-3 text-center font-medium text-gray-500 text-xs">{team.played}</td>
+                    <td className="px-2 sm:px-3 py-3 text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs">{team.won}</td>
+                    <td className="px-2 sm:px-3 py-3 text-center font-bold text-amber-600 dark:text-amber-400 text-xs">{team.drawn}</td>
+                    <td className="px-2 sm:px-3 py-3 text-center font-bold text-rose-600 dark:text-rose-400 text-xs">{team.lost}</td>
+                    <td className="px-2 sm:px-3 py-3 text-center font-medium text-gray-600 dark:text-gray-400 text-xs" dir="ltr">{team.goalDifference > 0 ? `+${team.goalDifference}` : team.goalDifference}</td>
+                    <td className="px-2.5 sm:px-5 py-3 text-center font-black text-brand text-xs sm:text-base">{team.points}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {standings.length === 0 && (
-              <div className="p-10 text-center text-gray-500">لا يتوفر ترتيب لهذه البطولة</div>
+              <div className="p-8 text-center text-gray-500 text-xs sm:text-sm">لا يتوفر ترتيب لهذه البطولة</div>
             )}
           </div>
         </div>
@@ -116,41 +150,8 @@ export default function LeagueDetails() {
               <h3 className="font-bold text-gray-900 dark:text-white">مباريات البطولة</h3>
             </div>
             <div className="p-4 space-y-4">
-              {matches.length > 0 ? matches.map(match => (
-                <div key={match.id} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-semibold text-gray-500">
-                      {new Date(match.matchDate).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })}
-                    </span>
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
-                      match.status === 'LIVE' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' :
-                      match.status === 'FINISHED' ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400' :
-                      'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                    }`}>
-                      {match.status === 'LIVE' ? 'مباشر' : match.status === 'FINISHED' ? 'انتهت' : 'قادمة'}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col items-center gap-1 w-1/3">
-                      <img loading="lazy" src={match.homeTeam.logo} alt={match.homeTeam.name} className="w-8 h-8 object-contain" />
-                      <span className="text-xs font-bold text-gray-800 dark:text-gray-200 truncate w-full text-center">{match.homeTeam.name}</span>
-                    </div>
-                    
-                    <div className="w-1/3 flex justify-center">
-                      {match.status === 'SCHEDULED' ? (
-                        <span className="font-black text-gray-800 dark:text-white bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm border border-gray-200 dark:border-gray-600">{match.matchTime}</span>
-                      ) : (
-                        <span className="text-xl font-black text-gray-900 dark:text-white">{match.homeScore} - {match.awayScore}</span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col items-center gap-1 w-1/3">
-                      <img loading="lazy" src={match.awayTeam.logo} alt={match.awayTeam.name} className="w-8 h-8 object-contain" />
-                      <span className="text-xs font-bold text-gray-800 dark:text-gray-200 truncate w-full text-center">{match.awayTeam.name}</span>
-                    </div>
-                  </div>
-                </div>
+              {matches.length > 0 ? matches.map((match, idx) => (
+                <MatchCard key={match.id} match={match} index={idx} />
               )) : (
                 <div className="text-center text-gray-500 py-6 text-sm">لا توجد مباريات متاحة حالياً</div>
               )}

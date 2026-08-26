@@ -6,16 +6,16 @@ import HomeSidebar from '../components/home/HomeSidebar';
 
 export default function Home() {
   return (
-    <div className="w-full animate-in fade-in duration-500">
+    <div className="w-full animate-in fade-in duration-500 space-y-5 sm:space-y-8 max-w-full">
       <BreakingNews />
       <HeroSection />
       <MatchesWidget />
       
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+        <div className="lg:col-span-8 space-y-6">
           <LatestNews />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 space-y-6">
           <HomeSidebar />
         </div>
       </div>
