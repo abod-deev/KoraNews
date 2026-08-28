@@ -143,3 +143,14 @@ export const standingsCache = pgTable('standings_cache', {
   data: jsonb('data').notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const emailVerifications = pgTable('email_verifications', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull(),
+  codeHash: text('code_hash').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  lastSentAt: timestamp('last_sent_at').defaultNow().notNull(),
+  verified: boolean('verified').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

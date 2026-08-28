@@ -9,23 +9,18 @@ import { requireAuth, requirePermission, AuthRequest, createServerSessionToken }
 import { adminAuth } from "./src/lib/firebase-admin.ts";
 import { logActivity } from "./src/lib/logger.ts";
 import { db, withDbRetry } from "./src/db/index.ts";
-import { news, categories, comments, users, leagues, teams } from "./src/db/schema.ts";
+import { news, categories, comments, users, leagues, teams, emailVerifications } from "./src/db/schema.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { matches, activityLogs } from "./src/db/schema.ts";
 import { startCronJobs } from "./src/services/cronService.ts";
 import { getStoredMatches, getStoredStandings, syncMatchesCycle, LEAGUE_AR_NAMES, translateTeamName } from "./src/services/footballService.ts";
-import { sendVerificationEmail } from "./server/email.ts";
-
-interface PendingVerification {
-  email: string;
-  password: string;
-  name: string;
-  code: string;
-  expiresAt: number;
-  attempts: number;
-}
-const pendingVerifications = new Map<string, PendingVerification>();
+import {
+  sendVerificationRequest,
+  verifyEmailCode,
+  resendVerificationRequest,
+  clearVerificationSession,
+} from "./server/services/gmailVerification.ts";
 
 async function startServer() {
   const app = express();
@@ -48,7 +43,8 @@ async function startServer() {
   app.use("/api/", limiter);
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: "15mb" }));
+  app.use(express.urlencoded({ limit: "15mb", extended: true }));
 
 
   // === Authentication Routes ===
@@ -163,7 +159,97 @@ async function startServer() {
     }
   });
 
-  // === Email Verification Sign-Up Flow ===
+  // ========================================================
+  // === Dedicated Email Verification API (Gmail SMTP Engine) ===
+  // ========================================================
+
+  /**
+   * POST /api/verification/send
+   * Generates a 6-digit code, hashes it, and sends via Gmail SMTP (smtp.gmail.com:465)
+   */
+  app.post("/api/verification/send", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({ success: false, message: "يرجى إدخال البريد الإلكتروني" });
+      }
+
+      const result = await sendVerificationRequest(email);
+      if (!result.success) {
+        return res.status(400).json({ success: false, message: result.message });
+      }
+
+      return res.json({
+        success: true,
+        message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
+      });
+    } catch (error: any) {
+      console.error("[API Verification Send Error]:", error?.message || error);
+      return res.status(500).json({ success: false, message: "حدث خطأ أثناء إرسال رمز التحقق" });
+    }
+  });
+
+  /**
+   * POST /api/verification/verify
+   * Validates the 6-digit code against the stored hash
+   */
+  app.post("/api/verification/verify", async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        return res.status(400).json({
+          success: false,
+          verified: false,
+          message: "يرجى إدخال البريد الإلكتروني ورمز التحقق",
+        });
+      }
+
+      const result = await verifyEmailCode(String(email), String(code));
+      return res.json({
+        success: result.success,
+        verified: result.verified,
+        message: result.message,
+      });
+    } catch (error: any) {
+      console.error("[API Verification Verify Error]:", error?.message || error);
+      return res.status(500).json({
+        success: false,
+        verified: false,
+        message: "حدث خطأ أثناء التحقق من الرمز",
+      });
+    }
+  });
+
+  /**
+   * POST /api/verification/resend
+   * Generates a fresh 6-digit code, revokes the previous one, and sends via Gmail SMTP
+   */
+  app.post("/api/verification/resend", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({ success: false, message: "يرجى إدخال البريد الإلكتروني" });
+      }
+
+      const result = await resendVerificationRequest(email);
+      if (!result.success) {
+        return res.status(400).json({ success: false, message: result.message });
+      }
+
+      return res.json({
+        success: true,
+        message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
+      });
+    } catch (error: any) {
+      console.error("[API Verification Resend Error]:", error?.message || error);
+      return res.status(500).json({ success: false, message: "حدث خطأ أثناء إعادة إرسال رمز التحقق" });
+    }
+  });
+
+  // ========================================================
+  // === Auth Sign-Up Flow Connected to Gmail Verification Service ===
+  // ========================================================
+
   app.post("/api/auth/send-verification", async (req, res) => {
     try {
       const { email, password, name } = req.body;
@@ -176,7 +262,7 @@ async function startServer() {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(cleanEmail)) {
-        return res.status(400).json({ error: "يرجى إدخال بريد إلكتروني صحيح" });
+        return res.status(400).json({ error: "يرجى إدخال بريد إلكتروني صحيح يحتوي على @" });
       }
 
       if (password.length < 8 || password.length > 16) {
@@ -206,27 +292,16 @@ async function startServer() {
         // ignore
       }
 
-      // Generate random 6-digit verification code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-      pendingVerifications.set(cleanEmail, {
-        email: cleanEmail,
-        password,
-        name: displayName,
-        code,
-        expiresAt,
-        attempts: 0
-      });
-
-      // Send verification code via email (SMTP / Mailer)
-      const sentRealEmail = await sendVerificationEmail(cleanEmail, code, displayName);
+      // Send verification code using SendPulse Verification Service
+      const result = await sendVerificationRequest(cleanEmail, displayName, password);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
 
       return res.json({
         success: true,
-        message: "تم إرسال رمز التحقق المكون من 6 أرقام إلى بريدك الإلكتروني بنجاح.",
+        message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني بنجاح.",
         email: cleanEmail,
-        devCode: sentRealEmail ? undefined : code
       });
     } catch (error: any) {
       console.error("Send verification error:", error);
@@ -244,37 +319,24 @@ async function startServer() {
       const cleanEmail = email.trim().toLowerCase();
       const cleanCode = code.toString().trim();
 
-      const pending = pendingVerifications.get(cleanEmail);
-      if (!pending) {
-        return res.status(400).json({ error: "لم يتم العثور على طلب تحقق معلق لهذا البريد، أو انتهت مدة الصلاحية. يرجى طلب التسجيل مجدداً." });
+      const verifyResult = await verifyEmailCode(cleanEmail, cleanCode);
+      if (!verifyResult.verified) {
+        return res.status(400).json({ error: verifyResult.message });
       }
 
-      if (Date.now() > pending.expiresAt) {
-        pendingVerifications.delete(cleanEmail);
-        return res.status(400).json({ error: "انتهت صلاحية رمز التحقق (10 دقائق). يرجى إعادة طلب رمز جديد." });
-      }
+      const { payload } = verifyResult;
+      const name = payload?.name || cleanEmail.split('@')[0];
+      const password = payload?.password || '';
 
-      pending.attempts += 1;
-      if (pending.attempts > 5) {
-        pendingVerifications.delete(cleanEmail);
-        return res.status(400).json({ error: "تجاوزت الحد الأقصى للمحاولات الخاطئة. يرجى إعادة طلب رمز جديد." });
-      }
-
-      if (pending.code !== cleanCode) {
-        return res.status(400).json({ error: `رمز التحقق المكون من ٦ أرقام غير صحيح. (متبقي ${6 - pending.attempts} محاولات)` });
-      }
-
-      // Code is verified successfully! Create user account.
-      const { password, name } = pending;
       let uid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       let customToken = '';
 
       try {
         const userRecord = await adminAuth.createUser({
           email: cleanEmail,
-          password: password,
+          password: password || undefined,
           displayName: name,
-          emailVerified: true
+          emailVerified: true,
         });
         uid = userRecord.uid;
         try {
@@ -283,7 +345,25 @@ async function startServer() {
           // ignore
         }
       } catch (fbErr: any) {
-        console.log("[Auth] User account created via DB auth engine after 6-digit verification");
+        // If user already existed in Firebase Auth (e.g. from previously deleted local account), clean it up and recreate
+        try {
+          const oldFbUser = await adminAuth.getUserByEmail(cleanEmail);
+          if (oldFbUser) {
+            await adminAuth.deleteUser(oldFbUser.uid);
+            const freshUserRecord = await adminAuth.createUser({
+              email: cleanEmail,
+              password: password || undefined,
+              displayName: name,
+              emailVerified: true,
+            });
+            uid = freshUserRecord.uid;
+            try {
+              customToken = await adminAuth.createCustomToken(freshUserRecord.uid);
+            } catch (e) {}
+          }
+        } catch (innerErr) {
+          // DB Auth engine fallback
+        }
       }
 
       const dbUser = await getOrCreateUser(
@@ -294,13 +374,13 @@ async function startServer() {
         password
       );
 
-      // Clean up verification state
-      pendingVerifications.delete(cleanEmail);
+      // Clear the temporary verification session
+      clearVerificationSession(cleanEmail);
 
       const sessionToken = createServerSessionToken({
         uid: dbUser.uid,
         email: cleanEmail,
-        name: dbUser.name
+        name: dbUser.name,
       });
 
       return res.json({
@@ -313,8 +393,8 @@ async function startServer() {
           name: dbUser.name,
           avatar: dbUser.avatar,
           role: dbUser.role,
-          isAdmin: dbUser.isAdmin
-        }
+          isAdmin: dbUser.isAdmin,
+        },
       });
     } catch (error: any) {
       console.error("Verify code error:", error);
@@ -330,24 +410,15 @@ async function startServer() {
       }
 
       const cleanEmail = email.trim().toLowerCase();
-      const pending = pendingVerifications.get(cleanEmail);
+      const result = await resendVerificationRequest(cleanEmail);
 
-      if (!pending) {
-        return res.status(400).json({ error: "لم يتم العثور على طلب تسجل معلق. يرجى إدخال بيانات الحساب مجدداً." });
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
       }
-
-      // Generate new 6-digit code
-      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-      pending.code = newCode;
-      pending.expiresAt = Date.now() + 10 * 60 * 1000;
-      pending.attempts = 0;
-
-      const sentRealEmail = await sendVerificationEmail(cleanEmail, newCode, pending.name);
 
       return res.json({
         success: true,
         message: "تم إعادة إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني.",
-        devCode: sentRealEmail ? undefined : newCode
       });
     } catch (error: any) {
       console.error("Resend code error:", error);
@@ -560,6 +631,62 @@ async function startServer() {
     }
   });
 
+  /**
+   * Permanently deletes a user from PostgreSQL, associated comments, activity logs,
+   * verification tokens, and Firebase Authentication.
+   */
+  async function permanentlyDeleteUserRecord(user: { id: number; email?: string | null; uid?: string | null; role?: string | null }) {
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+
+    // 1. Delete comments made by user
+    await withDbRetry(() => db.delete(comments).where(eq(comments.userId, user.id)));
+
+    // 2. Delete activity logs
+    await withDbRetry(() => db.delete(activityLogs).where(eq(activityLogs.userId, user.id)));
+
+    // 3. Reassign news to superadmin or delete
+    const superAdmins = await withDbRetry(() => db.select().from(users).where(eq(users.role, 'superadmin')).limit(1));
+    if (superAdmins.length > 0 && superAdmins[0].id !== user.id) {
+      await withDbRetry(() => db.update(news).set({ authorId: superAdmins[0].id }).where(eq(news.authorId, user.id)));
+    } else {
+      await withDbRetry(() => db.delete(news).where(eq(news.authorId, user.id)));
+    }
+
+    // 4. Delete verification records and sessions for this email
+    if (cleanEmail) {
+      await withDbRetry(() => db.delete(emailVerifications).where(eq(emailVerifications.email, cleanEmail)));
+      clearVerificationSession(cleanEmail);
+    }
+
+    // 5. Delete user record from PostgreSQL
+    await withDbRetry(() => db.delete(users).where(eq(users.id, user.id)));
+    if (cleanEmail) {
+      await withDbRetry(() => db.delete(users).where(eq(users.email, cleanEmail)));
+    }
+    if (user.uid) {
+      await withDbRetry(() => db.delete(users).where(eq(users.uid, user.uid!)));
+    }
+
+    // 6. Delete from Firebase Auth if exists (by UID and by Email)
+    if (user.uid) {
+      try {
+        await adminAuth.deleteUser(user.uid);
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (cleanEmail) {
+      try {
+        const fbUser = await adminAuth.getUserByEmail(cleanEmail);
+        if (fbUser && fbUser.uid) {
+          await adminAuth.deleteUser(fbUser.uid);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+
   app.delete("/api/user/account", requireAuth, async (req: AuthRequest, res) => {
     try {
       const user = req.dbUser;
@@ -569,31 +696,9 @@ async function startServer() {
         return res.status(400).json({ error: "حساب مالك النظام الرئيسي والمدير العام محمي بالكامل ولا يمكن حذفه" });
       }
 
-      // 1. Delete comments made by user
-      await withDbRetry(() => db.delete(comments).where(eq(comments.userId, user.id)));
+      await permanentlyDeleteUserRecord(user);
 
-      // 2. Delete activity logs
-      await withDbRetry(() => db.delete(activityLogs).where(eq(activityLogs.userId, user.id)));
-
-      // 3. Reassign news to superadmin or delete
-      const superAdmins = await withDbRetry(() => db.select().from(users).where(eq(users.role, 'superadmin')).limit(1));
-      if (superAdmins.length > 0) {
-        await withDbRetry(() => db.update(news).set({ authorId: superAdmins[0].id }).where(eq(news.authorId, user.id)));
-      } else {
-        await withDbRetry(() => db.delete(news).where(eq(news.authorId, user.id)));
-      }
-
-      // 4. Delete user record
-      await withDbRetry(() => db.delete(users).where(eq(users.id, user.id)));
-
-      // 5. Delete from Firebase Auth if exists
-      try {
-        await adminAuth.deleteUser(user.uid);
-      } catch (e) {
-        // ignore
-      }
-
-      res.json({ success: true, message: "تم حذف الحساب بنجاح" });
+      res.json({ success: true, message: "تم حذف الحساب نهائياً من قاعدة البيانات بنجاح" });
     } catch (error: any) {
       console.error("Error deleting user account:", error);
       res.status(500).json({ error: error.message || "فشل في حذف الحساب" });
@@ -1098,6 +1203,27 @@ async function startServer() {
       res.json({ success: true });
     } catch (e) {
       console.error("Admin user update error:", e);
+      res.status(500).json({ error: true });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", requireAuth, async (req: AuthRequest, res) => {
+    if (req.dbUser?.role !== "superadmin") return res.status(403).json({ error: "Superadmin only" });
+    try {
+      const targetUserId = parseInt(req.params.id as string);
+      const targetUserList = await withDbRetry(() => db.select().from(users).where(eq(users.id, targetUserId)));
+      if (!targetUserList.length) return res.status(404).json({ error: 'المستخدم غير موجود' });
+      const targetUser = targetUserList[0];
+
+      if (targetUser.email === 'abod46071@gmail.com' || targetUser.role === 'superadmin') {
+        return res.status(400).json({ error: 'حساب مالك النظام والمدير العام الرئيسي محمي بالكامل ولا يمكن حذفه' });
+      }
+
+      await permanentlyDeleteUserRecord(targetUser);
+      await logActivity(req.dbUser.id, 'DELETE', 'USER', String(targetUserId), { email: targetUser.email, name: targetUser.name });
+      res.json({ success: true, message: 'تم حذف المستخدم نهائياً بنجاح' });
+    } catch (e) {
+      console.error("Admin user delete error:", e);
       res.status(500).json({ error: true });
     }
   });
