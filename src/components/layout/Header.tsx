@@ -43,20 +43,21 @@ export default function Header() {
   const canAccessAdmin = !!(user && (user.isAdmin || user.role === 'admin' || user.role === 'superadmin' || user.email === 'abod46071@gmail.com'));
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b bg-white/90 dark:bg-gray-950/90 backdrop-blur-xl border-gray-200/50 dark:border-gray-800/50 shadow-xs transition-all duration-300">
+    <header className="sticky top-0 z-40 w-full border-b bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl border-gray-200/60 dark:border-gray-800/60 shadow-2xs transition-all duration-300">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-14 sm:h-16">
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button 
-              className="lg:hidden p-1.5 -mr-1.5 rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" 
+              className="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all cursor-pointer" 
               onClick={() => setIsSideDrawerOpen(true)}
               aria-label="فتح القائمة الجانبية"
+              id="open-side-drawer-btn"
             >
-              <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
+              <Menu className="w-5 h-5" />
             </button>
-            <Link to="/" className="flex items-center gap-1.5 sm:gap-2">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm">K</div>
-              <span className="text-lg sm:text-xl font-extrabold text-brand">كورة نيوز</span>
+            <Link to="/" className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-brand rounded-xl flex items-center justify-center text-white font-black text-sm shadow-xs shadow-brand/20">K</div>
+              <span className="text-lg sm:text-xl font-black text-brand tracking-tight">كورة نيوز</span>
             </Link>
           </div>
 
@@ -65,28 +66,30 @@ export default function Header() {
               <Link 
                 key={link.path} 
                 to={link.path} 
-                className="text-gray-600 hover:text-brand dark:text-gray-300 dark:hover:text-brand font-semibold transition-colors text-sm"
+                className="text-gray-600 hover:text-brand dark:text-gray-300 dark:hover:text-brand font-bold transition-colors text-sm"
               >
                 {link.name}
               </Link>
             ))}
           </nav>
 
-          <div className="flex items-center gap-1.5 sm:gap-3">
+          <div className="flex items-center gap-1 sm:gap-2">
             {/* Match Reminders Bell Button */}
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={handleBellClick}
-                className="p-1.5 sm:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors relative"
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all relative cursor-pointer"
                 title="تنبيهات المباريات المفضلة"
+                aria-label="تنبيهات المباريات"
+                id="header-bell-btn"
               >
                 {remindedMatches.length > 0 ? (
-                  <BellRing className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 animate-pulse" />
+                  <BellRing className="w-5 h-5 text-amber-500 animate-pulse" />
                 ) : (
-                  <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-300" />
+                  <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                 )}
                 {user && remindedMatches.length > 0 && (
-                  <span className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 bg-amber-500 text-white text-[9px] sm:text-[10px] font-black w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full flex items-center justify-center shadow-xs">
+                  <span className="absolute top-1.5 right-1.5 bg-amber-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
                     {remindedMatches.length}
                   </span>
                 )}
@@ -96,9 +99,9 @@ export default function Header() {
               <AnimatePresence>
                 {isNotificationsOpen && user && (
                   <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
                     className="absolute -left-12 sm:left-0 mt-2 w-[calc(100vw-2rem)] max-w-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl z-50 overflow-hidden dir-rtl"
                   >
                     <div className="p-3 sm:p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
@@ -178,10 +181,11 @@ export default function Header() {
 
             <button 
               onClick={toggleDarkMode} 
-              className="p-1.5 sm:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              aria-label="Toggle dark mode"
+              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all text-gray-600 dark:text-gray-300 cursor-pointer"
+              aria-label="تبديل الوضع الليلي"
+              id="header-theme-toggle"
             >
-              {isDarkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-300" />}
+              {isDarkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
             </button>
             
             {user ? (

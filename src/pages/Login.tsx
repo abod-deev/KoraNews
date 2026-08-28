@@ -275,7 +275,7 @@ export default function Login() {
               </label>
               
               {/* 6 OTP Input Boxes */}
-              <div className="flex items-center justify-center gap-2 dir-ltr" dir="ltr">
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2 dir-ltr" dir="ltr">
                 {otp.map((digit, idx) => (
                   <input
                     key={idx}
@@ -287,7 +287,7 @@ export default function Login() {
                     onChange={(e) => handleOtpChange(idx, e.target.value)}
                     onPaste={handleOtpPaste}
                     onKeyDown={(e) => handleKeyDown(idx, e)}
-                    className={`w-12 h-14 text-center text-xl font-extrabold rounded-xl border-2 transition-all outline-none ${
+                    className={`w-10 sm:w-12 h-12 sm:h-14 text-center text-lg sm:text-xl font-extrabold rounded-xl border-2 transition-all outline-none ${
                       digit
                         ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-300 shadow-sm'
                         : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
