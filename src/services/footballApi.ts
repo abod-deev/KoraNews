@@ -10,10 +10,15 @@ let lastRequestTime = 0;
 const MIN_REQUEST_INTERVAL_MS = 6000; // 6 seconds between requests = max 10 requests / minute
 
 /**
- * Gets the Football API Key from environment variables with safe fallback.
+ * Gets the Football API Key from environment variables securely.
  */
 export function getApiKey(): string {
-  return process.env.FOOTBALL_API_KEY || '56b299425e7a45db8f57817ab1a45009';
+  const key = process.env.FOOTBALL_API_KEY || '';
+  if (!key) {
+    // When API key is not configured, system safely serves pre-stored database fixtures & cached matches
+    return '';
+  }
+  return key;
 }
 
 export class NotFoundError extends Error {

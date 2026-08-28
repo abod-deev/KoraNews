@@ -31,8 +31,8 @@ export default function Admin() {
     item: null
   });
 
-  const isAdmin = !!(user && (user.isAdmin || user.role === 'admin' || user.role === 'superadmin' || user.email === 'abod46071@gmail.com'));
-  const isSuperAdmin = !!(user && (user.role === 'superadmin' || user.email === 'abod46071@gmail.com'));
+  const isAdmin = !!(user && (user.isAdmin || user.role === 'admin' || user.role === 'superadmin'));
+  const isSuperAdmin = !!(user && user.role === 'superadmin');
 
   const fetchStats = async () => {
     try {

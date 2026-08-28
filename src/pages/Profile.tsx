@@ -259,7 +259,7 @@ export default function Profile() {
     );
   }
 
-  const isSuperAdmin = user.role === 'superadmin' || user.email === 'abod46071@gmail.com';
+  const isSuperAdmin = user.role === 'superadmin';
   const isAdmin = user.isAdmin || user.role === 'admin' || isSuperAdmin;
   const currentAvatarSrc = avatarUrl || DEFAULT_AVATAR;
   const hasCustomAvatar = avatarUrl && avatarUrl !== DEFAULT_AVATAR;

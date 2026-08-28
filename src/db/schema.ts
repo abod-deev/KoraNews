@@ -5,7 +5,8 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   uid: text('uid').notNull().unique(), // Firebase Auth UID or server UID
   email: text('email').notNull(),
-  password: text('password'),
+  password: text('password'), // Legacy column during migration
+  passwordHash: text('password_hash'), // Secure scrypt password hash
   name: text('name').notNull(),
   avatar: text('avatar'),
   isAdmin: boolean('is_admin').default(false),

@@ -64,10 +64,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (savedToken && savedUser) {
       try {
         const parsed = JSON.parse(savedUser);
-        if (parsed.email && parsed.email.toLowerCase().trim() === 'abod46071@gmail.com') {
-          parsed.role = 'superadmin';
-          parsed.isAdmin = true;
-        }
         setToken(savedToken);
         setUser(parsed);
 
@@ -75,14 +71,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         fetch('/api/user/profile', {
           headers: { Authorization: `Bearer ${savedToken}` }
         })
-          .then((res) => (res.ok ? res.json() : null))
+          .then(async (res) => {
+            if (res.status === 401) {
+              if (auth && auth.currentUser) {
+                try {
+                  const idToken = await auth.currentUser.getIdToken(true);
+                  const syncRes = await fetch('/api/auth/sync', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${idToken}` }
+                  });
+                  if (syncRes.ok) {
+                    const syncData = await syncRes.json();
+                    if (syncData.sessionToken && syncData.user) {
+                      saveSession(syncData.sessionToken, syncData.user);
+                      return syncData.user;
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+              // If completely unrecoverable, clear invalid tokens
+              localStorage.removeItem('srv_session_token');
+              localStorage.removeItem('srv_session_user');
+              setToken(null);
+              setUser(null);
+              return null;
+            }
+            return res.ok ? res.json() : null;
+          })
           .then((data) => {
             if (data) {
               const merged = { ...parsed, ...data };
-              if (merged.email && merged.email.toLowerCase().trim() === 'abod46071@gmail.com') {
-                merged.role = 'superadmin';
-                merged.isAdmin = true;
-              }
               setUser(merged);
               localStorage.setItem('srv_session_user', JSON.stringify(merged));
             }
@@ -282,9 +302,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateUserProfile = async (name: string, avatar: string | null) => {
-    const currentToken = token || localStorage.getItem('srv_session_token');
+    let currentToken = token || localStorage.getItem('srv_session_token');
     if (!currentToken) throw new Error('يرجى تسجيل الدخول أولاً');
-    const res = await fetch('/api/user/profile', {
+    
+    let res = await fetch('/api/user/profile', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -292,8 +313,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
       body: JSON.stringify({ name, avatar })
     });
-    const data = await res.json();
+
+    // If 401 Unauthorized, try refreshing via Firebase if active
+    if (res.status === 401 && auth && auth.currentUser) {
+      try {
+        const idToken = await auth.currentUser.getIdToken(true);
+        const syncRes = await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}` }
+        });
+        if (syncRes.ok) {
+          const syncData = await syncRes.json();
+          if (syncData.sessionToken) {
+            currentToken = syncData.sessionToken;
+            saveSession(syncData.sessionToken, syncData.user);
+            res = await fetch('/api/user/profile', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentToken}`
+              },
+              body: JSON.stringify({ name, avatar })
+            });
+          }
+        }
+      } catch (refreshErr) {
+        console.warn('Auto refresh on profile update failed:', refreshErr);
+      }
+    }
+
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      if (res.status === 401) {
+        logout();
+        throw new Error('انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً');
+      }
       throw new Error(data.error || 'فشل تحديث الملف الشخصي');
     }
     if (data.sessionToken && data.user) {

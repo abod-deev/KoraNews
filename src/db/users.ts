@@ -1,13 +1,30 @@
 import { db, withDbRetry } from './index.ts';
 import { users } from './schema.ts';
 import { eq } from 'drizzle-orm';
+import { hashPassword } from '../../server/security/passwords.ts';
 
-export async function getOrCreateUser(uid: string, email: string, name: string, avatar?: string, password?: string) {
+export async function getOrCreateUser(
+  uid: string,
+  email: string,
+  name: string,
+  avatar?: string,
+  passwordOrHash?: string
+) {
   return withDbRetry(async () => {
-    const cleanEmail = email?.toLowerCase()?.trim();
-    const isSuperAdmin = cleanEmail === 'abod46071@gmail.com';
-    const userName = name || (isSuperAdmin ? 'عبدالله الراعي' : (email ? email.split('@')[0] : 'مستخدم'));
+    const cleanEmail = (email || '').toLowerCase().trim();
+    const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
+    const isSuperAdmin = !!superAdminEmail && cleanEmail === superAdminEmail;
+    const userName = name || (cleanEmail ? cleanEmail.split('@')[0] : 'مستخدم');
     const superAdminPermissions = ['news_add', 'news_edit', 'news_delete', 'news_publish', 'matches_manage', 'admin_manage'];
+
+    let passwordHash: string | undefined = undefined;
+    if (passwordOrHash) {
+      if (passwordOrHash.startsWith('scrypt:')) {
+        passwordHash = passwordOrHash;
+      } else {
+        passwordHash = await hashPassword(passwordOrHash);
+      }
+    }
 
     // 1. Try finding user by UID
     const existingByUid = await db.select().from(users).where(eq(users.uid, uid));
@@ -15,9 +32,9 @@ export async function getOrCreateUser(uid: string, email: string, name: string, 
       const updated = await db.update(users)
         .set({
           email: cleanEmail,
-          name: isSuperAdmin ? 'عبدالله الراعي' : (userName || existingByUid[0].name),
+          name: userName || existingByUid[0].name,
           avatar: avatar || existingByUid[0].avatar,
-          ...(password ? { password } : {}),
+          ...(passwordHash ? { passwordHash, password: null } : {}),
           ...(isSuperAdmin ? { role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions } : {})
         })
         .where(eq(users.id, existingByUid[0].id))
@@ -31,9 +48,9 @@ export async function getOrCreateUser(uid: string, email: string, name: string, 
       const updated = await db.update(users)
         .set({
           uid, // associate with new/given uid
-          name: isSuperAdmin ? 'عبدالله الراعي' : (userName || existingByEmail[0].name),
+          name: userName || existingByEmail[0].name,
           avatar: avatar || existingByEmail[0].avatar,
-          ...(password ? { password } : {}),
+          ...(passwordHash ? { passwordHash, password: null } : {}),
           ...(isSuperAdmin ? { role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions } : {})
         })
         .where(eq(users.id, existingByEmail[0].id))
@@ -46,8 +63,9 @@ export async function getOrCreateUser(uid: string, email: string, name: string, 
       .values({
         uid,
         email: cleanEmail,
-        password: password || null,
-        name: isSuperAdmin ? 'عبدالله الراعي' : userName,
+        password: null,
+        passwordHash: passwordHash || null,
+        name: userName,
         avatar: avatar || '/default-avatar.svg',
         role: isSuperAdmin ? 'superadmin' : 'user',
         isAdmin: isSuperAdmin,

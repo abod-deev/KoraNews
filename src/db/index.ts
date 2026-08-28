@@ -51,6 +51,48 @@ const pool = createPool();
 export const db = drizzle(pool, { schema });
 
 /**
+ * Ensures database schema tables, columns, and indexes are updated.
+ * Automatically migrates any legacy plaintext passwords to secure scrypt hashes.
+ */
+export async function initializeDatabaseSchema() {
+  try {
+    const client = await pool.connect();
+    try {
+      // 1. Ensure password_hash column exists on users
+      await client.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE NOT NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user' NOT NULL;
+        ALTER TABLE news ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'published' NOT NULL;
+        
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
+        CREATE INDEX IF NOT EXISTS idx_users_uid ON users(uid);
+        CREATE INDEX IF NOT EXISTS idx_news_status ON news(status);
+        CREATE INDEX IF NOT EXISTS idx_comments_news_id ON comments(news_id);
+        CREATE INDEX IF NOT EXISTS idx_email_verifications_email ON email_verifications(LOWER(email));
+      `);
+
+      // 2. Migrate any existing plaintext passwords to scrypt hashes
+      const res = await client.query(`SELECT id, password FROM users WHERE password IS NOT NULL AND password_hash IS NULL;`);
+      if (res.rows && res.rows.length > 0) {
+        const { hashPasswordSync } = await import('../../server/security/passwords.ts');
+        for (const row of res.rows) {
+          if (row.password && typeof row.password === 'string') {
+            const hash = hashPasswordSync(row.password);
+            await client.query(`UPDATE users SET password_hash = $1, password = NULL WHERE id = $2;`, [hash, row.id]);
+          }
+        }
+        console.log(`[DB Migration] Migrated ${res.rows.length} legacy user password(s) to scrypt hashes.`);
+      }
+    } finally {
+      client.release();
+    }
+  } catch (err: any) {
+    console.warn('[DB Migration Warning] Schema check/migration notice:', err?.message || err);
+  }
+}
+
+/**
  * Executes a database operation with automatic retries for transient connection dropouts.
  */
 export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 3, delayMs = 250): Promise<T> {

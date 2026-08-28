@@ -1,377 +1,336 @@
-import "dotenv/config";
-import express from "express";
-import path from "path";
-import cors from "cors";
-import compression from "compression";
-import rateLimit from "express-rate-limit";
-import { createServer as createViteServer } from "vite";
-import { requireAuth, requirePermission, AuthRequest, createServerSessionToken } from "./src/middleware/auth.ts";
-import { adminAuth } from "./src/lib/firebase-admin.ts";
-import { logActivity } from "./src/lib/logger.ts";
-import { db, withDbRetry } from "./src/db/index.ts";
-import { news, categories, comments, users, leagues, teams, emailVerifications } from "./src/db/schema.ts";
-import { getOrCreateUser } from "./src/db/users.ts";
-import { eq, desc, and, sql } from "drizzle-orm";
-import { matches, activityLogs } from "./src/db/schema.ts";
-import { startCronJobs } from "./src/services/cronService.ts";
-import { getStoredMatches, getStoredStandings, syncMatchesCycle, LEAGUE_AR_NAMES, translateTeamName } from "./src/services/footballService.ts";
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import path from 'path';
+import { createServer as createViteServer } from 'vite';
+import { adminAuth } from './src/lib/firebase-admin.ts';
+import { db, withDbRetry, initializeDatabaseSchema } from './src/db/index.ts';
+import { users, news, categories, comments, emailVerifications, activityLogs } from './src/db/schema.ts';
+import { eq, desc, sql } from 'drizzle-orm';
+import {
+  requireAuth,
+  requirePermission,
+  requireSuperAdmin,
+  AuthRequest,
+  createServerSessionToken,
+  verifyServerSessionToken,
+} from './src/middleware/auth.ts';
+import { getOrCreateUser } from './src/db/users.ts';
+import { hashPassword, verifyPassword } from './server/security/passwords.ts';
+import { toSafeUser, escapeHtml, sanitizeContent } from './server/security/sanitizer.ts';
+import {
+  generalLimiter,
+  loginLimiter,
+  otpSendLimiter,
+  otpVerifyLimiter,
+  commentsLimiter,
+  matchSyncLimiter,
+} from './server/security/rateLimiters.ts';
 import {
   sendVerificationRequest,
   verifyEmailCode,
   resendVerificationRequest,
   clearVerificationSession,
-} from "./server/services/gmailVerification.ts";
+} from './server/services/gmailVerification.ts';
+import {
+  startCronJobs,
+} from './src/services/cronService.ts';
+import {
+  syncMatchesCycle,
+  getStoredMatches,
+  getStoredStandings,
+} from './src/services/footballService.ts';
+
+async function logActivity(
+  userId: number,
+  action: string,
+  entityType: string,
+  entityId?: string,
+  details?: any
+) {
+  try {
+    await withDbRetry(() =>
+      db.insert(activityLogs).values({
+        userId,
+        action,
+        entityType,
+        entityId: entityId || null,
+        details: details || null,
+      })
+    );
+  } catch (e) {
+    // Non-blocking log failure
+  }
+}
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Trust proxy for Cloud Run & Nginx reverse proxies
-  app.set("trust proxy", 1);
+  // Initialize DB Schema & Run Automatic Migrations (e.g. Scrypt password migration)
+  await initializeDatabaseSchema();
 
-  // Security Middlewares
-  app.use(compression()); // Compress responses for better Core Web Vitals
-  
-  // Rate limiting ONLY for /api/ routes to prevent blocking Vite SPA asset loading in browsers
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // limit each IP to 1000 requests per windowMs
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: true, message: "Too many requests from this IP, please try again after 15 minutes" }
+  // Security Headers via Helmet (configured to allow iframe & images)
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      frameguard: false, // Allows embedding in AI Studio live preview
+    })
+  );
+
+  // Secure CORS configuration
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, server-to-server, curl) or any origin in dev/preview
+        callback(null, true);
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-cron-secret'],
+    })
+  );
+
+  // Large payload parser specifically for profile photo uploads (15MB)
+  app.use('/api/user/profile', express.json({ limit: '15mb' }));
+  app.use('/api/user/profile', express.urlencoded({ extended: true, limit: '15mb' }));
+
+  // General body parser (500KB limit)
+  app.use(express.json({ limit: '500kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '500kb' }));
+
+  // General API Rate Limiting for all /api/ endpoints
+  app.use('/api/', generalLimiter);
+
+  // Health Check Endpoint
+  app.get('/api/health', (req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'KoraNews Backend',
+      timestamp: new Date().toISOString(),
+    });
   });
-  app.use("/api/", limiter);
 
-  app.use(cors());
-  app.use(express.json({ limit: "15mb" }));
-  app.use(express.urlencoded({ limit: "15mb", extended: true }));
+  // ==========================================
+  // AUTHENTICATION ROUTES
+  // ==========================================
 
-
-  // === Authentication Routes ===
-  app.post("/api/auth/login", async (req, res) => {
+  /**
+   * POST /api/auth/login
+   * Authenticates a user securely via email & password.
+   * Uses crypto.scrypt password verification and issues cryptographically signed session tokens.
+   */
+  app.post('/api/auth/login', loginLimiter, async (req, res) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) {
-        return res.status(400).json({ error: "يرجى إدخال البريد الإلكتروني وكلمة المرور" });
+        return res.status(400).json({ error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' });
       }
 
-      const cleanEmail = email.trim().toLowerCase();
-      const isSuperAdmin = cleanEmail === 'abod46071@gmail.com';
+      const cleanEmail = String(email).trim().toLowerCase();
+      const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
+      const superAdminPass = process.env.SUPERADMIN_PASSWORD;
 
-      if (isSuperAdmin) {
-        if (password !== 'abod1234') {
-          return res.status(400).json({ error: "كلمة المرور غير صحيحة لحساب المسؤول" });
+      // 1. Super Admin Authentication (Backed by Secrets)
+      if (superAdminEmail && cleanEmail === superAdminEmail && superAdminPass) {
+        if (password !== superAdminPass) {
+          return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
         }
-      }
 
-      let uid = isSuperAdmin ? 'superadmin_abod46071' : '';
-      let customToken = '';
-      let displayName = isSuperAdmin ? 'عبدالله الراعي' : cleanEmail.split('@')[0];
+        const superAdminPermissions = ['news_add', 'news_edit', 'news_delete', 'news_publish', 'matches_manage', 'admin_manage'];
+        let dbUser = await getOrCreateUser(
+          `superadmin_${cleanEmail}`,
+          cleanEmail,
+          'مدير النظام',
+          undefined,
+          superAdminPass
+        );
 
-      // Try Firebase Admin if possible
-      try {
-        let userRecord: any;
+        // Ensure superadmin role & permissions
+        await db.update(users)
+          .set({ role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions })
+          .where(eq(users.id, dbUser.id));
+
+        const sessionToken = createServerSessionToken({
+          uid: dbUser.uid,
+          email: dbUser.email,
+          name: dbUser.name,
+        });
+
+        // Try creating custom Firebase token if configured
+        let customToken: string | undefined;
         try {
-          userRecord = await adminAuth.getUserByEmail(cleanEmail);
-        } catch (err: any) {
-          if (err.code === 'auth/user-not-found') {
-            if (isSuperAdmin) {
-              userRecord = await adminAuth.createUser({
-                email: cleanEmail,
-                password: 'abod1234',
-                displayName: 'عبدالله الراعي',
-                emailVerified: true
-              });
-            }
-          }
+          customToken = await adminAuth.createCustomToken(dbUser.uid);
+        } catch (e) {
+          // ignore if firebase credentials not provisioned
         }
 
-        if (userRecord) {
-          uid = userRecord.uid;
-          displayName = userRecord.displayName || displayName;
-          if (isSuperAdmin) {
-            try {
-              await adminAuth.updateUser(userRecord.uid, { password: 'abod1234', emailVerified: true });
-            } catch (e) {
-              // ignore
-            }
-          }
-          try {
-            customToken = await adminAuth.createCustomToken(userRecord.uid);
-          } catch (e) {
-            // ignore
-          }
-        }
-      } catch (fbErr: any) {
-        // Firebase Auth API may be unconfigured or disabled; system operates smoothly on DB fallback
-        console.log("[Auth] Operating on DB auth engine (Firebase Auth API bypassed)");
+        return res.json({
+          sessionToken,
+          customToken,
+          user: toSafeUser({ ...dbUser, role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions }),
+        });
       }
 
-      // If not superadmin, check DB user and verify password
-      if (!isSuperAdmin) {
-        const existingInDb = await withDbRetry(() => db.select().from(users).where(eq(users.email, cleanEmail)));
-        if (existingInDb.length === 0) {
-          return res.status(404).json({ error: "الحساب غير موجود. يمكنك إنشاء حساب جديد." });
-        }
-        const dbRecord = existingInDb[0];
-        if (dbRecord.password && dbRecord.password !== password) {
-          return res.status(400).json({ error: "البريد الإلكتروني أو كلمة المرور غير صحيحة" });
-        }
-        uid = dbRecord.uid;
-        displayName = dbRecord.name || displayName;
-      }
-
-      const dbUser = await getOrCreateUser(
-        uid,
-        cleanEmail,
-        displayName,
-        undefined,
-        password
+      // 2. Standard User Authentication via Database
+      const userRecords = await withDbRetry(() =>
+        db.select().from(users).where(eq(users.email, cleanEmail)).limit(1)
       );
 
+      if (userRecords.length === 0) {
+        return res.status(404).json({ error: 'الحساب غير موجود. يمكنك إنشاء حساب جديد.' });
+      }
+
+      const dbUser = userRecords[0];
+
       if (!dbUser.isActive) {
-        return res.status(403).json({ error: "الحساب معطل" });
+        return res.status(403).json({ error: 'الحساب معطل، يرجى التواصل مع الإدارة' });
+      }
+
+      // Check password using scrypt (or legacy plaintext with auto-migration)
+      const storedHashOrPlain = dbUser.passwordHash || dbUser.password;
+      if (!storedHashOrPlain) {
+        return res.status(401).json({ error: 'يرجى تسجيل الدخول بواسطة جوجل أو إعادة تعيين كلمة المرور' });
+      }
+
+      const { isValid, needsMigration } = await verifyPassword(password, storedHashOrPlain);
+
+      if (!isValid) {
+        return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+      }
+
+      // Automatic password migration to scrypt hash if needed
+      if (needsMigration) {
+        const newHash = await hashPassword(password);
+        await withDbRetry(() =>
+          db.update(users)
+            .set({ passwordHash: newHash, password: null })
+            .where(eq(users.id, dbUser.id))
+        );
       }
 
       const sessionToken = createServerSessionToken({
         uid: dbUser.uid,
-        email: cleanEmail,
-        name: dbUser.name
+        email: dbUser.email,
+        name: dbUser.name,
       });
 
-      return res.json({
-        customToken,
-        sessionToken,
-        user: {
-          uid: dbUser.uid,
-          email: cleanEmail,
-          displayName: dbUser.name,
-          name: dbUser.name,
-          avatar: dbUser.avatar,
-          role: dbUser.role,
-          isAdmin: dbUser.isAdmin
-        }
-      });
-    } catch (error: any) {
-      console.error("Login error:", error);
-      const isDbErr = String(error?.message || error).includes('Failed query') || String(error?.message || error).includes('Connection terminated');
-      return res.status(500).json({ error: isDbErr ? "تعذر الاتصال بقاعدة البيانات، يرجى المحاولة مرة أخرى." : (error.message || "حدث خطأ أثناء تسجيل الدخول") });
-    }
-  });
-
-  // ========================================================
-  // === Dedicated Email Verification API (Gmail SMTP Engine) ===
-  // ========================================================
-
-  /**
-   * POST /api/verification/send
-   * Generates a 6-digit code, hashes it, and sends via Gmail SMTP (smtp.gmail.com:465)
-   */
-  app.post("/api/verification/send", async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email || typeof email !== 'string') {
-        return res.status(400).json({ success: false, message: "يرجى إدخال البريد الإلكتروني" });
-      }
-
-      const result = await sendVerificationRequest(email);
-      if (!result.success) {
-        return res.status(400).json({ success: false, message: result.message });
-      }
-
-      return res.json({
-        success: true,
-        message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
-      });
-    } catch (error: any) {
-      console.error("[API Verification Send Error]:", error?.message || error);
-      return res.status(500).json({ success: false, message: "حدث خطأ أثناء إرسال رمز التحقق" });
-    }
-  });
-
-  /**
-   * POST /api/verification/verify
-   * Validates the 6-digit code against the stored hash
-   */
-  app.post("/api/verification/verify", async (req, res) => {
-    try {
-      const { email, code } = req.body;
-      if (!email || !code) {
-        return res.status(400).json({
-          success: false,
-          verified: false,
-          message: "يرجى إدخال البريد الإلكتروني ورمز التحقق",
-        });
-      }
-
-      const result = await verifyEmailCode(String(email), String(code));
-      return res.json({
-        success: result.success,
-        verified: result.verified,
-        message: result.message,
-      });
-    } catch (error: any) {
-      console.error("[API Verification Verify Error]:", error?.message || error);
-      return res.status(500).json({
-        success: false,
-        verified: false,
-        message: "حدث خطأ أثناء التحقق من الرمز",
-      });
-    }
-  });
-
-  /**
-   * POST /api/verification/resend
-   * Generates a fresh 6-digit code, revokes the previous one, and sends via Gmail SMTP
-   */
-  app.post("/api/verification/resend", async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email || typeof email !== 'string') {
-        return res.status(400).json({ success: false, message: "يرجى إدخال البريد الإلكتروني" });
-      }
-
-      const result = await resendVerificationRequest(email);
-      if (!result.success) {
-        return res.status(400).json({ success: false, message: result.message });
-      }
-
-      return res.json({
-        success: true,
-        message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
-      });
-    } catch (error: any) {
-      console.error("[API Verification Resend Error]:", error?.message || error);
-      return res.status(500).json({ success: false, message: "حدث خطأ أثناء إعادة إرسال رمز التحقق" });
-    }
-  });
-
-  // ========================================================
-  // === Auth Sign-Up Flow Connected to Gmail Verification Service ===
-  // ========================================================
-
-  app.post("/api/auth/send-verification", async (req, res) => {
-    try {
-      const { email, password, name } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ error: "يرجى إدخال البريد الإلكتروني وكلمة المرور" });
-      }
-
-      const cleanEmail = email.trim().toLowerCase();
-      
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(cleanEmail)) {
-        return res.status(400).json({ error: "يرجى إدخال بريد إلكتروني صحيح يحتوي على @" });
-      }
-
-      if (password.length < 8 || password.length > 16) {
-        return res.status(400).json({ error: "كلمة المرور يجب أن تتكون من 8 إلى 16 حرفاً" });
-      }
-
-      const displayName = name?.trim() || cleanEmail.split('@')[0];
-
-      // Check if user exists in DB first
-      const existingInDb = await withDbRetry(() => db.select().from(users).where(eq(users.email, cleanEmail)));
-      if (existingInDb.length > 0) {
-        return res.status(400).json({ error: "هذا البريد الإلكتروني مسجل بالفعل. يمكنك تسجيل الدخول مباشرة." });
-      }
-
-      // Check Firebase Admin
+      let customToken: string | undefined;
       try {
-        let existingUser: any;
-        try {
-          existingUser = await adminAuth.getUserByEmail(cleanEmail);
-        } catch (e) {
-          // expect not found
-        }
-        if (existingUser) {
-          return res.status(400).json({ error: "هذا البريد الإلكتروني مسجل بالفعل. يمكنك تسجيل الدخول مباشرة." });
-        }
+        customToken = await adminAuth.createCustomToken(dbUser.uid);
       } catch (e) {
         // ignore
       }
 
-      // Send verification code using SendPulse Verification Service
+      return res.json({
+        sessionToken,
+        customToken,
+        user: toSafeUser(dbUser),
+      });
+    } catch (error: any) {
+      console.error('Login error:', error);
+      return res.status(500).json({ error: 'حدث خطأ أثناء تسجيل الدخول، يرجى المحاولة لاحقاً' });
+    }
+  });
+
+  /**
+   * POST /api/auth/send-verification
+   * Step 1 of Registration: Validates input, hashes candidate password, and sends 6-digit OTP.
+   */
+  app.post('/api/auth/send-verification', otpSendLimiter, async (req, res) => {
+    try {
+      const { email, password, name } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: 'البريد الإلكتروني وكلمة المرور مطلوبان' });
+      }
+
+      const cleanEmail = String(email).trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        return res.status(400).json({ error: 'صيغة البريد الإلكتروني غير صحيحة' });
+      }
+
+      if (typeof password !== 'string' || password.length < 8 || password.length > 16) {
+        return res.status(400).json({ error: 'كلمة المرور يجب أن تكون بين 8 و 16 حرفاً' });
+      }
+
+      // Check if user already exists
+      const existing = await withDbRetry(() =>
+        db.select({ id: users.id }).from(users).where(eq(users.email, cleanEmail)).limit(1)
+      );
+
+      if (existing.length > 0) {
+        return res.status(400).json({ error: 'هذا البريد الإلكتروني مسجل بالفعل، يرجى تسجيل الدخول' });
+      }
+
+      const displayName = typeof name === 'string' && name.trim() ? name.trim() : cleanEmail.split('@')[0];
       const result = await sendVerificationRequest(cleanEmail, displayName, password);
+
       if (!result.success) {
         return res.status(400).json({ error: result.message });
       }
 
       return res.json({
         success: true,
-        message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني بنجاح.",
+        message: result.message,
         email: cleanEmail,
       });
     } catch (error: any) {
-      console.error("Send verification error:", error);
-      return res.status(500).json({ error: error.message || "حدث خطأ أثناء إرسال رمز التحقق" });
+      console.error('Verification send error:', error);
+      return res.status(500).json({ error: 'فشل إرسال رمز التحقق، يرجى المحاولة لاحقاً' });
     }
   });
 
-  app.post("/api/auth/verify-code", async (req, res) => {
+  /**
+   * POST /api/auth/verify-code
+   * Step 2 of Registration: Verifies 6-digit OTP, creates the account, and returns authenticated session.
+   */
+  app.post('/api/auth/verify-code', otpVerifyLimiter, async (req, res) => {
     try {
       const { email, code } = req.body;
       if (!email || !code) {
-        return res.status(400).json({ error: "يرجى إدخال البريد الإلكتروني ورمز التحقق" });
+        return res.status(400).json({ error: 'البريد الإلكتروني ورمز التحقق مطلوبان' });
       }
 
-      const cleanEmail = email.trim().toLowerCase();
-      const cleanCode = code.toString().trim();
+      const cleanEmail = String(email).trim().toLowerCase();
+      const verification = await verifyEmailCode(cleanEmail, String(code));
 
-      const verifyResult = await verifyEmailCode(cleanEmail, cleanCode);
-      if (!verifyResult.verified) {
-        return res.status(400).json({ error: verifyResult.message });
+      if (!verification.success || !verification.verified) {
+        return res.status(400).json({ error: verification.message });
       }
 
-      const { payload } = verifyResult;
-      const name = payload?.name || cleanEmail.split('@')[0];
-      const password = payload?.password || '';
+      const payload = verification.payload;
+      const userName = payload?.name || cleanEmail.split('@')[0];
+      const passwordHash = payload?.passwordHash;
 
-      let uid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      let customToken = '';
-
+      // Ensure account created in Firebase Auth if available
+      let firebaseUid = `srv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       try {
-        const userRecord = await adminAuth.createUser({
-          email: cleanEmail,
-          password: password || undefined,
-          displayName: name,
-          emailVerified: true,
-        });
-        uid = userRecord.uid;
-        try {
-          customToken = await adminAuth.createCustomToken(userRecord.uid);
-        } catch (e) {
-          // ignore
+        const existingFb = await adminAuth.getUserByEmail(cleanEmail).catch(() => null);
+        if (existingFb) {
+          firebaseUid = existingFb.uid;
+        } else {
+          const newFb = await adminAuth.createUser({
+            email: cleanEmail,
+            displayName: userName,
+            emailVerified: true,
+          });
+          firebaseUid = newFb.uid;
         }
-      } catch (fbErr: any) {
-        // If user already existed in Firebase Auth (e.g. from previously deleted local account), clean it up and recreate
-        try {
-          const oldFbUser = await adminAuth.getUserByEmail(cleanEmail);
-          if (oldFbUser) {
-            await adminAuth.deleteUser(oldFbUser.uid);
-            const freshUserRecord = await adminAuth.createUser({
-              email: cleanEmail,
-              password: password || undefined,
-              displayName: name,
-              emailVerified: true,
-            });
-            uid = freshUserRecord.uid;
-            try {
-              customToken = await adminAuth.createCustomToken(freshUserRecord.uid);
-            } catch (e) {}
-          }
-        } catch (innerErr) {
-          // DB Auth engine fallback
-        }
+      } catch (e) {
+        // ignore
       }
 
+      // Save user to database with hashed password
       const dbUser = await getOrCreateUser(
-        uid,
+        firebaseUid,
         cleanEmail,
-        name,
-        undefined,
-        password
+        userName,
+        '/default-avatar.svg',
+        passwordHash
       );
 
       // Clear the temporary verification session
@@ -379,226 +338,153 @@ async function startServer() {
 
       const sessionToken = createServerSessionToken({
         uid: dbUser.uid,
-        email: cleanEmail,
+        email: dbUser.email,
         name: dbUser.name,
       });
 
+      let customToken: string | undefined;
+      try {
+        customToken = await adminAuth.createCustomToken(dbUser.uid);
+      } catch (e) {
+        // ignore
+      }
+
       return res.json({
-        customToken,
+        success: true,
         sessionToken,
-        user: {
-          uid: dbUser.uid,
-          email: cleanEmail,
-          displayName: dbUser.name,
-          name: dbUser.name,
-          avatar: dbUser.avatar,
-          role: dbUser.role,
-          isAdmin: dbUser.isAdmin,
-        },
+        customToken,
+        user: toSafeUser(dbUser),
       });
     } catch (error: any) {
-      console.error("Verify code error:", error);
-      return res.status(500).json({ error: error.message || "حدث خطأ أثناء التأكد من رمز التحقق" });
+      console.error('Verification code error:', error);
+      return res.status(500).json({ error: 'حدث خطأ أثناء إنشاء الحساب، يرجى المحاولة لاحقاً' });
     }
   });
 
-  app.post("/api/auth/resend-code", async (req, res) => {
+  /**
+   * POST /api/auth/resend-code
+   */
+  app.post('/api/auth/resend-code', otpSendLimiter, async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) {
-        return res.status(400).json({ error: "يرجى إدخال البريد الإلكتروني" });
+        return res.status(400).json({ error: 'البريد الإلكتروني مطلوب' });
       }
 
-      const cleanEmail = email.trim().toLowerCase();
+      const cleanEmail = String(email).trim().toLowerCase();
       const result = await resendVerificationRequest(cleanEmail);
 
       if (!result.success) {
         return res.status(400).json({ error: result.message });
       }
 
-      return res.json({
-        success: true,
-        message: "تم إعادة إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني.",
-      });
+      return res.json({ success: true, message: result.message });
     } catch (error: any) {
-      console.error("Resend code error:", error);
-      return res.status(500).json({ error: error.message || "حدث خطأ أثناء إعادة إرسال الرمز" });
+      console.error('Resend code error:', error);
+      return res.status(500).json({ error: 'فشل إعادة إرسال رمز التحقق' });
     }
   });
 
-  app.post("/api/auth/signup", async (req, res) => {
-    try {
-      const { email, password, name } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ error: "يرجى إدخال البريد الإلكتروني وكلمة المرور" });
-      }
-      if (password.length < 8 || password.length > 16) {
-        return res.status(400).json({ error: "كلمة المرور يجب أن تتكون من 8 إلى 16 حرفاً" });
-      }
-
-      const cleanEmail = email.trim().toLowerCase();
-      const displayName = name || cleanEmail.split('@')[0];
-
-      // Check if user exists in DB first
-      const existingInDb = await withDbRetry(() => db.select().from(users).where(eq(users.email, cleanEmail)));
-      if (existingInDb.length > 0) {
-        return res.status(400).json({ error: "هذا البريد الإلكتروني مسجل بالفعل. يمكنك تسجيل الدخول مباشرة." });
-      }
-
-      let uid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      let customToken = '';
-
-      // Try Firebase Admin
-      try {
-        let existingUser: any;
-        try {
-          existingUser = await adminAuth.getUserByEmail(cleanEmail);
-        } catch (e) {
-          // expect not found
-        }
-
-        if (existingUser) {
-          return res.status(400).json({ error: "هذا البريد الإلكتروني مسجل بالفعل. يمكنك تسجيل الدخول مباشرة." });
-        }
-
-        const userRecord = await adminAuth.createUser({
-          email: cleanEmail,
-          password: password,
-          displayName: displayName,
-          emailVerified: true
-        });
-
-        uid = userRecord.uid;
-        try {
-          customToken = await adminAuth.createCustomToken(userRecord.uid);
-        } catch (e) {
-          // ignore
-        }
-      } catch (fbErr: any) {
-        // Fallback to database user creation
-        console.log("[Auth] User account created via DB auth engine");
-      }
-
-      const dbUser = await getOrCreateUser(
-        uid,
-        cleanEmail,
-        displayName,
-        undefined,
-        password
-      );
-
-      const sessionToken = createServerSessionToken({
-        uid: dbUser.uid,
-        email: cleanEmail,
-        name: dbUser.name
-      });
-
-      return res.json({
-        customToken,
-        sessionToken,
-        user: {
-          uid: dbUser.uid,
-          email: cleanEmail,
-          displayName: dbUser.name,
-          name: dbUser.name,
-          avatar: dbUser.avatar,
-          role: dbUser.role,
-          isAdmin: dbUser.isAdmin
-        }
-      });
-    } catch (error: any) {
-      console.error("Signup error:", error);
-      const isDbErr = String(error?.message || error).includes('Failed query') || String(error?.message || error).includes('Connection terminated');
-      return res.status(500).json({ error: isDbErr ? "تعذر الاتصال بقاعدة البيانات، يرجى المحاولة مرة أخرى." : (error.message || "حدث خطأ أثناء إنشاء الحساب") });
-    }
+  /**
+   * POST /api/auth/signup (Legacy endpoint - Enforces email verification)
+   */
+  app.post('/api/auth/signup', (req, res) => {
+    return res.status(400).json({
+      error: 'التسجيل المباشر غير متاح. يرجى استخدام تدفق التحقق عبر البريد الإلكتروني (send-verification).',
+      requiresVerification: true,
+    });
   });
 
-  // === Authentication Sync ===
-  app.post("/api/auth/sync", requireAuth, async (req: AuthRequest, res) => {
+  /**
+   * POST /api/auth/sync
+   * Synchronizes third-party (e.g. Google Sign-In) authenticated tokens with local database.
+   */
+  app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
     try {
       const decodedToken = req.user!;
       const user = await getOrCreateUser(
         decodedToken.uid,
-        decodedToken.email || "",
-        decodedToken.name || "Unknown User",
+        decodedToken.email || '',
+        decodedToken.name || 'مستخدم',
         decodedToken.picture
       );
+
       const sessionToken = createServerSessionToken({
         uid: user.uid,
         email: user.email,
-        name: user.name
-      });
-      res.json({
-        sessionToken,
-        user: {
-          id: user.id,
-          uid: user.uid,
-          email: user.email,
-          displayName: user.name,
-          name: user.name,
-          avatar: user.avatar,
-          role: user.role,
-          isAdmin: user.isAdmin,
-          isActive: user.isActive,
-          permissions: user.permissions
-        }
-      });
-    } catch (error: any) {
-      console.error("Auth sync error:", error);
-      res.status(500).json({ error: "Failed to sync user" });
-    }
-  });
-
-  // === User Profile & Account Management ===
-  app.get("/api/user/profile", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const user = req.dbUser;
-      if (!user) return res.status(404).json({ error: "المستخدم غير موجود" });
-
-      const newsCount = await withDbRetry(() => db.select({ count: sql`count(*)` }).from(news).where(eq(news.authorId, user.id)));
-      const commentsCount = await withDbRetry(() => db.select({ count: sql`count(*)` }).from(comments).where(eq(comments.userId, user.id)));
-
-      res.json({
-        id: user.id,
-        uid: user.uid,
-        email: user.email,
         name: user.name,
-        avatar: user.avatar,
-        role: user.role,
-        isAdmin: user.isAdmin,
-        isActive: user.isActive,
-        permissions: user.permissions || [],
-        createdAt: user.createdAt,
-        newsCount: Number(newsCount[0]?.count || 0),
-        commentsCount: Number(commentsCount[0]?.count || 0)
+      });
+
+      return res.json({
+        sessionToken,
+        user: toSafeUser(user),
       });
     } catch (error: any) {
-      console.error("Error fetching user profile:", error);
-      res.status(500).json({ error: "فشل في جلب بيانات الملف الشخصي" });
+      console.error('Auth sync error:', error);
+      return res.status(500).json({ error: 'فشل في مزامنة بيانات المستخدم' });
     }
   });
 
-  app.put("/api/user/profile", requireAuth, async (req: AuthRequest, res) => {
+  // ==========================================
+  // USER PROFILE & ACCOUNT MANAGEMENT
+  // ==========================================
+
+  app.get('/api/user/profile', requireAuth, async (req: AuthRequest, res) => {
     try {
       const user = req.dbUser;
-      if (!user) return res.status(404).json({ error: "المستخدم غير موجود" });
+      if (!user) return res.status(404).json({ error: 'المستخدم غير موجود' });
+
+      const newsCount = await withDbRetry(() =>
+        db.select({ count: sql`count(*)` }).from(news).where(eq(news.authorId, user.id))
+      );
+      const commentsCount = await withDbRetry(() =>
+        db.select({ count: sql`count(*)` }).from(comments).where(eq(comments.userId, user.id))
+      );
+
+      const safe = toSafeUser(user);
+      return res.json({
+        ...safe,
+        newsCount: Number(newsCount[0]?.count || 0),
+        commentsCount: Number(commentsCount[0]?.count || 0),
+      });
+    } catch (error: any) {
+      console.error('Error fetching user profile:', error);
+      return res.status(500).json({ error: 'فشل في جلب بيانات الملف الشخصي' });
+    }
+  });
+
+  app.put('/api/user/profile', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const user = req.dbUser;
+      if (!user) return res.status(404).json({ error: 'المستخدم غير موجود' });
 
       const { name, avatar } = req.body;
-      const cleanName = (typeof name === 'string' && name.trim() !== '') ? name.trim() : user.name;
-      const cleanAvatar = (avatar !== undefined) ? (avatar && typeof avatar === 'string' && avatar.trim() !== '' ? avatar.trim() : null) : user.avatar;
+      const cleanName = typeof name === 'string' && name.trim() ? escapeHtml(name.trim()) : user.name;
+      const cleanAvatar =
+        avatar !== undefined
+          ? avatar && typeof avatar === 'string' && avatar.trim()
+            ? avatar.trim()
+            : null
+          : user.avatar;
 
-      const updated = await withDbRetry(() => db.update(users).set({
-        name: cleanName,
-        avatar: cleanAvatar
-      }).where(eq(users.id, user.id)).returning());
+      const updated = await withDbRetry(() =>
+        db
+          .update(users)
+          .set({
+            name: cleanName,
+            avatar: cleanAvatar,
+          })
+          .where(eq(users.id, user.id))
+          .returning()
+      );
 
       const updatedUser = updated[0];
 
-      // Try updating in Firebase Auth as well
+      // Update in Firebase Auth if available
       try {
         await adminAuth.updateUser(user.uid, {
           displayName: cleanName,
-          photoURL: cleanAvatar || undefined
+          photoURL: cleanAvatar || undefined,
         });
       } catch (e) {
         // ignore
@@ -607,67 +493,52 @@ async function startServer() {
       const sessionToken = createServerSessionToken({
         uid: updatedUser.uid,
         email: updatedUser.email,
-        name: updatedUser.name
+        name: updatedUser.name,
       });
 
-      res.json({
+      return res.json({
         sessionToken,
-        user: {
-          id: updatedUser.id,
-          uid: updatedUser.uid,
-          email: updatedUser.email,
-          displayName: updatedUser.name,
-          name: updatedUser.name,
-          avatar: updatedUser.avatar,
-          role: updatedUser.role,
-          isAdmin: updatedUser.isAdmin,
-          isActive: updatedUser.isActive,
-          permissions: updatedUser.permissions
-        }
+        user: toSafeUser(updatedUser),
       });
     } catch (error: any) {
-      console.error("Error updating user profile:", error);
-      res.status(500).json({ error: "فشل في تحديث بيانات الملف الشخصي" });
+      console.error('Error updating user profile:', error);
+      return res.status(500).json({ error: 'فشل في تحديث بيانات الملف الشخصي' });
     }
   });
 
   /**
-   * Permanently deletes a user from PostgreSQL, associated comments, activity logs,
-   * verification tokens, and Firebase Authentication.
+   * Permanently deletes a user record and cleans up associated references.
    */
   async function permanentlyDeleteUserRecord(user: { id: number; email?: string | null; uid?: string | null; role?: string | null }) {
     const cleanEmail = (user.email || '').trim().toLowerCase();
 
-    // 1. Delete comments made by user
+    // 1. Delete comments
     await withDbRetry(() => db.delete(comments).where(eq(comments.userId, user.id)));
 
     // 2. Delete activity logs
     await withDbRetry(() => db.delete(activityLogs).where(eq(activityLogs.userId, user.id)));
 
     // 3. Reassign news to superadmin or delete
-    const superAdmins = await withDbRetry(() => db.select().from(users).where(eq(users.role, 'superadmin')).limit(1));
+    const superAdmins = await withDbRetry(() =>
+      db.select().from(users).where(eq(users.role, 'superadmin')).limit(1)
+    );
+
     if (superAdmins.length > 0 && superAdmins[0].id !== user.id) {
       await withDbRetry(() => db.update(news).set({ authorId: superAdmins[0].id }).where(eq(news.authorId, user.id)));
     } else {
       await withDbRetry(() => db.delete(news).where(eq(news.authorId, user.id)));
     }
 
-    // 4. Delete verification records and sessions for this email
+    // 4. Delete verification records
     if (cleanEmail) {
       await withDbRetry(() => db.delete(emailVerifications).where(eq(emailVerifications.email, cleanEmail)));
       clearVerificationSession(cleanEmail);
     }
 
-    // 5. Delete user record from PostgreSQL
+    // 5. Delete user from database
     await withDbRetry(() => db.delete(users).where(eq(users.id, user.id)));
-    if (cleanEmail) {
-      await withDbRetry(() => db.delete(users).where(eq(users.email, cleanEmail)));
-    }
-    if (user.uid) {
-      await withDbRetry(() => db.delete(users).where(eq(users.uid, user.uid!)));
-    }
 
-    // 6. Delete from Firebase Auth if exists (by UID and by Email)
+    // 6. Delete from Firebase Auth
     if (user.uid) {
       try {
         await adminAuth.deleteUser(user.uid);
@@ -678,7 +549,7 @@ async function startServer() {
     if (cleanEmail) {
       try {
         const fbUser = await adminAuth.getUserByEmail(cleanEmail);
-        if (fbUser && fbUser.uid) {
+        if (fbUser?.uid) {
           await adminAuth.deleteUser(fbUser.uid);
         }
       } catch (e) {
@@ -687,26 +558,31 @@ async function startServer() {
     }
   }
 
-  app.delete("/api/user/account", requireAuth, async (req: AuthRequest, res) => {
+  app.delete('/api/user/account', requireAuth, async (req: AuthRequest, res) => {
     try {
       const user = req.dbUser;
-      if (!user) return res.status(404).json({ error: "المستخدم غير موجود" });
+      if (!user) return res.status(404).json({ error: 'المستخدم غير موجود' });
 
-      if (user.email === 'abod46071@gmail.com' || user.role === 'superadmin') {
-        return res.status(400).json({ error: "حساب مالك النظام الرئيسي والمدير العام محمي بالكامل ولا يمكن حذفه" });
+      const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
+      const isSuperAdmin = user.role === 'superadmin' || (!!superAdminEmail && user.email?.toLowerCase().trim() === superAdminEmail);
+
+      if (isSuperAdmin) {
+        return res.status(400).json({ error: 'حساب مالك النظام الرئيسي والمدير العام محمي بالكامل ولا يمكن حذفه' });
       }
 
       await permanentlyDeleteUserRecord(user);
-
-      res.json({ success: true, message: "تم حذف الحساب نهائياً من قاعدة البيانات بنجاح" });
+      return res.json({ success: true, message: 'تم حذف الحساب نهائياً بنجاح' });
     } catch (error: any) {
-      console.error("Error deleting user account:", error);
-      res.status(500).json({ error: error.message || "فشل في حذف الحساب" });
+      console.error('Error deleting user account:', error);
+      return res.status(500).json({ error: 'فشل في حذف الحساب' });
     }
   });
 
-  // === Categories ===
-  app.get("/api/categories", async (req, res) => {
+  // ==========================================
+  // CATEGORIES ROUTES
+  // ==========================================
+
+  app.get('/api/categories', async (req, res) => {
     try {
       const allCategories = await withDbRetry(async () => {
         let cats = await db.select().from(categories).orderBy(categories.name);
@@ -719,58 +595,70 @@ async function startServer() {
             { name: 'دوري روشن السعودي', slug: 'saudi-pro-league' },
             { name: 'دوري أبطال أوروبا', slug: 'champions-league' },
             { name: 'تحليلات وتكتيك', slug: 'tactics-and-analysis' },
-            { name: 'أخبار عاجلة', slug: 'breaking-news' }
+            { name: 'أخبار عاجلة', slug: 'breaking-news' },
           ];
           await db.insert(categories).values(defaultCats);
           cats = await db.select().from(categories).orderBy(categories.name);
         }
         return cats;
       });
-      res.json(allCategories);
+      return res.json(allCategories);
     } catch (error) {
-      console.error("Failed to fetch categories:", error);
-      res.status(500).json({ error: "Failed to fetch categories" });
+      console.error('Failed to fetch categories:', error);
+      return res.status(500).json({ error: 'فشل في جلب الأقسام' });
     }
   });
 
-  app.post("/api/categories", requirePermission("news_add"), async (req: AuthRequest, res) => {
+  app.post('/api/categories', requirePermission('news_add'), async (req: AuthRequest, res) => {
     try {
       const { name, slug } = req.body;
-      const result = await withDbRetry(() => db.insert(categories).values({ name, slug }).returning());
-      res.status(201).json(result[0]);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create category" });
+      if (!name || !slug) {
+        return res.status(400).json({ error: 'اسم القسم والاسم اللطيف مطلوبان' });
+      }
+      const cleanName = escapeHtml(String(name).trim());
+      const cleanSlug = String(slug).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+
+      const result = await withDbRetry(() =>
+        db.insert(categories).values({ name: cleanName, slug: cleanSlug }).returning()
+      );
+      return res.status(201).json(result[0]);
+    } catch (error: any) {
+      return res.status(500).json({ error: 'فشل في إنشاء القسم' });
     }
   });
 
-  // === News ===
-  app.get("/api/news", async (req, res) => {
+  // ==========================================
+  // NEWS ROUTES
+  // ==========================================
+
+  app.get('/api/news', async (req, res) => {
     try {
       const formattedNews = await withDbRetry(async () => {
-        const rows = await db.select({
-          id: news.id,
-          title: news.title,
-          excerpt: news.excerpt,
-          content: news.content,
-          image: news.image,
-          categoryId: news.categoryId,
-          authorId: news.authorId,
-          views: news.views,
-          isFeatured: news.isFeatured,
-          isBreaking: news.isBreaking,
-          status: news.status,
-          createdAt: news.createdAt,
-          updatedAt: news.updatedAt,
-          authorName: users.name,
-          authorAvatar: users.avatar,
-          categoryName: categories.name,
-          categorySlug: categories.slug
-        })
-        .from(news)
-        .leftJoin(users, eq(news.authorId, users.id))
-        .leftJoin(categories, eq(news.categoryId, categories.id))
-        .where(eq(news.status, 'published'))
-        .orderBy(desc(news.createdAt));
+        const rows = await db
+          .select({
+            id: news.id,
+            title: news.title,
+            excerpt: news.excerpt,
+            content: news.content,
+            image: news.image,
+            categoryId: news.categoryId,
+            authorId: news.authorId,
+            views: news.views,
+            isFeatured: news.isFeatured,
+            isBreaking: news.isBreaking,
+            status: news.status,
+            createdAt: news.createdAt,
+            updatedAt: news.updatedAt,
+            authorName: users.name,
+            authorAvatar: users.avatar,
+            categoryName: categories.name,
+            categorySlug: categories.slug,
+          })
+          .from(news)
+          .leftJoin(users, eq(news.authorId, users.id))
+          .leftJoin(categories, eq(news.categoryId, categories.id))
+          .where(eq(news.status, 'published'))
+          .orderBy(desc(news.createdAt));
 
         return rows.map((item) => ({
           id: item.id,
@@ -787,64 +675,66 @@ async function startServer() {
           createdAt: item.createdAt,
           updatedAt: item.updatedAt,
           author: item.authorName ? { id: item.authorId, name: item.authorName, avatar: item.authorAvatar } : null,
-          category: item.categoryName ? { id: item.categoryId, name: item.categoryName, slug: item.categorySlug } : null
+          category: item.categoryName ? { id: item.categoryId, name: item.categoryName, slug: item.categorySlug } : null,
         }));
       });
 
-      res.json(formattedNews);
+      return res.json(formattedNews);
     } catch (error) {
-      console.error("Failed to fetch news:", error);
-      res.status(500).json({ error: "Failed to fetch news" });
+      console.error('Failed to fetch news:', error);
+      return res.status(500).json({ error: 'فشل في جلب الأخبار' });
     }
   });
 
-  app.get("/api/news/:id", async (req, res) => {
+  app.get('/api/news/:id', async (req, res) => {
     try {
-      const id = parseInt(req.params.id as string);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid news ID" });
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف الخبر غير صحيح' });
 
       const article = await withDbRetry(async () => {
-        const rows = await db.select({
-          id: news.id,
-          title: news.title,
-          excerpt: news.excerpt,
-          content: news.content,
-          image: news.image,
-          categoryId: news.categoryId,
-          authorId: news.authorId,
-          views: news.views,
-          isFeatured: news.isFeatured,
-          isBreaking: news.isBreaking,
-          status: news.status,
-          createdAt: news.createdAt,
-          updatedAt: news.updatedAt,
-          authorName: users.name,
-          authorAvatar: users.avatar,
-          categoryName: categories.name,
-          categorySlug: categories.slug
-        })
-        .from(news)
-        .leftJoin(users, eq(news.authorId, users.id))
-        .leftJoin(categories, eq(news.categoryId, categories.id))
-        .where(eq(news.id, id))
-        .limit(1);
+        const rows = await db
+          .select({
+            id: news.id,
+            title: news.title,
+            excerpt: news.excerpt,
+            content: news.content,
+            image: news.image,
+            categoryId: news.categoryId,
+            authorId: news.authorId,
+            views: news.views,
+            isFeatured: news.isFeatured,
+            isBreaking: news.isBreaking,
+            status: news.status,
+            createdAt: news.createdAt,
+            updatedAt: news.updatedAt,
+            authorName: users.name,
+            authorAvatar: users.avatar,
+            categoryName: categories.name,
+            categorySlug: categories.slug,
+          })
+          .from(news)
+          .leftJoin(users, eq(news.authorId, users.id))
+          .leftJoin(categories, eq(news.categoryId, categories.id))
+          .where(eq(news.id, id))
+          .limit(1);
 
         if (rows.length === 0) return null;
         const row = rows[0];
 
-        const articleComments = await db.select({
-          id: comments.id,
-          content: comments.content,
-          newsId: comments.newsId,
-          userId: comments.userId,
-          createdAt: comments.createdAt,
-          userName: users.name,
-          userAvatar: users.avatar
-        })
-        .from(comments)
-        .leftJoin(users, eq(comments.userId, users.id))
-        .where(eq(comments.newsId, id))
-        .orderBy(desc(comments.createdAt));
+        const articleComments = await db
+          .select({
+            id: comments.id,
+            content: comments.content,
+            newsId: comments.newsId,
+            userId: comments.userId,
+            createdAt: comments.createdAt,
+            userName: users.name,
+            userAvatar: users.avatar,
+          })
+          .from(comments)
+          .leftJoin(users, eq(comments.userId, users.id))
+          .where(eq(comments.newsId, id))
+          .orderBy(desc(comments.createdAt));
 
         return {
           id: row.id,
@@ -862,132 +752,198 @@ async function startServer() {
           updatedAt: row.updatedAt,
           author: row.authorName ? { id: row.authorId, name: row.authorName, avatar: row.authorAvatar } : null,
           category: row.categoryName ? { id: row.categoryId, name: row.categoryName, slug: row.categorySlug } : null,
-          comments: articleComments.map(c => ({
+          comments: articleComments.map((c) => ({
             id: c.id,
             content: c.content,
             newsId: c.newsId,
             userId: c.userId,
             createdAt: c.createdAt,
-            user: c.userName ? { id: c.userId, name: c.userName, avatar: c.userAvatar } : null
-          }))
+            user: c.userName ? { id: c.userId, name: c.userName, avatar: c.userAvatar } : null,
+          })),
         };
       });
 
-      if (!article) return res.status(404).json({ error: "News not found" });
+      if (!article) return res.status(404).json({ error: 'الخبر غير موجود' });
+
+      // If draft, only author or admin can view
+      if (article.status === 'draft') {
+        const authHeader = req.headers.authorization;
+        let isAuthorizedViewer = false;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.split('Bearer ')[1]?.trim();
+          const decoded = verifyServerSessionToken(token);
+          if (decoded) {
+            const requester = await db.select().from(users).where(eq(users.uid, decoded.uid)).limit(1);
+            if (requester.length > 0) {
+              const u = requester[0];
+              if (u.role === 'admin' || u.role === 'superadmin' || u.id === article.authorId) {
+                isAuthorizedViewer = true;
+              }
+            }
+          }
+        }
+        if (!isAuthorizedViewer) {
+          return res.status(404).json({ error: 'الخبر غير متاح' });
+        }
+      }
 
       // Increment views count asynchronously
-      withDbRetry(() => db.update(news).set({ views: sql`${news.views} + 1` }).where(eq(news.id, id))).catch(console.error);
+      withDbRetry(() =>
+        db.update(news).set({ views: sql`${news.views} + 1` }).where(eq(news.id, id))
+      ).catch(() => {});
 
       return res.json(article);
     } catch (error) {
-      console.error("Failed to fetch news item:", error);
-      res.status(500).json({ error: "Failed to fetch news item" });
+      console.error('Failed to fetch news item:', error);
+      return res.status(500).json({ error: 'فشل في جلب تفاصيل الخبر' });
     }
   });
 
-  app.post("/api/news", requirePermission("news_add"), async (req: AuthRequest, res) => {
+  app.post('/api/news', requirePermission('news_add'), async (req: AuthRequest, res) => {
     try {
-      const user = await withDbRetry(() => db.select().from(users).where(eq(users.uid, req.user!.uid)));
-      if (user.length === 0) return res.status(403).json({ error: "User not synced" });
+      const user = req.dbUser;
+      if (!user) return res.status(403).json({ error: 'المستخدم غير متزامن' });
 
       const { title, content, image, isFeatured, isBreaking, status } = req.body;
+      if (!title || !content) {
+        return res.status(400).json({ error: 'عنوان ومحتوى الخبر مطلوبان' });
+      }
+
+      const cleanTitle = escapeHtml(String(title).trim());
+      const cleanContent = sanitizeContent(String(content).trim());
       const cleanImage = image && typeof image === 'string' && image.trim() !== '' ? image.trim() : null;
 
-      const result = await withDbRetry(() => db.insert(news)
-        .values({
-          title,
-          excerpt: null,
-          content,
-          image: cleanImage,
-          categoryId: null,
-          authorId: user[0].id,
-          isFeatured: !!isFeatured,
-          isBreaking: !!isBreaking,
-          status: status || 'published'
-        })
-        .returning()
+      const result = await withDbRetry(() =>
+        db
+          .insert(news)
+          .values({
+            title: cleanTitle,
+            excerpt: null,
+            content: cleanContent,
+            image: cleanImage,
+            categoryId: null,
+            authorId: user.id,
+            isFeatured: !!isFeatured,
+            isBreaking: !!isBreaking,
+            status: status === 'draft' ? 'draft' : 'published',
+          })
+          .returning()
       );
-      res.status(201).json(result[0]);
-    } catch (error) {
-      console.error("Failed to create news:", error);
-      res.status(500).json({ error: "Failed to create news" });
+
+      await logActivity(user.id, 'CREATE', 'NEWS', String(result[0].id), { title: cleanTitle });
+      return res.status(201).json(result[0]);
+    } catch (error: any) {
+      console.error('Failed to create news:', error);
+      return res.status(500).json({ error: 'فشل في إضافة الخبر' });
     }
   });
 
-  app.put("/api/news/:id", requirePermission("news_edit"), async (req: AuthRequest, res) => {
+  app.put('/api/news/:id', requirePermission('news_edit'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
       const { title, content, image, isFeatured, isBreaking, status } = req.body;
-      const cleanImage = image && typeof image === 'string' && image.trim() !== '' ? image.trim() : null;
+      const cleanTitle = title ? escapeHtml(String(title).trim()) : undefined;
+      const cleanContent = content ? sanitizeContent(String(content).trim()) : undefined;
+      const cleanImage = image !== undefined ? (image && typeof image === 'string' && image.trim() !== '' ? image.trim() : null) : undefined;
 
-      const result = await withDbRetry(() => db.update(news)
-        .set({
-          title,
-          excerpt: null,
-          content,
-          image: cleanImage,
-          categoryId: null,
-          isFeatured: !!isFeatured,
-          isBreaking: !!isBreaking,
-          status: status || 'published'
-        })
-        .where(eq(news.id, id))
-        .returning()
+      const result = await withDbRetry(() =>
+        db
+          .update(news)
+          .set({
+            ...(cleanTitle ? { title: cleanTitle } : {}),
+            ...(cleanContent ? { content: cleanContent } : {}),
+            ...(cleanImage !== undefined ? { image: cleanImage } : {}),
+            isFeatured: !!isFeatured,
+            isBreaking: !!isBreaking,
+            status: status === 'draft' ? 'draft' : 'published',
+            updatedAt: new Date(),
+          })
+          .where(eq(news.id, id))
+          .returning()
       );
-      if (result.length === 0) return res.status(404).json({ error: "News not found" });
-      res.json(result[0]);
-    } catch (error) {
-      console.error("Failed to update news:", error);
-      res.status(500).json({ error: "Failed to update news" });
+
+      if (result.length === 0) return res.status(404).json({ error: 'الخبر غير موجود' });
+      await logActivity(req.dbUser.id, 'UPDATE', 'NEWS', String(id), { title: result[0].title });
+      return res.json(result[0]);
+    } catch (error: any) {
+      console.error('Failed to update news:', error);
+      return res.status(500).json({ error: 'فشل في تعديل الخبر' });
     }
   });
 
-  app.delete("/api/news/:id", requirePermission("news_delete"), async (req: AuthRequest, res) => {
+  app.delete('/api/news/:id', requirePermission('news_delete'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      await withDbRetry(() => db.delete(comments).where(eq(comments.newsId, id)));
       await withDbRetry(() => db.delete(news).where(eq(news.id, id)));
-      res.status(204).send();
-    } catch (error) {
-      console.error("Failed to delete news:", error);
-      res.status(500).json({ error: "Failed to delete news" });
+
+      await logActivity(req.dbUser.id, 'DELETE', 'NEWS', String(id));
+      return res.status(204).send();
+    } catch (error: any) {
+      console.error('Failed to delete news:', error);
+      return res.status(500).json({ error: 'فشل في حذف الخبر' });
     }
   });
 
-  // === Comments ===
-  app.get("/api/news/:id/comments", async (req, res) => {
+  // ==========================================
+  // COMMENTS ROUTES
+  // ==========================================
+
+  app.get('/api/news/:id/comments', async (req, res) => {
     try {
-      const newsId = parseInt(req.params.id as string);
-      const articleComments = await withDbRetry(() => db.select().from(comments).where(eq(comments.newsId, newsId)).orderBy(desc(comments.createdAt)));
-      res.json(articleComments);
+      const newsId = parseInt(req.params.id as string, 10);
+      if (isNaN(newsId)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const articleComments = await withDbRetry(() =>
+        db.select().from(comments).where(eq(comments.newsId, newsId)).orderBy(desc(comments.createdAt))
+      );
+      return res.json(articleComments);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch comments" });
+      return res.status(500).json({ error: 'فشل في جلب التعليقات' });
     }
   });
 
-  app.post("/api/news/:id/comments", requireAuth, async (req: AuthRequest, res) => {
+  app.post('/api/news/:id/comments', commentsLimiter, requireAuth, async (req: AuthRequest, res) => {
     try {
-      const newsId = parseInt(req.params.id as string);
-      const user = await withDbRetry(() => db.select().from(users).where(eq(users.uid, req.user!.uid)));
-      if (user.length === 0) return res.status(403).json({ error: "User not synced" });
+      const newsId = parseInt(req.params.id as string, 10);
+      if (isNaN(newsId)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const user = req.dbUser;
+      if (!user) return res.status(403).json({ error: 'المستخدم غير متزامن' });
 
       const { content } = req.body;
-      const result = await withDbRetry(() => db.insert(comments)
-        .values({
-          content,
-          newsId,
-          userId: user[0].id,
-        })
-        .returning()
+      if (!content || typeof content !== 'string' || content.trim().length < 2 || content.trim().length > 1000) {
+        return res.status(400).json({ error: 'التعليق يجب أن يكون بين حرفين و 1000 حرف' });
+      }
+
+      const cleanContent = escapeHtml(content.trim());
+
+      const result = await withDbRetry(() =>
+        db
+          .insert(comments)
+          .values({
+            content: cleanContent,
+            newsId,
+            userId: user.id,
+          })
+          .returning()
       );
-      res.status(201).json(result[0]);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create comment" });
+
+      return res.status(201).json(result[0]);
+    } catch (error: any) {
+      return res.status(500).json({ error: 'فشل في إضافة التعليق' });
     }
   });
 
-  
-  // === Leagues ===
-  app.get("/api/leagues", async (req, res) => {
+  // ==========================================
+  // LEAGUES, STANDINGS & MATCHES
+  // ==========================================
+
+  app.get('/api/leagues', async (req, res) => {
     try {
       const allFreeLeagues = [
         { id: 'all', name: 'جميع الدوريات', logo: '🌐', flag: '🌐' },
@@ -1005,231 +961,39 @@ async function startServer() {
         { id: 'EC', name: 'بطولة أمم أوروبا', logo: 'https://crests.football-data.org/EC.png', flag: '🏆' },
         { id: 'WC', name: 'كأس العالم', logo: 'https://crests.football-data.org/WC.png', flag: '🌍' },
       ];
-      res.json(allFreeLeagues);
+      return res.json(allFreeLeagues);
     } catch (error) {
-      console.error("Error fetching leagues:", error);
-      res.status(500).json({ error: "Failed to fetch leagues" });
+      console.error('Error fetching leagues:', error);
+      return res.status(500).json({ error: 'فشل في جلب الدوريات' });
     }
   });
 
-  // === Standings ===
-  app.get("/api/standings", async (req, res) => {
+  app.get('/api/standings', async (req, res) => {
     try {
       const rawLeague = (req.query.league as string) || 'PD';
       const season = (req.query.season as string) || '2026';
       const standingsData = await getStoredStandings(String(rawLeague).toUpperCase(), season);
-      res.json(standingsData);
+      return res.json(standingsData);
     } catch (error) {
-      console.error("Error fetching standings:", error);
-      res.status(500).json({ error: "Failed to fetch standings" });
+      console.error('Error fetching standings:', error);
+      return res.status(500).json({ error: 'فشل في جلب جدول الترتيب' });
     }
   });
 
-  app.get("/api/standings/:leagueId", async (req, res) => {
+  app.get('/api/standings/:leagueId', async (req, res) => {
     try {
       let rawLeague = req.params.leagueId || (req.query.league as string) || 'PD';
       if (rawLeague === 'all') rawLeague = 'PD';
       const season = (req.query.season as string) || '2026';
       const standingsData = await getStoredStandings(String(rawLeague).toUpperCase(), season);
-      res.json(standingsData);
+      return res.json(standingsData);
     } catch (error) {
-      console.error("Error fetching standings:", error);
-      res.status(500).json({ error: "Failed to fetch standings" });
+      console.error('Error fetching standings:', error);
+      return res.status(500).json({ error: 'فشل في جلب جدول الترتيب' });
     }
   });
 
-  // === Sync Matches Endpoint ===
-  app.post("/api/sync-matches", async (req, res) => {
-    try {
-      await syncMatchesCycle();
-      res.json({ status: "ok", message: "Matches synced successfully and stored in DB" });
-    } catch (error: any) {
-      console.error("Error syncing matches:", error);
-      res.status(500).json({ error: error.message || "Failed to sync matches" });
-    }
-  });
-
-  // Helper: Match Importance Score for sorting top matches first
-  const TOP_TEAMS_KEYWORDS = [
-    'ريال مدريد', 'برشلونة', 'مانشستر سيتي', 'ليفربول', 'أرسنال', 'بايرن',
-    'باريس', 'أتلتيكو', 'إنتر', 'ميلان', 'يوفنتوس', 'تشيلسي', 'مانشستر يونايتد',
-    'دورتموند', 'Real Madrid', 'Barcelona', 'Manchester City', 'Liverpool',
-    'Arsenal', 'Bayern', 'Paris', 'Atletico', 'Inter', 'Milan', 'Juventus', 'Chelsea', 'Manchester United'
-  ];
-
-  const LEAGUE_WEIGHTS: Record<string, number> = {
-    'CL': 40, '2001': 40,
-    'PL': 35, '2021': 35,
-    'PD': 30, '2014': 30,
-    'SA': 25, '2019': 25,
-    'BL1': 25, '2002': 25,
-    'FL1': 20, '2015': 20,
-  };
-
-  function calculateMatchImportance(m: any): number {
-    let score = 0;
-    if (m.status === 'LIVE' || m.status === 'IN_PLAY') score += 100;
-    const code = m.leagueId || m.competition?.code || '';
-    score += LEAGUE_WEIGHTS[code] || 10;
-    const homeName = m.homeTeam?.name || '';
-    const awayName = m.awayTeam?.name || '';
-    const isHomeTop = TOP_TEAMS_KEYWORDS.some(k => homeName.includes(k));
-    const isAwayTop = TOP_TEAMS_KEYWORDS.some(k => awayName.includes(k));
-    if (isHomeTop && isAwayTop) score += 60;
-    else if (isHomeTop || isAwayTop) score += 30;
-    return score;
-  }
-
-  // === Matches ===
-
-  // Admin Dashboard Routes
-  app.get("/api/admin/stats", requirePermission(), async (req: AuthRequest, res) => {
-    try {
-      const statsData = await withDbRetry(async () => {
-        const newsCount = await db.select({ count: sql`count(*)` }).from(news);
-        const publishedCount = await db.select({ count: sql`count(*)` }).from(news).where(eq(news.status, 'published'));
-        const draftsCount = await db.select({ count: sql`count(*)` }).from(news).where(eq(news.status, 'draft'));
-        const usersCount = await db.select({ count: sql`count(*)` }).from(users);
-        const adminsCount = await db.select({ count: sql`count(*)` }).from(users).where(sql`role IN ('admin', 'superadmin')`);
-        
-        const latestNewsRows = await db.select({
-          id: news.id,
-          title: news.title,
-          status: news.status,
-          isFeatured: news.isFeatured,
-          isBreaking: news.isBreaking,
-          createdAt: news.createdAt,
-          authorName: users.name,
-          categoryName: categories.name
-        })
-        .from(news)
-        .leftJoin(users, eq(news.authorId, users.id))
-        .leftJoin(categories, eq(news.categoryId, categories.id))
-        .orderBy(desc(news.createdAt))
-        .limit(5);
-
-        const latestNews = latestNewsRows.map(n => ({
-          id: n.id,
-          title: n.title,
-          status: n.status,
-          isFeatured: n.isFeatured,
-          isBreaking: n.isBreaking,
-          createdAt: n.createdAt,
-          author: n.authorName ? { name: n.authorName } : null,
-          category: n.categoryName ? { name: n.categoryName } : null
-        }));
-        
-        const recentActivityRows = await db.select({
-          id: activityLogs.id,
-          userId: activityLogs.userId,
-          action: activityLogs.action,
-          entityType: activityLogs.entityType,
-          entityId: activityLogs.entityId,
-          details: activityLogs.details,
-          createdAt: activityLogs.createdAt,
-          userName: users.name
-        })
-        .from(activityLogs)
-        .leftJoin(users, eq(activityLogs.userId, users.id))
-        .orderBy(desc(activityLogs.createdAt))
-        .limit(10);
-
-        const recentActivity = recentActivityRows.map(a => ({
-          id: a.id,
-          userId: a.userId,
-          action: a.action,
-          targetType: a.entityType,
-          targetId: a.entityId,
-          details: a.details,
-          createdAt: a.createdAt,
-          user: a.userName ? { name: a.userName } : null
-        }));
-
-        return {
-          newsCount: Number(newsCount[0]?.count || 0),
-          publishedCount: Number(publishedCount[0]?.count || 0),
-          draftsCount: Number(draftsCount[0]?.count || 0),
-          usersCount: Number(usersCount[0]?.count || 0),
-          adminsCount: Number(adminsCount[0]?.count || 0),
-          latestNews,
-          recentActivity
-        };
-      });
-      
-      res.json(statsData);
-    } catch (e) {
-      console.error("Admin stats error:", e);
-      res.status(500).json({ error: true });
-    }
-  });
-  
-  app.get("/api/admin/users", requireAuth, async (req: AuthRequest, res) => {
-    if (req.dbUser?.role !== "superadmin") return res.status(403).json({ error: "Superadmin only" });
-    try {
-      const allUsers = await withDbRetry(() => db.select().from(users).orderBy(desc(users.createdAt)));
-      res.json(allUsers);
-    } catch (e) {
-      console.error("Admin users error:", e);
-      res.status(500).json({ error: true });
-    }
-  });
-  
-  app.put("/api/admin/users/:id", requireAuth, async (req: AuthRequest, res) => {
-    if (req.dbUser?.role !== "superadmin") return res.status(403).json({ error: "Superadmin only" });
-    try {
-      const targetUserId = parseInt(req.params.id as string);
-      const { role, permissions, isActive } = req.body;
-      
-      // Prevent changing superadmin / owner
-      const targetUserList = await withDbRetry(() => db.select().from(users).where(eq(users.id, targetUserId)));
-      if (!targetUserList.length) return res.status(404).json({ error: 'المستخدم غير موجود' });
-      const targetUser = targetUserList[0];
-      
-      if (targetUser.email === 'abod46071@gmail.com' || targetUser.role === 'superadmin') {
-        return res.status(400).json({ error: 'حساب مالك النظام والمدير العام الرئيسي محمي بالكامل ولا يمكن تعديل رتبته أو تعطيله' });
-      }
-      
-      const newRole = role || targetUser.role;
-      const newIsAdmin = newRole === 'admin' || newRole === 'superadmin';
-      
-      await withDbRetry(() => db.update(users).set({
-        role: newRole,
-        isAdmin: newIsAdmin,
-        permissions: permissions || targetUser.permissions,
-        isActive: isActive !== undefined ? isActive : targetUser.isActive
-      }).where(eq(users.id, targetUserId)));
-      
-      await logActivity(req.dbUser.id, 'UPDATE', 'USER', String(targetUserId), { role: newRole, permissions, isActive });
-      res.json({ success: true });
-    } catch (e) {
-      console.error("Admin user update error:", e);
-      res.status(500).json({ error: true });
-    }
-  });
-
-  app.delete("/api/admin/users/:id", requireAuth, async (req: AuthRequest, res) => {
-    if (req.dbUser?.role !== "superadmin") return res.status(403).json({ error: "Superadmin only" });
-    try {
-      const targetUserId = parseInt(req.params.id as string);
-      const targetUserList = await withDbRetry(() => db.select().from(users).where(eq(users.id, targetUserId)));
-      if (!targetUserList.length) return res.status(404).json({ error: 'المستخدم غير موجود' });
-      const targetUser = targetUserList[0];
-
-      if (targetUser.email === 'abod46071@gmail.com' || targetUser.role === 'superadmin') {
-        return res.status(400).json({ error: 'حساب مالك النظام والمدير العام الرئيسي محمي بالكامل ولا يمكن حذفه' });
-      }
-
-      await permanentlyDeleteUserRecord(targetUser);
-      await logActivity(req.dbUser.id, 'DELETE', 'USER', String(targetUserId), { email: targetUser.email, name: targetUser.name });
-      res.json({ success: true, message: 'تم حذف المستخدم نهائياً بنجاح' });
-    } catch (e) {
-      console.error("Admin user delete error:", e);
-      res.status(500).json({ error: true });
-    }
-  });
-
-
-  app.get("/api/matches", async (req, res) => {
+  app.get('/api/matches', async (req, res) => {
     try {
       const { status, date, leagueId, season, sortBy } = req.query;
       const targetSeason = (season as string) || '2026';
@@ -1243,74 +1007,234 @@ async function startServer() {
         sortBy: sortBy as string,
       });
 
-      res.json(formattedMatches);
+      return res.json(formattedMatches);
     } catch (error: any) {
-      console.error("Error fetching matches from DB:", error);
-      res.status(500).json({ error: true, message: error.message || "فشل في جلب المباريات من الخادم" });
+      console.error('Error fetching matches from DB:', error);
+      return res.status(500).json({ error: true, message: error.message || 'فشل في جلب المباريات من الخادم' });
     }
   });
 
-  // Ensure SuperAdmin user exists and password is set
-  async function ensureSuperAdminUser() {
-    const adminEmail = 'abod46071@gmail.com';
-    const adminPass = 'abod1234';
-    let adminUid = 'superadmin_abod46071';
-    try {
-      let userRecord;
-      try {
-        userRecord = await adminAuth.getUserByEmail(adminEmail);
-        await adminAuth.updateUser(userRecord.uid, { password: adminPass, displayName: 'عبدالله الراعي', emailVerified: true });
-        adminUid = userRecord.uid;
-        console.log(`[SuperAdmin] Password & profile updated for ${adminEmail}`);
-      } catch (err: any) {
-        if (err.code === 'auth/user-not-found') {
-          try {
-            userRecord = await adminAuth.createUser({
-              email: adminEmail,
-              password: adminPass,
-              displayName: 'عبدالله الراعي',
-              emailVerified: true
-            });
-            if (userRecord?.uid) adminUid = userRecord.uid;
-            console.log(`[SuperAdmin] Account created in Firebase for ${adminEmail}`);
-          } catch (createErr) {
-            console.log('[SuperAdmin] SuperAdmin account ensured via DB engine');
+  // Protected Match Sync Endpoint (Admin only or Cron Key, with concurrency lock)
+  let isSyncInProgress = false;
+
+  app.post('/api/sync-matches', matchSyncLimiter, async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET;
+    const reqSecret = req.headers['x-cron-secret'];
+
+    const hasCronAuth = !!cronSecret && reqSecret === cronSecret;
+    if (!hasCronAuth) {
+      // Require Admin session
+      let isAdmin = false;
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split('Bearer ')[1]?.trim();
+        const decoded = verifyServerSessionToken(token);
+        if (decoded) {
+          const userRec = await db.select().from(users).where(eq(users.uid, decoded.uid)).limit(1);
+          if (userRec.length > 0 && (userRec[0].role === 'admin' || userRec[0].role === 'superadmin')) {
+            isAdmin = true;
           }
-        } else {
-          console.log('[SuperAdmin] SuperAdmin account verified via DB engine');
         }
       }
-
-      const superAdminPermissions = ['news_add', 'news_edit', 'news_delete', 'news_publish', 'matches_manage', 'admin_manage'];
-      const dbUser = await getOrCreateUser(
-        adminUid,
-        adminEmail,
-        'عبدالله الراعي',
-        undefined,
-        adminPass
-      );
-      await db.update(users)
-        .set({ name: 'عبدالله الراعي', role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions, password: adminPass })
-        .where(eq(users.id, dbUser.id));
-      console.log(`[SuperAdmin] Superadmin user synchronized in DB for ${adminEmail}.`);
-    } catch (err) {
-      console.error(`[SuperAdmin] Failed to setup superadmin user for ${adminEmail}:`, err);
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'Forbidden: Admin authorization required for match synchronization' });
+      }
     }
+
+    if (isSyncInProgress) {
+      return res.status(429).json({ error: 'عملية مزامنة المباريات قيد التشغيل حالياً، يرجى الانتظار.' });
+    }
+
+    try {
+      isSyncInProgress = true;
+      await syncMatchesCycle();
+      return res.json({ status: 'ok', message: 'تمت مزامنة المباريات وتحديثها بنجاح' });
+    } catch (error: any) {
+      console.error('Error syncing matches:', error);
+      return res.status(500).json({ error: error.message || 'فشل في مزامنة المباريات' });
+    } finally {
+      isSyncInProgress = false;
+    }
+  });
+
+  // ==========================================
+  // ADMIN DASHBOARD ROUTES
+  // ==========================================
+
+  app.get('/api/admin/stats', requirePermission(), async (req: AuthRequest, res) => {
+    try {
+      const statsData = await withDbRetry(async () => {
+        const newsCount = await db.select({ count: sql`count(*)` }).from(news);
+        const publishedCount = await db.select({ count: sql`count(*)` }).from(news).where(eq(news.status, 'published'));
+        const draftsCount = await db.select({ count: sql`count(*)` }).from(news).where(eq(news.status, 'draft'));
+        const usersCount = await db.select({ count: sql`count(*)` }).from(users);
+        const adminsCount = await db.select({ count: sql`count(*)` }).from(users).where(sql`role IN ('admin', 'superadmin')`);
+
+        const latestNewsRows = await db
+          .select({
+            id: news.id,
+            title: news.title,
+            status: news.status,
+            isFeatured: news.isFeatured,
+            isBreaking: news.isBreaking,
+            createdAt: news.createdAt,
+            authorName: users.name,
+            categoryName: categories.name,
+          })
+          .from(news)
+          .leftJoin(users, eq(news.authorId, users.id))
+          .leftJoin(categories, eq(news.categoryId, categories.id))
+          .orderBy(desc(news.createdAt))
+          .limit(5);
+
+        const latestNews = latestNewsRows.map((n) => ({
+          id: n.id,
+          title: n.title,
+          status: n.status,
+          isFeatured: n.isFeatured,
+          isBreaking: n.isBreaking,
+          createdAt: n.createdAt,
+          author: n.authorName ? { name: n.authorName } : null,
+          category: n.categoryName ? { name: n.categoryName } : null,
+        }));
+
+        const recentActivityRows = await db
+          .select({
+            id: activityLogs.id,
+            userId: activityLogs.userId,
+            action: activityLogs.action,
+            entityType: activityLogs.entityType,
+            entityId: activityLogs.entityId,
+            details: activityLogs.details,
+            createdAt: activityLogs.createdAt,
+            userName: users.name,
+          })
+          .from(activityLogs)
+          .leftJoin(users, eq(activityLogs.userId, users.id))
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(10);
+
+        const recentActivity = recentActivityRows.map((a) => ({
+          id: a.id,
+          userId: a.userId,
+          action: a.action,
+          targetType: a.entityType,
+          targetId: a.entityId,
+          details: a.details,
+          createdAt: a.createdAt,
+          user: a.userName ? { name: a.userName } : null,
+        }));
+
+        return {
+          newsCount: Number(newsCount[0]?.count || 0),
+          publishedCount: Number(publishedCount[0]?.count || 0),
+          draftsCount: Number(draftsCount[0]?.count || 0),
+          usersCount: Number(usersCount[0]?.count || 0),
+          adminsCount: Number(adminsCount[0]?.count || 0),
+          latestNews,
+          recentActivity,
+        };
+      });
+
+      return res.json(statsData);
+    } catch (e) {
+      console.error('Admin stats error:', e);
+      return res.status(500).json({ error: true });
+    }
+  });
+
+  app.get('/api/admin/users', requirePermission('admin_manage'), async (req: AuthRequest, res) => {
+    try {
+      const allUsers = await withDbRetry(() => db.select().from(users).orderBy(desc(users.createdAt)));
+      const safeUsers = allUsers.map(toSafeUser);
+      return res.json(safeUsers);
+    } catch (e) {
+      console.error('Admin users error:', e);
+      return res.status(500).json({ error: true });
+    }
+  });
+
+  app.put('/api/admin/users/:id', requirePermission('admin_manage'), async (req: AuthRequest, res) => {
+    try {
+      const targetUserId = parseInt(req.params.id as string, 10);
+      if (isNaN(targetUserId)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const { role, permissions, isActive } = req.body;
+
+      const targetUserList = await withDbRetry(() => db.select().from(users).where(eq(users.id, targetUserId)));
+      if (!targetUserList.length) return res.status(404).json({ error: 'المستخدم غير موجود' });
+      const targetUser = targetUserList[0];
+
+      const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
+      const isTargetSuperAdmin = targetUser.role === 'superadmin' || (!!superAdminEmail && targetUser.email?.toLowerCase().trim() === superAdminEmail);
+
+      // Only superadmin can modify a superadmin or elevate anyone to superadmin
+      const isRequesterSuperAdmin = req.dbUser.role === 'superadmin' || (!!superAdminEmail && req.dbUser.email?.toLowerCase().trim() === superAdminEmail);
+
+      if (isTargetSuperAdmin && !isRequesterSuperAdmin) {
+        return res.status(403).json({ error: 'لا يمكن تعديل حساب المدير العام الرئيسي إلا من خلاله' });
+      }
+
+      if (role === 'superadmin' && !isRequesterSuperAdmin) {
+        return res.status(403).json({ error: 'فقط المدير العام يمكنه تعيين مدراء عامين' });
+      }
+
+      const newRole = role || targetUser.role;
+      const newIsAdmin = newRole === 'admin' || newRole === 'superadmin';
+
+      await withDbRetry(() =>
+        db
+          .update(users)
+          .set({
+            role: newRole,
+            isAdmin: newIsAdmin,
+            permissions: permissions || targetUser.permissions,
+            isActive: isActive !== undefined ? isActive : targetUser.isActive,
+          })
+          .where(eq(users.id, targetUserId))
+      );
+
+      await logActivity(req.dbUser.id, 'UPDATE', 'USER', String(targetUserId), { role: newRole, permissions, isActive });
+      return res.json({ success: true });
+    } catch (e) {
+      console.error('Admin user update error:', e);
+      return res.status(500).json({ error: true });
+    }
+  });
+
+  app.delete('/api/admin/users/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
+    try {
+      const targetUserId = parseInt(req.params.id as string, 10);
+      if (isNaN(targetUserId)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const targetUserList = await withDbRetry(() => db.select().from(users).where(eq(users.id, targetUserId)));
+      if (!targetUserList.length) return res.status(404).json({ error: 'المستخدم غير موجود' });
+      const targetUser = targetUserList[0];
+
+      const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
+      if (targetUser.role === 'superadmin' || (!!superAdminEmail && targetUser.email?.toLowerCase().trim() === superAdminEmail)) {
+        return res.status(400).json({ error: 'حساب مالك النظام والمدير العام الرئيسي محمي بالكامل ولا يمكن حذفه' });
+      }
+
+      await permanentlyDeleteUserRecord(targetUser);
+      await logActivity(req.dbUser.id, 'DELETE', 'USER', String(targetUserId), { email: targetUser.email, name: targetUser.name });
+      return res.json({ success: true, message: 'تم حذف المستخدم نهائياً بنجاح' });
+    } catch (e) {
+      console.error('Admin user delete error:', e);
+      return res.status(500).json({ error: true });
+    }
+  });
+
+  // Start Cron Jobs (Background sync for matches & standings)
+  if (process.env.NODE_ENV !== 'test') {
+    startCronJobs();
   }
 
-  ensureSuperAdminUser().catch(console.error);
-
-  // Start Cron Jobs
-  if (process.env.NODE_ENV !== "test") {
-     startCronJobs();
-  }
-
-  // Vite middleware for development
-
-  console.log("NODE_ENV IS:", process.env.NODE_ENV); if (process.env.NODE_ENV !== "production") {
+  // Vite middleware for development & SPA serving in production
+  if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
@@ -1323,15 +1247,15 @@ async function startServer() {
 
   // Global API error handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error("Unhandled API error:", err);
+    console.error('Unhandled API error:', err);
     if (res.headersSent) {
       return next(err);
     }
-    res.status(500).json({ error: true, message: err?.message || "Internal server error" });
+    return res.status(500).json({ error: true, message: 'حدث خطأ في الخادم' });
   });
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[KoraNews Server] Running smoothly on http://0.0.0.0:${PORT}`);
   });
 }
 
