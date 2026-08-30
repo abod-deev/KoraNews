@@ -116,45 +116,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Firebase auth state listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        try {
-          const idToken = await currentUser.getIdToken();
-          // Sync user with backend to ensure DB user & session are up-to-date
-          const syncRes = await fetch('/api/auth/sync', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${idToken}`
-            }
-          });
-          if (syncRes.ok) {
-            const syncData = await syncRes.json();
-            if (syncData.sessionToken && syncData.user) {
-              saveSession(syncData.sessionToken, syncData.user);
-            }
-          }
-        } catch (error) {
-          console.error("Failed to sync user with backend:", error);
-        }
-      } else {
-        const savedToken = localStorage.getItem('srv_session_token');
-        const savedUser = localStorage.getItem('srv_session_user');
-        if (savedToken && savedUser) {
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (currentUser) => {
+        if (currentUser) {
           try {
-            const parsed = JSON.parse(savedUser);
-            setUser(parsed);
-            setToken(savedToken);
-          } catch (e) {
+            const idToken = await currentUser.getIdToken();
+            // Sync user with backend to ensure DB user & session are up-to-date
+            const syncRes = await fetch('/api/auth/sync', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${idToken}`
+              }
+            });
+            if (syncRes.ok) {
+              const syncData = await syncRes.json();
+              if (syncData.sessionToken && syncData.user) {
+                saveSession(syncData.sessionToken, syncData.user);
+              }
+            }
+          } catch (error) {
+            console.error("Failed to sync user with backend:", error);
+          }
+        } else {
+          const savedToken = localStorage.getItem('srv_session_token');
+          const savedUser = localStorage.getItem('srv_session_user');
+          if (savedToken && savedUser) {
+            try {
+              const parsed = JSON.parse(savedUser);
+              setUser(parsed);
+              setToken(savedToken);
+            } catch (e) {
+              setUser(null);
+              setToken(null);
+            }
+          } else {
             setUser(null);
             setToken(null);
           }
-        } else {
-          setUser(null);
-          setToken(null);
         }
+        setLoading(false);
+      },
+      (error) => {
+        const msg = error?.message || String(error);
+        if (msg.includes('Database is closing') || msg.includes('closing') || msg.includes('hidden') || msg.includes('indexedDB')) {
+          console.warn('[Auth] Handled background persistence state:', msg);
+        } else {
+          console.warn('[Auth] Auth state error:', msg);
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    );
 
     return () => unsubscribe();
   }, []);

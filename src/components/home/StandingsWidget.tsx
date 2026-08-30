@@ -19,7 +19,7 @@ export default function StandingsWidget() {
 
   useEffect(() => {
     setLoading(true);
-    getStandings(selectedLeague)
+    getStandings(selectedLeague, '2026')
       .then(data => setStandings(data || []))
       .catch(err => console.warn('Error fetching standings widget:', err))
       .finally(() => setLoading(false));
@@ -34,6 +34,9 @@ export default function StandingsWidget() {
           <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 shrink-0" />
           <span>ترتيب {currentLeagueObj.fullName}</span>
         </h2>
+        <span className="text-[10px] font-bold text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full border border-gray-200/60 dark:border-gray-700/60">
+          2026 / 2027
+        </span>
       </div>
 
       {/* League Selection Tabs */}
@@ -62,8 +65,14 @@ export default function StandingsWidget() {
           <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-brand" />
         </div>
       ) : standings.length === 0 ? (
-        <div className="text-center py-6 text-xs text-gray-500">
-          لا توجد بيانات ترتيب حالية لهذه البطولة.
+        <div className="text-center py-6 px-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 my-2">
+          <Trophy className="w-6 h-6 text-amber-500/80 mx-auto mb-1.5" />
+          <p className="text-xs font-bold text-gray-800 dark:text-gray-200 mb-0.5">
+            لم تبدأ منافسات {currentLeagueObj.name} لموسم 2026/2027 بعد
+          </p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+            سيتم عرض وتحديث جدول الترتيب تلقائياً فور انطلاق مباريات الجولة الأولى.
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto -mx-1 sm:mx-0">

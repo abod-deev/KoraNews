@@ -39,8 +39,8 @@ export default function LeagueDetails() {
 
     Promise.all([
       getLeagues().then(ls => ls.find(l => l.id.toUpperCase() === upperId) || null).catch(() => null),
-      getStandings(upperId).catch(() => []),
-      getMatches(undefined, undefined, upperId).catch(() => [])
+      getStandings(upperId, '2026').catch(() => []),
+      getMatches(undefined, undefined, upperId, '2026').catch(() => [])
     ]).then(([l, s, m]) => {
       const fallbackLeague: League = l || {
         id: upperId,
@@ -77,18 +77,23 @@ export default function LeagueDetails() {
   return (
     <div className="w-full animate-in fade-in duration-500 space-y-6 sm:space-y-8 max-w-full">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 bg-white dark:bg-gray-900 p-4 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
-        <div className="w-16 h-16 sm:w-24 sm:h-24 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center p-3 sm:p-4 shadow-sm border border-gray-100 dark:border-gray-700 shrink-0">
-          <img loading="lazy" src={league.logo} alt={league.name} className="w-full h-full object-contain" />
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 bg-white dark:bg-gray-900 p-4 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 text-center sm:text-right">
+          <div className="w-16 h-16 sm:w-24 sm:h-24 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center p-3 sm:p-4 shadow-sm border border-gray-100 dark:border-gray-700 shrink-0">
+            <img loading="lazy" src={league.logo} alt={league.name} className="w-full h-full object-contain" />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-3xl font-extrabold text-gray-900 dark:text-white mb-1">{league.name}</h1>
+            <p className="text-xs sm:text-sm text-gray-500 font-medium">الأخبار، الترتيب والمباريات</p>
+          </div>
         </div>
-        <div className="text-center sm:text-right">
-          <h1 className="text-xl sm:text-3xl font-extrabold text-gray-900 dark:text-white mb-1">{league.name}</h1>
-          <p className="text-xs sm:text-sm text-gray-500 font-medium">الأخبار، الترتيب والمباريات</p>
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-brand/10 border border-brand/20 text-brand rounded-full text-xs font-bold shrink-0">
+          <span>الموسم الحالي: 2026 / 2027</span>
         </div>
       </div>
 
       {/* Visual Analytics Section with Recharts */}
-      {standings.length > 0 && (
+      {standings.length > 0 && standings.some(s => s.played > 0) && (
         <TeamStatsChart standings={standings} />
       )}
 
@@ -96,50 +101,70 @@ export default function LeagueDetails() {
         
         {/* Standings */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm">
-          <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex items-center gap-2.5">
-            <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" />
-            <h2 className="font-extrabold text-lg sm:text-xl text-gray-900 dark:text-white">جدول الترتيب</h2>
+          <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" />
+              <h2 className="font-extrabold text-lg sm:text-xl text-gray-900 dark:text-white">جدول الترتيب</h2>
+            </div>
+            <span className="text-xs font-bold text-gray-500">2026 / 2027</span>
           </div>
-          <div className="overflow-x-auto no-scrollbar">
-            <table className="w-full text-xs sm:text-sm text-right">
-              <thead className="text-[11px] sm:text-xs text-gray-500 bg-gray-50 dark:bg-gray-800/60 font-extrabold uppercase">
-                <tr>
-                  <th className="px-2.5 sm:px-5 py-3 text-center">المركز</th>
-                  <th className="px-2 sm:px-4 py-3">الفريق</th>
-                  <th className="px-2 sm:px-3 py-3 text-center">لعب</th>
-                  <th className="px-2 sm:px-3 py-3 text-center text-emerald-600 dark:text-emerald-400">فاز</th>
-                  <th className="px-2 sm:px-3 py-3 text-center text-amber-600 dark:text-amber-400">تعادل</th>
-                  <th className="px-2 sm:px-3 py-3 text-center text-rose-600 dark:text-rose-400">خسر</th>
-                  <th className="px-2 sm:px-3 py-3 text-center">ف.أ</th>
-                  <th className="px-2.5 sm:px-5 py-3 text-center font-black text-brand">النقاط</th>
-                </tr>
-              </thead>
-              <tbody>
-                {standings.map((team, idx) => (
-                  <tr key={`${team.id || team.team?.id || idx}-${idx}`} className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                    <td className="px-2.5 sm:px-5 py-3 font-bold text-gray-900 dark:text-white text-center">
-                      <span className={`w-5 h-5 sm:w-7 sm:h-7 rounded-full inline-flex items-center justify-center font-bold text-[10px] sm:text-xs ${team.rank <= 4 ? 'bg-brand text-white shadow-xs' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
-                        {team.rank}
-                      </span>
-                    </td>
-                    <td className="px-2 sm:px-4 py-3 font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                      <img loading="lazy" src={team.team.logo} alt={team.team.name} className="w-5 h-5 sm:w-7 sm:h-7 object-contain shrink-0" />
-                      <span className="truncate max-w-[90px] sm:max-w-none">{getArabicTeamName(team.team.name)}</span>
-                    </td>
-                    <td className="px-2 sm:px-3 py-3 text-center font-medium text-gray-500 text-xs">{team.played}</td>
-                    <td className="px-2 sm:px-3 py-3 text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs">{team.won}</td>
-                    <td className="px-2 sm:px-3 py-3 text-center font-bold text-amber-600 dark:text-amber-400 text-xs">{team.drawn}</td>
-                    <td className="px-2 sm:px-3 py-3 text-center font-bold text-rose-600 dark:text-rose-400 text-xs">{team.lost}</td>
-                    <td className="px-2 sm:px-3 py-3 text-center font-medium text-gray-600 dark:text-gray-400 text-xs" dir="ltr">{team.goalDifference > 0 ? `+${team.goalDifference}` : team.goalDifference}</td>
-                    <td className="px-2.5 sm:px-5 py-3 text-center font-black text-brand text-xs sm:text-base">{team.points}</td>
+
+          {standings.length > 0 ? (
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full text-xs sm:text-sm text-right">
+                <thead className="text-[11px] sm:text-xs text-gray-500 bg-gray-50 dark:bg-gray-800/60 font-extrabold uppercase">
+                  <tr>
+                    <th className="px-2.5 sm:px-5 py-3 text-center">المركز</th>
+                    <th className="px-2 sm:px-4 py-3">الفريق</th>
+                    <th className="px-2 sm:px-3 py-3 text-center">لعب</th>
+                    <th className="px-2 sm:px-3 py-3 text-center text-emerald-600 dark:text-emerald-400">فاز</th>
+                    <th className="px-2 sm:px-3 py-3 text-center text-amber-600 dark:text-amber-400">تعادل</th>
+                    <th className="px-2 sm:px-3 py-3 text-center text-rose-600 dark:text-rose-400">خسر</th>
+                    <th className="px-2 sm:px-3 py-3 text-center">ف.أ</th>
+                    <th className="px-2.5 sm:px-5 py-3 text-center font-black text-brand">النقاط</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {standings.length === 0 && (
-              <div className="p-8 text-center text-gray-500 text-xs sm:text-sm">لا يتوفر ترتيب لهذه البطولة</div>
-            )}
-          </div>
+                </thead>
+                <tbody>
+                  {standings.map((team, idx) => (
+                    <tr key={`${team.id || team.team?.id || idx}-${idx}`} className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <td className="px-2.5 sm:px-5 py-3 font-bold text-gray-900 dark:text-white text-center">
+                        <span className={`w-5 h-5 sm:w-7 sm:h-7 rounded-full inline-flex items-center justify-center font-bold text-[10px] sm:text-xs ${team.rank <= 4 ? 'bg-brand text-white shadow-xs' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                          {team.rank}
+                        </span>
+                      </td>
+                      <td className="px-2 sm:px-4 py-3 font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                        <img loading="lazy" src={team.team.logo} alt={team.team.name} className="w-5 h-5 sm:w-7 sm:h-7 object-contain shrink-0" />
+                        <span className="truncate max-w-[90px] sm:max-w-none">{getArabicTeamName(team.team.name)}</span>
+                      </td>
+                      <td className="px-2 sm:px-3 py-3 text-center font-medium text-gray-500 text-xs">{team.played}</td>
+                      <td className="px-2 sm:px-3 py-3 text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs">{team.won}</td>
+                      <td className="px-2 sm:px-3 py-3 text-center font-bold text-amber-600 dark:text-amber-400 text-xs">{team.drawn}</td>
+                      <td className="px-2 sm:px-3 py-3 text-center font-bold text-rose-600 dark:text-rose-400 text-xs">{team.lost}</td>
+                      <td className="px-2 sm:px-3 py-3 text-center font-medium text-gray-600 dark:text-gray-400 text-xs" dir="ltr">{team.goalDifference > 0 ? `+${team.goalDifference}` : team.goalDifference}</td>
+                      <td className="px-2.5 sm:px-5 py-3 text-center font-black text-brand text-xs sm:text-base">{team.points}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-8 sm:p-12 text-center flex flex-col items-center justify-center space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center border border-amber-200/60 dark:border-amber-900/40">
+                <Trophy className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">
+                  لم تبدأ منافسات {league.name} لموسم 2026/2027 بعد
+                </h3>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                  لم تنطلق مباريات البطولة لموسم 2026/2027 حتى الآن. سيتم نشر وتحديث جدول الترتيب والمجموعات والإحصائيات تلقائياً فور انطلاق الجولة الأولى.
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-xs font-semibold">
+                <span>موسم 2026 / 2027</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sidebar - Recent/Upcoming Matches */}
@@ -153,7 +178,11 @@ export default function LeagueDetails() {
               {matches.length > 0 ? matches.map((match, idx) => (
                 <MatchCard key={match.id} match={match} index={idx} />
               )) : (
-                <div className="text-center text-gray-500 py-6 text-sm">لا توجد مباريات متاحة حالياً</div>
+                <div className="text-center text-gray-500 py-8 px-4 text-xs sm:text-sm bg-gray-50/50 dark:bg-gray-800/20 rounded-xl border border-dashed border-gray-200 dark:border-gray-800">
+                  <CalendarIcon className="w-8 h-8 mx-auto mb-2 text-gray-400 opacity-60" />
+                  <p className="font-bold text-gray-700 dark:text-gray-300 mb-1">لا توجد مباريات مجدولة حالياً</p>
+                  <p className="text-[11px] text-gray-400">سيتم إضافة جدول المباريات ومواعيدها فور اعتماد جدول الموسم 2026/2027</p>
+                </div>
               )}
             </div>
           </div>

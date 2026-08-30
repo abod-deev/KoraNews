@@ -1,9 +1,9 @@
 import { db, withDbRetry } from "../db/index.ts";
 import { matches, teams, leagues, standingsCache } from "../db/schema.ts";
-import { eq, sql, lt, desc } from "drizzle-orm";
+import { eq, sql, lt, desc, and } from "drizzle-orm";
 import { fetchFromFootballData, RateLimitError } from "./footballApi.ts";
 import { getArabicTeamName, translateTeamName, TEAM_AR_NAMES } from "../utils/teamTranslations.ts";
-import { PRE_STORED_LEAGUES, PRE_STORED_STANDINGS, PRE_STORED_MATCHES_TEMPLATE, SeedMatchItem } from "./seedData.ts";
+import { PRE_STORED_LEAGUES, PRE_STORED_STANDINGS, PRE_STORED_MATCHES_TEMPLATE, type SeedMatchItem } from "./seedData.ts";
 
 export { getArabicTeamName, translateTeamName, TEAM_AR_NAMES };
 
@@ -174,23 +174,25 @@ export async function initFootballDb() {
       }
     }
 
-    // 2. Seed / ensure standings for ALL 13 leagues in DB & memory cache
+    // 2. Seed / ensure standings for ALL 13 leagues in DB & memory cache for 2026/2027 season
     for (const [leagueCode, standingsList] of Object.entries(PRE_STORED_STANDINGS)) {
       // Put in memory cache immediately
-      if (!memoryStandingsCache.has(leagueCode)) {
-        memoryStandingsCache.set(leagueCode, { data: standingsList, timestamp: Date.now() });
-      }
+      memoryStandingsCache.set(leagueCode, { data: standingsList, timestamp: Date.now() });
 
-      // Check DB
-      const existingStanding = await db.select().from(standingsCache).where(eq(standingsCache.leagueId, leagueCode)).catch(() => []);
-      if (existingStanding.length === 0) {
-        await db.insert(standingsCache).values({
-          leagueId: leagueCode,
-          season: '2026',
+      // Upsert DB for season 2026
+      await db.insert(standingsCache).values({
+        leagueId: leagueCode,
+        season: '2026',
+        data: standingsList,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: standingsCache.leagueId,
+        set: {
           data: standingsList,
+          season: '2026',
           updatedAt: new Date(),
-        }).catch(() => null);
-      }
+        }
+      }).catch(() => null);
 
       // Ensure all teams from standings are in teams table
       for (const item of standingsList) {
@@ -207,55 +209,59 @@ export async function initFootballDb() {
       }
     }
 
-    // 3. Seed / ensure comprehensive matches in DB
-    const existingMatches = await db.select().from(matches).limit(10).catch(() => []);
-    if (existingMatches.length < 5) {
-      console.log("[footballService] Pre-populating matches table with complete schedule across all 13 leagues...");
-      const now = new Date();
+    // 3. Seed / ensure comprehensive matches in DB across all 13 leagues
+    console.log("[footballService] Ensuring complete match schedules across all leagues (including CL)...");
+    const now = new Date();
 
-      for (const tpl of PRE_STORED_MATCHES_TEMPLATE) {
-        try {
-          // Ensure home and away teams in teams table
-          for (const teamObj of [tpl.homeTeam, tpl.awayTeam]) {
-            const teamCheck = await db.select().from(teams).where(eq(teams.id, teamObj.id)).catch(() => []);
-            if (teamCheck.length === 0) {
-              await db.insert(teams).values({
-                id: teamObj.id,
-                name: teamObj.name,
-                logo: teamObj.logo,
-              }).catch(() => null);
-            }
-          }
-
-          // Calculate realistic match date/time
-          const matchDate = new Date(now);
-          matchDate.setDate(now.getDate() + tpl.dateOffsetDays);
-          matchDate.setUTCHours(tpl.hourUtc, tpl.minuteUtc, 0, 0);
-
-          let matchTimeStr = tpl.matchTime;
-          if (tpl.status === 'SCHEDULED') {
-            matchTimeStr = matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-          }
-
-          const existingM = await db.select().from(matches).where(eq(matches.id, tpl.id)).catch(() => []);
-          if (existingM.length === 0) {
-            await db.insert(matches).values({
-              id: tpl.id,
-              leagueId: tpl.leagueId,
-              homeTeamId: tpl.homeTeam.id,
-              awayTeamId: tpl.awayTeam.id,
-              homeScore: tpl.homeScore,
-              awayScore: tpl.awayScore,
-              status: tpl.status,
-              matchTime: matchTimeStr,
-              matchDate: matchDate,
-              source: 'pre-seeded',
-              updatedAt: new Date(),
+    for (const tpl of PRE_STORED_MATCHES_TEMPLATE) {
+      try {
+        // Ensure home and away teams in teams table
+        for (const teamObj of [tpl.homeTeam, tpl.awayTeam]) {
+          const teamCheck = await db.select().from(teams).where(eq(teams.id, teamObj.id)).catch(() => []);
+          if (teamCheck.length === 0) {
+            await db.insert(teams).values({
+              id: teamObj.id,
+              name: teamObj.name,
+              logo: teamObj.logo,
             }).catch(() => null);
           }
-        } catch (mErr) {
-          // continue
         }
+
+        // Calculate realistic match date/time
+        const matchDate = new Date(now);
+        matchDate.setDate(now.getDate() + tpl.dateOffsetDays);
+        matchDate.setUTCHours(tpl.hourUtc, tpl.minuteUtc, 0, 0);
+
+        let matchTimeStr = tpl.matchTime;
+        if (tpl.status === 'SCHEDULED') {
+          matchTimeStr = matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        const existingM = await db.select().from(matches).where(eq(matches.id, tpl.id)).catch(() => []);
+        if (existingM.length === 0) {
+          await db.insert(matches).values({
+            id: tpl.id,
+            leagueId: tpl.leagueId,
+            homeTeamId: tpl.homeTeam.id,
+            awayTeamId: tpl.awayTeam.id,
+            homeScore: tpl.homeScore,
+            awayScore: tpl.awayScore,
+            status: tpl.status,
+            matchTime: matchTimeStr,
+            matchDate: matchDate,
+            source: 'pre-seeded',
+            updatedAt: new Date(),
+          }).catch(() => null);
+        } else {
+          // Keep match dates fresh relative to current time
+          await db.update(matches).set({
+            matchDate: matchDate,
+            matchTime: matchTimeStr,
+            updatedAt: new Date(),
+          }).where(eq(matches.id, tpl.id)).catch(() => null);
+        }
+      } catch (mErr) {
+        // continue
       }
     }
 
@@ -331,35 +337,29 @@ export async function syncMatchesCycle() {
 
 /**
  * Syncs full season / scheduled matches for a specific league into DB.
- * If the current season has not started or has no matches, falls back to previous seasons.
+ * Only targets the current 2026/2027 season. If not started yet, returns gracefully.
  */
-export async function syncSpecificLeagueMatches(leagueCode: string) {
+export async function syncSpecificLeagueMatches(leagueCode: string, targetSeason: string = '2026') {
   try {
     const code = COMPETITION_CODE_MAP[leagueCode] || ID_TO_CODE[leagueCode] || leagueCode;
-    console.log(`[footballSync] Syncing matches for specific league [${code}]...`);
+    console.log(`[footballSync] Syncing matches for specific league [${code}] (season 2026/2027)...`);
     
-    // Try current season first, then fallback to previous seasons (e.g. 2025, 2024, 2023, 2022)
-    const currentYear = new Date().getFullYear();
-    const seasonsToTry: (string | undefined)[] = [undefined];
-    for (let yr = currentYear; yr >= currentYear - 4; yr--) {
-      seasonsToTry.push(String(yr));
-    }
+    const endpoints = [
+      `/competitions/${code}/matches?season=${targetSeason}`,
+      `/competitions/${code}/matches`
+    ];
 
-    for (const seasonAttempt of seasonsToTry) {
+    for (const endpoint of endpoints) {
       try {
-        const endpoint = seasonAttempt 
-          ? `/competitions/${code}/matches?season=${seasonAttempt}` 
-          : `/competitions/${code}/matches`;
-        
         const data = await fetchFromFootballData(endpoint, { ignoreCache: true }).catch(() => null);
         if (data && Array.isArray(data.matches) && data.matches.length > 0) {
           await processAndStoreMatches(data.matches);
-          console.log(`[footballSync] Stored ${data.matches.length} matches for [${code}] (season ${seasonAttempt || 'current'}) in DB.`);
+          console.log(`[footballSync] Stored ${data.matches.length} matches for [${code}] (season 2026/2027) in DB.`);
           await refreshMemoryMatchesCache();
           return;
         }
       } catch (seasonErr) {
-        // Continue to next season attempt
+        // Continue to next endpoint attempt
       }
     }
   } catch (e: any) {
@@ -370,16 +370,15 @@ export async function syncSpecificLeagueMatches(leagueCode: string) {
 /**
  * Cycle 2: Fetch and Sync Standings for the next League in rotation.
  * Runs once every minute (part of the 2 req/min budget).
- * Saves to DB & replaces old standings for that league.
- * Falls back to previous seasons if tournament has not started.
+ * Saves to DB & updates standings exclusively for season 2026/2027.
  */
 export async function syncNextLeagueStandingsCycle() {
   const targetLeague = STANDINGS_SUPPORTED_LEAGUES[currentStandingsLeagueIndex % STANDINGS_SUPPORTED_LEAGUES.length];
   currentStandingsLeagueIndex++;
 
-  console.log(`[footballSync] Running Standings Sync Cycle for league [${targetLeague}] (2/2 requests per minute)...`);
+  console.log(`[footballSync] Running Standings Sync Cycle for league [${targetLeague}] (season 2026/2027)...`);
   try {
-    const standingsData = await fetchStandingsFromApi(targetLeague);
+    const standingsData = await fetchStandingsFromApi(targetLeague, '2026');
     if (standingsData && standingsData.length > 0) {
       // Store into memory cache
       memoryStandingsCache.set(targetLeague, { data: standingsData, timestamp: Date.now() });
@@ -388,18 +387,18 @@ export async function syncNextLeagueStandingsCycle() {
       try {
         await withDbRetry(() => db.insert(standingsCache).values({
           leagueId: targetLeague,
-          season: 'current',
+          season: '2026',
           data: standingsData,
           updatedAt: new Date(),
         }).onConflictDoUpdate({
           target: standingsCache.leagueId,
           set: {
             data: standingsData,
-            season: 'current',
+            season: '2026',
             updatedAt: new Date(),
           }
         }));
-        console.log(`[footballSync] Standings for [${targetLeague}] successfully updated and saved in DB (${standingsData.length} teams).`);
+        console.log(`[footballSync] Standings for [${targetLeague}] successfully updated in DB for season 2026/2027 (${standingsData.length} teams).`);
       } catch (dbErr: any) {
         console.warn(`[footballSync] DB write notice for standings [${targetLeague}]:`, dbErr.message || dbErr);
       }
@@ -596,19 +595,20 @@ export async function getStoredMatches(filters: {
     }
   }
 
-  // 2. League Filter (Bidirectional matching across code and id)
+  // 2. League Filter (Bidirectional matching across code and id, case-insensitive)
   if (leagueId && leagueId !== 'all') {
-    const targetCode = COMPETITION_CODE_MAP[leagueId] || ID_TO_CODE[leagueId] || leagueId;
-    const targetId = CODE_TO_ID[targetCode] || CODE_TO_ID[leagueId] || leagueId;
+    const rawUpper = String(leagueId).toUpperCase();
+    const targetCode = (COMPETITION_CODE_MAP[rawUpper] || ID_TO_CODE[rawUpper] || COMPETITION_CODE_MAP[leagueId] || ID_TO_CODE[leagueId] || leagueId).toUpperCase();
+    const targetId = CODE_TO_ID[targetCode] || CODE_TO_ID[rawUpper] || CODE_TO_ID[leagueId] || leagueId;
 
     let leagueMatches = result.filter(m => {
-      const mLeague = m.leagueId;
-      const mCode = m.league?.id;
+      const mLeague = String(m.leagueId || '').toUpperCase();
+      const mCode = String(m.league?.id || '').toUpperCase();
       return (
-        mLeague === leagueId ||
+        mLeague === rawUpper ||
         mLeague === targetCode ||
         mLeague === targetId ||
-        mCode === leagueId ||
+        mCode === rawUpper ||
         mCode === targetCode ||
         mCode === targetId
       );
@@ -616,7 +616,9 @@ export async function getStoredMatches(filters: {
 
     // If no matches for this specific league in DB, populate from pre-stored template immediately
     if (leagueMatches.length === 0) {
-      const leagueTemplates = PRE_STORED_MATCHES_TEMPLATE.filter(t => t.leagueId === targetCode || t.leagueId === leagueId);
+      const leagueTemplates = PRE_STORED_MATCHES_TEMPLATE.filter(
+        t => t.leagueId.toUpperCase() === targetCode || t.leagueId.toUpperCase() === rawUpper
+      );
       if (leagueTemplates.length > 0) {
         const now = new Date();
         for (const tpl of leagueTemplates) {
@@ -624,7 +626,12 @@ export async function getStoredMatches(filters: {
           matchDate.setDate(now.getDate() + tpl.dateOffsetDays);
           matchDate.setUTCHours(tpl.hourUtc, tpl.minuteUtc, 0, 0);
 
-          db.insert(matches).values({
+          let matchTimeStr = tpl.matchTime;
+          if (tpl.status === 'SCHEDULED') {
+            matchTimeStr = matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+          }
+
+          await db.insert(matches).values({
             id: tpl.id,
             leagueId: tpl.leagueId,
             homeTeamId: tpl.homeTeam.id,
@@ -632,12 +639,35 @@ export async function getStoredMatches(filters: {
             homeScore: tpl.homeScore,
             awayScore: tpl.awayScore,
             status: tpl.status,
-            matchTime: tpl.matchTime,
+            matchTime: matchTimeStr,
             matchDate: matchDate,
             source: 'pre-stored',
             updatedAt: new Date(),
           }).catch(() => null);
         }
+
+        // Re-query league matches from DB to return immediately
+        const freshRows = await db.query.matches.findMany({
+          with: {
+            league: true,
+            homeTeam: true,
+            awayTeam: true
+          },
+          orderBy: [desc(matches.matchDate)]
+        }).catch(() => []);
+
+        leagueMatches = freshRows.filter(m => {
+          const mLeague = String(m.leagueId || '').toUpperCase();
+          const mCode = String(m.league?.id || '').toUpperCase();
+          return (
+            mLeague === rawUpper ||
+            mLeague === targetCode ||
+            mLeague === targetId ||
+            mCode === rawUpper ||
+            mCode === targetCode ||
+            mCode === targetId
+          );
+        });
       }
     }
 
@@ -720,20 +750,27 @@ export async function getStoredMatches(filters: {
 
 /**
  * Returns stored standings directly from DB / memory cache (0 external API requests).
+ * Strictly filtered by requested season (defaults to current 2026/2027 season).
  */
 export async function getStoredStandings(leagueCodeOrId: string, season: string = '2026') {
   const code = COMPETITION_CODE_MAP[leagueCodeOrId] || ID_TO_CODE[leagueCodeOrId] || leagueCodeOrId || 'PL';
+  const targetSeason = season && season !== 'current' ? season : '2026';
 
   // 1. Check in-memory cache first
   const inMemory = memoryStandingsCache.get(code);
-  if (inMemory && inMemory.data && inMemory.data.length > 0) {
+  if (inMemory && Array.isArray(inMemory.data)) {
     return inMemory.data;
   }
 
-  // 2. Check DB
+  // 2. Check DB matching target season
   try {
-    const dbRow = await db.select().from(standingsCache).where(eq(standingsCache.leagueId, code));
-    if (dbRow.length > 0 && Array.isArray(dbRow[0].data) && dbRow[0].data.length > 0) {
+    const dbRow = await db.select().from(standingsCache).where(
+      and(
+        eq(standingsCache.leagueId, code),
+        eq(standingsCache.season, targetSeason)
+      )
+    );
+    if (dbRow.length > 0 && Array.isArray(dbRow[0].data)) {
       const data = dbRow[0].data as any[];
       // Update memory cache
       memoryStandingsCache.set(code, { data, timestamp: Date.now() });
@@ -743,19 +780,10 @@ export async function getStoredStandings(leagueCodeOrId: string, season: string 
     console.warn(`[footballService] DB read standings notice for ${code}:`, err.message || err);
   }
 
-  // 3. Fallback: Use pre-stored standings if available
+  // 3. Fallback: Use pre-stored standings if available for current season
   const preStored = PRE_STORED_STANDINGS[code];
-  if (preStored && preStored.length > 0) {
+  if (preStored !== undefined && Array.isArray(preStored)) {
     memoryStandingsCache.set(code, { data: preStored, timestamp: Date.now() });
-    db.insert(standingsCache).values({
-      leagueId: code,
-      season: '2026',
-      data: preStored,
-      updatedAt: new Date(),
-    }).onConflictDoUpdate({
-      target: standingsCache.leagueId,
-      set: { data: preStored, updatedAt: new Date() }
-    }).catch(() => null);
     return preStored;
   }
 
@@ -764,37 +792,23 @@ export async function getStoredStandings(leagueCodeOrId: string, season: string 
 
 /**
  * Low-level API caller used by the sync worker and on-demand cache.
- * Automatically tries current season and falls back to previous seasons (e.g. 2025, 2024, 2023, 2022, 2021)
- * if the tournament/competition hasn't started yet or has no active standings.
+ * Strictly fetches standings for the current 2026/2027 season.
+ * If the tournament has not started yet or has no standings data for 2026/2027,
+ * returns an empty array [] so the UI can display a clear "not started" message.
  */
-export async function fetchStandingsFromApi(leagueCodeOrId: string, requestedSeason?: string) {
+export async function fetchStandingsFromApi(leagueCodeOrId: string, requestedSeason: string = '2026') {
   const code = COMPETITION_CODE_MAP[leagueCodeOrId] || ID_TO_CODE[leagueCodeOrId] || leagueCodeOrId || 'PL';
+  const targetSeason = requestedSeason && requestedSeason !== 'current' ? requestedSeason : '2026';
   
-  // Build priority list of seasons to attempt
-  const seasonsToTry: (string | undefined)[] = [];
-  if (requestedSeason && requestedSeason !== 'current' && /^\d{4}$/.test(requestedSeason)) {
-    seasonsToTry.push(requestedSeason);
-  }
-  // Try current season first without explicit query
-  seasonsToTry.push(undefined);
+  const endpoints = [
+    `/competitions/${code}/standings?season=${targetSeason}`,
+    `/competitions/${code}/standings`
+  ];
 
-  // Fallback to recent prior seasons
-  const currentYear = new Date().getFullYear();
-  for (let yr = currentYear; yr >= currentYear - 5; yr--) {
-    const yrStr = String(yr);
-    if (!seasonsToTry.includes(yrStr)) {
-      seasonsToTry.push(yrStr);
-    }
-  }
-
-  for (const seasonAttempt of seasonsToTry) {
+  for (const endpoint of endpoints) {
     try {
-      const endpoint = seasonAttempt 
-        ? `/competitions/${code}/standings?season=${seasonAttempt}` 
-        : `/competitions/${code}/standings`;
-      
       const data = await fetchFromFootballData(endpoint).catch(() => null);
-      if (!data || !data.standings || data.standings.length === 0) {
+      if (!data || !data.standings || !Array.isArray(data.standings) || data.standings.length === 0) {
         continue;
       }
 
@@ -807,7 +821,7 @@ export async function fetchStandingsFromApi(leagueCodeOrId: string, requestedSea
       if (totalTable && Array.isArray(totalTable.table) && totalTable.table.length > 0) {
         allTableItems = totalTable.table;
       } else {
-        // 2. Tournament groups fallback (e.g. EC, WC, CL group stages)
+        // 2. Tournament groups fallback (e.g. CL group stage)
         const flattened = data.standings.flatMap((s: any) => s.table || []);
         if (flattened.length > 0) {
           allTableItems = flattened;
@@ -833,11 +847,11 @@ export async function fetchStandingsFromApi(leagueCodeOrId: string, requestedSea
           points: item.points ?? 0,
         }));
 
-        console.log(`[footballService] Successfully loaded standings for [${code}] (season ${seasonAttempt || 'current'}, ${formatted.length} teams).`);
+        console.log(`[footballService] Successfully loaded standings for [${code}] (season 2026/2027, ${formatted.length} teams).`);
         return formatted;
       }
     } catch (err: any) {
-      // Continue to next season attempt
+      // Continue to next endpoint attempt
     }
   }
 

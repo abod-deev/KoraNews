@@ -66,9 +66,9 @@ export const getLeagues = async (): Promise<League[]> => {
   }
 };
 
-export const getStandings = async (leagueId: string): Promise<Standing[]> => {
+export const getStandings = async (leagueId: string, season: string = '2026'): Promise<Standing[]> => {
   try {
-    const res = await fetch(`${API_URL}/api/standings/${leagueId || 'PD'}`);
+    const res = await fetch(`${API_URL}/api/standings/${leagueId || 'PD'}?season=${season}`);
     if (!res.ok) {
       console.warn('API /api/standings returned status:', res.status);
       return [];

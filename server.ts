@@ -68,6 +68,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Trust first proxy (Cloud Run / Nginx reverse proxy)
+  app.set('trust proxy', 1);
+
   // Initialize DB Schema & Run Automatic Migrations (e.g. Scrypt password migration)
   await initializeDatabaseSchema();
 

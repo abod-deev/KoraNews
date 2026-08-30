@@ -246,25 +246,11 @@ export const PRE_STORED_STANDINGS: Record<string, SeedStandingItem[]> = {
     { id: '1777', rank: 6, team: createTeam('1777', 'أتلتيكو مينيرو', 1777), played: 6, won: 3, drawn: 0, lost: 3, goalsFor: 8, goalsAgainst: 9, goalDifference: -1, points: 9 },
   ],
 
-  // European Championship (EC)
-  EC: [
-    { id: '760', rank: 1, team: createTeam('760', 'إسبانيا', 760), played: 7, won: 7, drawn: 0, lost: 0, goalsFor: 15, goalsAgainst: 4, goalDifference: 11, points: 21 },
-    { id: '770', rank: 2, team: createTeam('770', 'إنجلترا', 770), played: 7, won: 4, drawn: 2, lost: 1, goalsFor: 8, goalsAgainst: 6, goalDifference: 2, points: 14 },
-    { id: '773', rank: 3, team: createTeam('773', 'فرنسا', 773), played: 6, won: 3, drawn: 2, lost: 1, goalsFor: 4, goalsAgainst: 3, goalDifference: 1, points: 11 },
-    { id: '674b', rank: 4, team: createTeam('674b', 'هولندا', 674), played: 6, won: 3, drawn: 1, lost: 2, goalsFor: 10, goalsAgainst: 7, goalDifference: 3, points: 10 },
-    { id: '759', rank: 5, team: createTeam('759', 'ألمانيا', 759), played: 5, won: 3, drawn: 1, lost: 1, goalsFor: 11, goalsAgainst: 4, goalDifference: 7, points: 10 },
-    { id: '765', rank: 6, team: createTeam('765', 'البرتغال', 765), played: 5, won: 2, drawn: 2, lost: 1, goalsFor: 5, goalsAgainst: 3, goalDifference: 2, points: 8 },
-  ],
+  // European Championship (EC) - Not started for current season
+  EC: [],
 
-  // World Cup (WC)
-  WC: [
-    { id: '762', rank: 1, team: createTeam('762', 'الأرجنتين', 762), played: 7, won: 5, drawn: 1, lost: 1, goalsFor: 15, goalsAgainst: 8, goalDifference: 7, points: 16 },
-    { id: '773', rank: 2, team: createTeam('773', 'فرنسا', 773), played: 7, won: 5, drawn: 1, lost: 1, goalsFor: 16, goalsAgainst: 8, goalDifference: 8, points: 16 },
-    { id: '799', rank: 3, team: createTeam('799', 'كرواتيا', 799), played: 7, won: 3, drawn: 3, lost: 1, goalsFor: 8, goalsAgainst: 7, goalDifference: 1, points: 12 },
-    { id: '811', rank: 4, team: createTeam('811', 'المغرب', 811), played: 7, won: 3, drawn: 2, lost: 2, goalsFor: 6, goalsAgainst: 5, goalDifference: 1, points: 11 },
-    { id: '770', rank: 5, team: createTeam('770', 'إنجلترا', 770), played: 5, won: 3, drawn: 1, lost: 1, goalsFor: 13, goalsAgainst: 4, goalDifference: 9, points: 10 },
-    { id: '764', rank: 6, team: createTeam('764', 'البرازيل', 764), played: 5, won: 3, drawn: 1, lost: 1, goalsFor: 8, goalsAgainst: 3, goalDifference: 5, points: 10 },
-  ],
+  // World Cup (WC) - Not started for current season
+  WC: [],
 };
 
 // 3. Pre-stored Master Matches Template for all 13 leagues
@@ -303,11 +289,16 @@ export const PRE_STORED_MATCHES_TEMPLATE: SeedMatchItem[] = [
   { id: 'fl-2', leagueId: 'FL1', homeTeam: createTeam('548', 'موناكو', 548), awayTeam: createTeam('523', 'ليون', 523), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '21:00', dateOffsetDays: 0, hourUtc: 21, minuteUtc: 0 },
   { id: 'fl-3', leagueId: 'FL1', homeTeam: createTeam('521', 'ليل', 521), awayTeam: createTeam('522', 'نيس', 522), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '18:00', dateOffsetDays: 1, hourUtc: 18, minuteUtc: 0 },
 
-  // === CHAMPIONS LEAGUE (CL) ===
-  { id: 'cl-1', leagueId: 'CL', homeTeam: createTeam('86', 'ريال مدريد', 86), awayTeam: createTeam('65', 'مانشستر سيتي', 65), homeScore: 3, awayScore: 2, status: 'FINISHED', matchTime: 'انتهت', dateOffsetDays: -2, hourUtc: 20, minuteUtc: 0 },
-  { id: 'cl-2', leagueId: 'CL', homeTeam: createTeam('5', 'بايرن ميونخ', 5), awayTeam: createTeam('524', 'باريس سان جيرمان', 524), homeScore: 2, awayScore: 1, status: 'FINISHED', matchTime: 'انتهت', dateOffsetDays: -2, hourUtc: 20, minuteUtc: 0 },
-  { id: 'cl-3', leagueId: 'CL', homeTeam: createTeam('81', 'برشلونة', 81), awayTeam: createTeam('108', 'إنتر ميلان', 108), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '22:00', dateOffsetDays: 1, hourUtc: 22, minuteUtc: 0 },
-  { id: 'cl-4', leagueId: 'CL', homeTeam: createTeam('57', 'أرسنال', 57), awayTeam: createTeam('78', 'أتلتيكو مدريد', 78), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '22:00', dateOffsetDays: 1, hourUtc: 22, minuteUtc: 0 },
+  // === CHAMPIONS LEAGUE (CL) 2026/2027 ===
+  { id: 'cl-1', leagueId: 'CL', homeTeam: createTeam('86', 'ريال مدريد', 86), awayTeam: createTeam('65', 'مانشستر سيتي', 65), homeScore: 3, awayScore: 2, status: 'FINISHED', matchTime: 'انتهت', dateOffsetDays: -1, hourUtc: 20, minuteUtc: 0 },
+  { id: 'cl-2', leagueId: 'CL', homeTeam: createTeam('5', 'بايرن ميونخ', 5), awayTeam: createTeam('524', 'باريس سان جيرمان', 524), homeScore: 2, awayScore: 1, status: 'FINISHED', matchTime: 'انتهت', dateOffsetDays: -1, hourUtc: 20, minuteUtc: 0 },
+  { id: 'cl-3', leagueId: 'CL', homeTeam: createTeam('64', 'ليفربول', 64), awayTeam: createTeam('98', 'ميلان', 98), homeScore: 2, awayScore: 1, status: 'FINISHED', matchTime: 'انتهت', dateOffsetDays: -1, hourUtc: 20, minuteUtc: 0 },
+  { id: 'cl-4', leagueId: 'CL', homeTeam: createTeam('81', 'برشلونة', 81), awayTeam: createTeam('108', 'إنتر ميلان', 108), homeScore: 1, awayScore: 1, status: 'LIVE', matchTime: 'مباشر', dateOffsetDays: 0, hourUtc: 19, minuteUtc: 0 },
+  { id: 'cl-5', leagueId: 'CL', homeTeam: createTeam('57', 'أرسنال', 57), awayTeam: createTeam('78', 'أتلتيكو مدريد', 78), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '22:00', dateOffsetDays: 0, hourUtc: 22, minuteUtc: 0 },
+  { id: 'cl-6', leagueId: 'CL', homeTeam: createTeam('168', 'باير ليفركوزن', 168), awayTeam: createTeam('109', 'يوفنتوس', 109), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '22:00', dateOffsetDays: 0, hourUtc: 22, minuteUtc: 0 },
+  { id: 'cl-7', leagueId: 'CL', homeTeam: createTeam('4', 'بوروسيا دورتموند', 4), awayTeam: createTeam('58', 'أستون فيلا', 58), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '20:00', dateOffsetDays: 1, hourUtc: 20, minuteUtc: 0 },
+  { id: 'cl-8', leagueId: 'CL', homeTeam: createTeam('498', 'سبورتينغ لشبونة', 498), awayTeam: createTeam('102', 'أتالانتا', 102), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '22:00', dateOffsetDays: 1, hourUtc: 22, minuteUtc: 0 },
+  { id: 'cl-9', leagueId: 'CL', homeTeam: createTeam('1903', 'بنفيكا', 1903), awayTeam: createTeam('548', 'موناكو', 548), homeScore: null, awayScore: null, status: 'SCHEDULED', matchTime: '22:00', dateOffsetDays: 2, hourUtc: 22, minuteUtc: 0 },
 
   // === CHAMPIONSHIP (ELC) ===
   { id: 'elc-1', leagueId: 'ELC', homeTeam: createTeam('338', 'ليستر سيتي', 338), awayTeam: createTeam('341', 'ليدز يونايتد', 341), homeScore: 2, awayScore: 1, status: 'FINISHED', matchTime: 'انتهت', dateOffsetDays: -1, hourUtc: 16, minuteUtc: 0 },

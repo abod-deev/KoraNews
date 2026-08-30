@@ -126,7 +126,7 @@ export default function Matches() {
   useEffect(() => {
     const targetLeague = activeLeagueId !== 'all' ? activeLeagueId : standingsLeague;
     setIsLoadingStandings(true);
-    getStandings(targetLeague)
+    getStandings(targetLeague, '2026')
       .then(setStandings)
       .finally(() => setIsLoadingStandings(false));
   }, [activeLeagueId, standingsLeague]);
@@ -149,7 +149,7 @@ export default function Matches() {
     { id: 'SA', name: 'الإيطالي', flag: '🇮🇹' },
     { id: 'BL1', name: 'الألماني', flag: '🇩🇪' },
     { id: 'FL1', name: 'الفرنسي', flag: '🇫🇷' },
-    { id: 'CL', name: 'الأبطال', flag: '🇪🇺' },
+    { id: 'CL', name: 'دوري أبطال أوروبا', flag: '🇪🇺' },
     { id: 'ELC', name: 'تشامبيونشيب', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
     { id: 'DED', name: 'الهولندي', flag: '🇳🇱' },
     { id: 'PPL', name: 'البرتغالي', flag: '🇵🇹' },
@@ -361,16 +361,20 @@ export default function Matches() {
               ) : (
                 <div className="py-16 text-center bg-white dark:bg-gray-900 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 p-8 shadow-sm">
                   <p className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-2">
-                    📭 لا توجد مباريات جارية أو مجدولة لهذا التاريخ والفلتر المحدد
+                    {activeLeagueId !== 'all' 
+                      ? `📭 لا توجد مباريات لـ (${defaultLeagueTabs.find(l => l.id === activeLeagueId)?.name || 'هذه البطولة'}) في هذا اليوم المحدد`
+                      : '📭 لا توجد مباريات جارية أو مجدولة لهذا التاريخ والفلتر المحدد'}
                   </p>
                   <p className="text-xs text-gray-400 mb-4">
-                    جرب اختيار تاريخ مختلف أو الضغط على "جميع المباريات" لعرض الجدول الكامل للموسم
+                    {activeLeagueId !== 'all'
+                      ? 'يمكنك الضغط على الزر أدناه لعرض جدول جميع مباريات البطولة لموسم 2026/2027'
+                      : 'جرب اختيار تاريخ مختلف أو الضغط على "عرض جميع المباريات" لعرض الجدول الكامل للموسم'}
                   </p>
                   <button
                     onClick={() => setSelectedDate('')}
-                    className="inline-flex items-center gap-2 bg-brand text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm hover:bg-brand-dark"
+                    className="inline-flex items-center gap-2 bg-brand text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm hover:bg-brand-dark cursor-pointer"
                   >
-                    عرض جميع مباريات الموسم
+                    {activeLeagueId !== 'all' ? 'عرض جميع مباريات هذه البطولة' : 'عرض جميع مباريات الموسم'}
                   </button>
                 </div>
               )}
@@ -476,8 +480,16 @@ export default function Matches() {
                 </div>
               </div>
             ) : (
-              <div className="p-8 text-center">
-                <p className="text-gray-500 font-medium text-sm">جدول الترتيب غير متوفر حالياً لهذه البطولة</p>
+              <div className="p-6 text-center">
+                <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-500 mx-auto mb-2 flex items-center justify-center border border-amber-200/50 dark:border-amber-900/30">
+                  <Trophy className="w-5 h-5" />
+                </div>
+                <p className="text-gray-800 dark:text-gray-200 font-bold text-xs mb-1">
+                  لم تبدأ منافسات هذه البطولة لموسم 2026/2027 بعد
+                </p>
+                <p className="text-gray-500 dark:text-gray-400 text-[11px]">
+                  سيتم تحديث جدول الترتيب تلقائياً فور انطلاق مباريات الجولة الأولى.
+                </p>
               </div>
             )}
           </div>
