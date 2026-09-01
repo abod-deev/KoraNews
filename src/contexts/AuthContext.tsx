@@ -6,9 +6,10 @@ import {
   onAuthStateChanged
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
+import { AuthUser } from '../utils/authHelpers';
 
 interface AuthContextType {
-  user: any;
+  user: AuthUser | null;
   loading: boolean;
   token: string | null;
   signInWithGoogle: () => Promise<void>;
@@ -45,7 +46,7 @@ function extractErrorMessage(data: any, fallback: string): string {
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 

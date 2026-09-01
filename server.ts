@@ -164,32 +164,35 @@ async function startServer() {
         }
 
         // In Production, strictly check configured ALLOWED_ORIGINS
-        if (configuredAllowedOrigins.length > 0) {
+        if (isProduction) {
           if (configuredAllowedOrigins.includes(originLower)) {
             return callback(null, true);
           }
+          
+          // Strict Wildcard checking: Ensure it's a subdomain, not just ending with the base string
           const isWildcardMatch = configuredAllowedOrigins.some((allowed) => {
             if (allowed.startsWith('*.')) {
               const base = allowed.slice(2);
-              return originLower.endsWith(base) || originLower === `https://${base}` || originLower === `http://${base}`;
+              try {
+                const originUrl = new URL(originLower);
+                return originUrl.hostname.endsWith('.' + base) || originUrl.hostname === base;
+              } catch (e) {
+                return false;
+              }
             }
             return false;
           });
+
           if (isWildcardMatch) {
             return callback(null, true);
           }
-          return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
-        }
 
-        // No fallback for production. Must match ALLOWED_ORIGINS.
-        if (isProduction) {
           return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
         }
 
         return callback(null, true);
       },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-cron-secret'],
     })
   );
