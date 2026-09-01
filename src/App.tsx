@@ -17,6 +17,8 @@ const Admin = lazy(() => import('./pages/Admin'));
 const Login = lazy(() => import('./pages/Login'));
 const Profile = lazy(() => import('./pages/Profile'));
 import { Loader2 } from 'lucide-react';
+import ErrorBoundary from './components/ErrorBoundary';
+import { checkIsAdmin } from './utils/authHelpers';
 
 function AdminRoute() {
   const { user, loading } = useAuth();
@@ -29,7 +31,7 @@ function AdminRoute() {
     );
   }
 
-  const isAdmin = !!(user && (user.isAdmin || user.role === 'admin' || user.role === 'superadmin' || user.email === 'abod46071@gmail.com'));
+  const isAdmin = checkIsAdmin(user);
 
   if (!isAdmin) {
     return <Navigate to="/" replace />;
@@ -45,7 +47,8 @@ export default function App() {
         <MatchRemindersProvider>
           <BrowserRouter>
             <AnalyticsTracker />
-            <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-brand" /></div>}>
+            <ErrorBoundary>
+              <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-brand" /></div>}>
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Home />} />
@@ -63,6 +66,7 @@ export default function App() {
               </Route>
             </Routes>
             </Suspense>
+            </ErrorBoundary>
           </BrowserRouter>
         </MatchRemindersProvider>
       </AuthProvider>

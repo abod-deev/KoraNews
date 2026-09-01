@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { fetchCategories } from '../../services/api';
+import { checkIsAdmin } from '../../utils/authHelpers';
 import SiteLogo from './SiteLogo';
 
 interface SideNavDrawerProps {
@@ -35,18 +36,13 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
   const { user, logout } = useAuth();
   const { isDarkMode, toggleDarkMode } = useTheme();
   const drawerRef = useRef<HTMLDivElement>(null);
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<{ id: string, name: string, slug?: string }[]>([]);
+  const [categoriesError, setCategoriesError] = useState(false);
 
   // Touch swipe handling
   const touchStartX = useRef<number | null>(null);
 
-  const canAccessAdmin = !!(
-    user &&
-    (user.isAdmin ||
-      user.role === 'admin' ||
-      user.role === 'superadmin' ||
-      user.email === 'abod46071@gmail.com')
-  );
+  const canAccessAdmin = checkIsAdmin(user);
 
   const mainNavItems = [
     { name: 'الرئيسية', path: '/', icon: Home },
@@ -56,8 +52,8 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
 
   const predictionNavItems = [
     { name: 'توقعات المباريات', path: '/predictions', icon: Trophy },
-    { name: 'ترتيب التوقعات', path: '/predictions-leaderboard', icon: Award },
-    { name: 'الترتيب الذهبي', path: '/golden-leaderboard', icon: Medal },
+    { name: 'ترتيب التوقعات', path: '/predictions/leaderboard', icon: Award },
+    { name: 'الترتيب الذهبي', path: '/predictions/golden', icon: Medal },
   ];
 
   useEffect(() => {
@@ -65,7 +61,10 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
       if (Array.isArray(cats) && cats.length > 0) {
         setCategories(cats);
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('Failed to fetch categories:', err);
+      setCategoriesError(true);
+    });
   }, []);
 
   // Auto close on route change

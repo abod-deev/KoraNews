@@ -97,17 +97,33 @@ async function logActivity(
 }
 
 async function startServer() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
+  const configuredAllowedOrigins = rawAllowedOrigins
+    .split(',')
+    .map((o) => o.trim().toLowerCase())
+    .filter((o) => o.length > 0);
+
+  if (isProduction && configuredAllowedOrigins.length === 0) {
+    console.error('CRITICAL CONFIGURATION ERROR: ALLOWED_ORIGINS must be explicitly defined in production.');
+    process.exit(1);
+  }
+
   const app = express();
   const PORT = 3000;
 
   // Trust first proxy (Cloud Run / Nginx reverse proxy)
   app.set('trust proxy', 1);
 
-  // Initialize DB Schema & Run Automatic Migrations (e.g. Scrypt password migration)
+  // Initialize DB Schema & Run Automatic Migrations
   try {
     await initializeDatabaseSchema();
   } catch (dbErr: any) {
-    console.warn('[Server Startup] Non-fatal DB initialization warning:', dbErr?.message || dbErr);
+    console.error('[Server Startup] CRITICAL DB initialization error:', dbErr?.message || dbErr);
+    if (isProduction) {
+      console.error('Shutting down server due to critical database initialization failure in production.');
+      process.exit(1);
+    }
   }
 
   // Security Headers via Helmet (configured to allow iframe & images)
@@ -121,12 +137,8 @@ async function startServer() {
   );
 
   // Secure Environment-Aware CORS configuration
-  const isProduction = process.env.NODE_ENV === 'production';
-  const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
-  const configuredAllowedOrigins = rawAllowedOrigins
-    .split(',')
-    .map((o) => o.trim().toLowerCase())
-    .filter((o) => o.length > 0);
+  
+
 
   app.use(
     cors({
@@ -169,11 +181,8 @@ async function startServer() {
           return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
         }
 
-        // If in production without explicit ALLOWED_ORIGINS, permit current Cloud Run host domain
+        // No fallback for production. Must match ALLOWED_ORIGINS.
         if (isProduction) {
-          if (originLower.endsWith('.run.app')) {
-            return callback(null, true);
-          }
           return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
         }
 

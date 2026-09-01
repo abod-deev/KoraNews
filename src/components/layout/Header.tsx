@@ -3,6 +3,7 @@ import { Moon, Sun, Menu, User, LogOut, Settings, Bell, BellRing, Play, Trash2, 
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useMatchReminders } from '../../contexts/MatchRemindersContext';
+import { checkIsAdmin } from '../../utils/authHelpers';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import SideNavDrawer from './SideNavDrawer';
@@ -43,7 +44,7 @@ export default function Header() {
     }
   };
 
-  const canAccessAdmin = !!(user && (user.isAdmin || user.role === 'admin' || user.role === 'superadmin' || user.email === 'abod46071@gmail.com'));
+  const canAccessAdmin = checkIsAdmin(user);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-slate-200/80 dark:border-slate-800/80 shadow-2xs transition-all duration-200">
@@ -153,7 +154,7 @@ export default function Header() {
                             <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
                               <span className="truncate max-w-[150px]">{match.leagueName}</span>
                               <span className="text-amber-500 font-extrabold shrink-0">
-                                {new Date(match.matchDate || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                {match.matchDate ? new Date(match.matchDate).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'وقت غير متوفر'}
                               </span>
                             </div>
 

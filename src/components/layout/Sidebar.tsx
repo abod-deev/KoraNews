@@ -3,12 +3,14 @@ import { Home, Newspaper, Calendar, Settings, Tag, ChevronLeft, Trophy, Award, M
 import { useAuth } from '../../contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { fetchCategories } from '../../services/api';
+import { checkIsAdmin } from '../../utils/authHelpers';
 
 export default function Sidebar() {
   const location = useLocation();
   const { user } = useAuth();
-  const [categories, setCategories] = useState<any[]>([]);
-  const canAccessAdmin = !!(user && (user.isAdmin || user.role === 'admin' || user.role === 'superadmin' || user.email === 'abod46071@gmail.com'));
+  const [categories, setCategories] = useState<{ id: string, name: string, slug?: string }[]>([]);
+  const [categoriesError, setCategoriesError] = useState(false);
+  const canAccessAdmin = checkIsAdmin(user);
 
   const navItems = [
     { name: 'الرئيسية', path: '/', icon: Home },
@@ -18,8 +20,8 @@ export default function Sidebar() {
 
   const predictionItems = [
     { name: 'توقعات المباريات', path: '/predictions', icon: Trophy },
-    { name: 'ترتيب التوقعات', path: '/predictions-leaderboard', icon: Award },
-    { name: 'الترتيب الذهبي', path: '/golden-leaderboard', icon: Medal },
+    { name: 'ترتيب التوقعات', path: '/predictions/leaderboard', icon: Award },
+    { name: 'الترتيب الذهبي', path: '/predictions/golden', icon: Medal },
   ];
 
   useEffect(() => {
@@ -27,7 +29,10 @@ export default function Sidebar() {
       if (Array.isArray(cats) && cats.length > 0) {
         setCategories(cats);
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('Failed to fetch categories:', err);
+      setCategoriesError(true);
+    });
   }, []);
 
   const activeCategoryParam = new URLSearchParams(location.search).get('category');
