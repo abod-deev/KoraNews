@@ -263,7 +263,7 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
                 <div className="flex items-center justify-between text-center">
                   {/* Home Team */}
                   <div className="flex flex-col items-center gap-1.5 w-5/12">
-                    <img src={activePopup.match.homeTeam.logo} alt={activePopup.match.homeTeam.name} className="w-12 h-12 object-contain" />
+                    <img loading="lazy" src={activePopup.match.homeTeam.logo} alt={activePopup.match.homeTeam.name} className="w-12 h-12 object-contain" />
                     <span className="text-xs font-bold text-gray-900 dark:text-gray-100">{activePopup.match.homeTeam.name}</span>
                   </div>
 
@@ -278,7 +278,7 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
 
                   {/* Away Team */}
                   <div className="flex flex-col items-center gap-1.5 w-5/12">
-                    <img src={activePopup.match.awayTeam.logo} alt={activePopup.match.awayTeam.name} className="w-12 h-12 object-contain" />
+                    <img loading="lazy" src={activePopup.match.awayTeam.logo} alt={activePopup.match.awayTeam.name} className="w-12 h-12 object-contain" />
                     <span className="text-xs font-bold text-gray-900 dark:text-gray-100">{activePopup.match.awayTeam.name}</span>
                   </div>
                 </div>

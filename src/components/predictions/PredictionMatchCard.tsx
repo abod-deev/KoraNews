@@ -16,6 +16,10 @@ import {
   ChevronUp,
   Globe,
   Radio,
+  Crown,
+  Target,
+  XCircle,
+  ShieldCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -30,6 +34,13 @@ export interface PredictionMatchCardProps {
   onRequestRegister?: () => void;
 }
 
+export function formatPointsLabel(pts: number = 2): string {
+  if (pts === 1) return '⭐ 1 نقطة للتوقع الصحيح';
+  if (pts === 2) return '⭐ 2 نقاط للتوقع الصحيح';
+  if (pts >= 3 && pts <= 10) return `⭐ ${pts} نقاط للتوقع الصحيح`;
+  return `⭐ ${pts} نقطة للتوقع الصحيح`;
+}
+
 export default function PredictionMatchCard({
   predictionMatch,
   isLoggedIn,
@@ -41,6 +52,7 @@ export default function PredictionMatchCard({
 }: PredictionMatchCardProps) {
   const m = predictionMatch.match;
   const userPred = predictionMatch.userPrediction;
+  const ptsPerMatch = predictionMatch.pointsPerMatch || 2;
 
   const [homeScore, setHomeScore] = useState<number>(
     userPred ? userPred.homeScore : 0
@@ -146,9 +158,8 @@ export default function PredictionMatchCard({
     if (m.homeScore !== null && m.awayScore !== null) {
       shareText += `⚽ النتيجة النهائية: ${m.homeTeam.name} (${m.homeScore}) - (${m.awayScore}) ${m.awayTeam.name}\n`;
     }
-    const pts = predictionMatch.pointsPerMatch || 2;
     if (predictionMatch.correctPredictorsCount && predictionMatch.correctPredictorsCount > 0) {
-      shareText += `🎯 عدد أصحاب التوقع الصحيح (+${pts} نقطة): ${predictionMatch.correctPredictorsCount} متسابق\n`;
+      shareText += `🎯 عدد أصحاب التوقع الصحيح (${formatPointsLabel(ptsPerMatch)}): ${predictionMatch.correctPredictorsCount} متسابق\n`;
     }
     if (userPred) {
       shareText += `🎯 توقعي كان: (${userPred.homeScore} - ${userPred.awayScore}) ${
@@ -179,69 +190,90 @@ export default function PredictionMatchCard({
     }
   };
 
-  // Status Badge Logic based on match state
-  const renderStatusBadge = () => {
-    if (state === 'live' || isLive) {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 animate-pulse">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
-          مباشر الآن
-        </span>
-      );
-    }
-    if (state === 'pending_admin') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-          <Clock className="w-3 h-3 text-amber-500" />
-          بانتظار اعتماد النتيجة
-        </span>
-      );
-    }
-    if (state === 'calculated' || isFinished) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
-          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-          تم احتساب النقاط
-        </span>
-      );
-    }
-    if (state === 'open') {
-      const pts = predictionMatch.pointsPerMatch || 2;
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-brand/10 text-brand dark:text-emerald-400 border border-brand/20">
-          <Sparkles className="w-3 h-3 text-brand" />
-          التوقع متاح (+{pts} نقاط)
-        </span>
-      );
-    }
+  // Render Explicit Status Badges
+  const renderStatusBadges = () => {
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-        <Lock className="w-3 h-3 text-gray-400" />
-        مغلق للتوقع
-      </span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {/* Match State Badge */}
+        {isLive ? (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+            المباراة بدأت
+          </span>
+        ) : isPendingAdmin ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+            <Clock className="w-3 h-3 text-amber-500" />
+            بانتظار اعتماد النتيجة
+          </span>
+        ) : isFinished ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            <ShieldCheck className="w-3 h-3 text-slate-500" />
+            المباراة انتهت
+          </span>
+        ) : !isOpen ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+            <Lock className="w-3 h-3 text-slate-400" />
+            التوقع مغلق
+          </span>
+        ) : null}
+
+        {/* User Prediction Outcome Badge */}
+        {userPred ? (
+          userPred.isEvaluated ? (
+            userPred.isGolden ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-400/60 shadow-2xs">
+                <Crown className="w-3.5 h-3.5 text-amber-500" />
+                ذهبية 👑 (+{userPred.pointsEarned} نقطة)
+              </span>
+            ) : userPred.pointsEarned > 0 ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                توقع صحيح (+{userPred.pointsEarned} نقطة)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                توقع خاطئ
+              </span>
+            )
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+              <Target className="w-3 h-3 text-sky-600" />
+              توقعك: ({userPred.homeScore} - {userPred.awayScore})
+            </span>
+          )
+        ) : isOpen && isLoggedIn ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+            <AlertCircle className="w-3 h-3 text-amber-500" />
+            لم تتوقع
+          </span>
+        ) : null}
+      </div>
     );
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`bg-white dark:bg-gray-900 rounded-2xl border transition-all duration-200 overflow-hidden shadow-xs hover:shadow-md ${
-        userPred
-          ? 'border-brand/40 ring-1 ring-brand/20 dark:border-brand/30'
-          : 'border-gray-200/80 dark:border-gray-800'
+      className={`bg-white dark:bg-slate-900 rounded-3xl border transition-all duration-200 overflow-hidden shadow-xs hover:shadow-md ${
+        userPred?.isGolden
+          ? 'border-amber-400 dark:border-amber-500/70 ring-2 ring-amber-400/20 bg-gradient-to-b from-amber-500/5 to-transparent'
+          : userPred
+          ? 'border-sky-500/40 ring-1 ring-sky-500/20 dark:border-sky-500/30'
+          : 'border-slate-200/80 dark:border-slate-800'
       }`}
       id={`prediction-card-${predictionMatch.id}`}
     >
-      {/* 1. Header: League & Status */}
-      <div className="px-4 py-3 bg-gray-50/70 dark:bg-gray-800/40 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
+      {/* 1. Header: League & Points Reward */}
+      <div className="px-4 py-3 bg-slate-50/80 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
         <div className="flex items-center gap-2 min-w-0">
           {m.leagueLogo ? (
-            <img src={m.leagueLogo} alt="" className="w-4 h-4 object-contain shrink-0" />
+            <img loading="lazy" src={m.leagueLogo} alt="" className="w-4 h-4 object-contain shrink-0" />
           ) : (
-            <Globe className="w-4 h-4 text-gray-400 shrink-0" />
+            <Globe className="w-4 h-4 text-slate-400 shrink-0" />
           )}
-          <span className="text-xs font-black text-gray-700 dark:text-gray-300 truncate">
+          <span className="text-xs font-black text-slate-700 dark:text-slate-300 truncate">
             {m.leagueName}
           </span>
           {predictionMatch.isExternal && (
@@ -251,34 +283,53 @@ export default function PredictionMatchCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {renderStatusBadge()}
+        {/* Dynamic Points Label based on pointsPerMatch */}
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 shrink-0">
+          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <span>{formatPointsLabel(ptsPerMatch)}</span>
         </div>
       </div>
 
-      {/* 2. Match Date & Time / Participants */}
-      <div className="px-4 pt-2.5 pb-1 flex items-center justify-between text-[11px] font-bold text-gray-400 dark:text-gray-500">
-        <div className="flex items-center gap-1">
-          <Clock className="w-3.5 h-3.5 text-gray-400" />
-          <span>
-            {matchDate.toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
-            {' • '}
-            {matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
-          </span>
+      {/* 2. Statuses & Match Date Time Toolbar */}
+      <div className="px-4 pt-3 pb-1 space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          {/* Match Time */}
+          <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-500 dark:text-slate-400">
+            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="truncate">
+              {matchDate.toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
+              {' • '}
+              {matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
+            </span>
+          </div>
+
+          {/* Participants Count */}
+          <div className="flex items-center gap-1 text-xs font-bold text-slate-400 shrink-0">
+            <Users className="w-3.5 h-3.5 text-slate-400" />
+            <span>{predictionMatch.participantsCount} مشارك</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          <Users className="w-3.5 h-3.5 text-gray-400" />
-          <span>{predictionMatch.participantsCount} مشارك</span>
+        {/* Status Badges Row */}
+        <div className="pt-1">
+          {renderStatusBadges()}
         </div>
+
+        {/* Closure Warning if open */}
+        {isOpen && (
+          <div className="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[10px] sm:text-[11px] font-extrabold flex items-center justify-center gap-1 text-center">
+            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+            <span>يغلق باب التوقع آلياً قبل دقيقة واحدة من انطلاق المباراة</span>
+          </div>
+        )}
       </div>
 
-      {/* 3. Teams & Score Prediction Center */}
+      {/* 3. Teams & Score Center (Mobile First) */}
       <div className="p-4 sm:p-5">
         <div className="grid grid-cols-7 items-center gap-2 sm:gap-4">
           {/* Home Team */}
           <div className="col-span-3 flex flex-col items-center text-center gap-2">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-50 dark:bg-gray-800 p-2 flex items-center justify-center border border-gray-100 dark:border-gray-700 shadow-2xs">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-slate-50 dark:bg-slate-800 p-2 flex items-center justify-center border border-slate-100 dark:border-slate-700/80 shadow-2xs">
               {m.homeTeam.logo ? (
                 <img
                   src={m.homeTeam.logo}
@@ -290,29 +341,29 @@ export default function PredictionMatchCard({
                   }}
                 />
               ) : (
-                <span className="font-black text-sm text-gray-400">
+                <span className="font-black text-sm text-slate-400">
                   {m.homeTeam.name.substring(0, 2)}
                 </span>
               )}
             </div>
-            <span className="font-extrabold text-xs sm:text-sm text-gray-900 dark:text-white line-clamp-2 leading-snug">
+            <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-2 leading-snug">
               {m.homeTeam.name}
             </span>
           </div>
 
-          {/* Center: Prediction Inputs or Actual Score */}
+          {/* Center: Score Display or VS */}
           <div className="col-span-1 flex flex-col items-center justify-center gap-1">
             {isFinished || isLive || isPendingAdmin ? (
               <div className="flex flex-col items-center">
-                <div className="text-lg sm:text-2xl font-black text-gray-900 dark:text-white px-2.5 py-1 rounded-xl bg-gray-100 dark:bg-gray-800 font-mono tracking-wider">
+                <div className="text-base sm:text-2xl font-black text-slate-900 dark:text-white px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 font-mono tracking-wider">
                   {m.homeScore ?? 0} - {m.awayScore ?? 0}
                 </div>
-                <span className="text-[9px] font-extrabold text-gray-400 mt-1 whitespace-nowrap">
+                <span className="text-[9px] font-extrabold text-slate-400 mt-1 whitespace-nowrap">
                   {isLive ? 'النتيجة المباشرة' : 'النتيجة النهائية'}
                 </span>
               </div>
             ) : (
-              <div className="text-gray-300 dark:text-gray-600 font-black text-base sm:text-lg">
+              <div className="text-slate-300 dark:text-slate-600 font-black text-sm sm:text-lg">
                 VS
               </div>
             )}
@@ -320,7 +371,7 @@ export default function PredictionMatchCard({
 
           {/* Away Team */}
           <div className="col-span-3 flex flex-col items-center text-center gap-2">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-50 dark:bg-gray-800 p-2 flex items-center justify-center border border-gray-100 dark:border-gray-700 shadow-2xs">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-slate-50 dark:bg-slate-800 p-2 flex items-center justify-center border border-slate-100 dark:border-slate-700/80 shadow-2xs">
               {m.awayTeam.logo ? (
                 <img
                   src={m.awayTeam.logo}
@@ -332,23 +383,23 @@ export default function PredictionMatchCard({
                   }}
                 />
               ) : (
-                <span className="font-black text-sm text-gray-400">
+                <span className="font-black text-sm text-slate-400">
                   {m.awayTeam.name.substring(0, 2)}
                 </span>
               )}
             </div>
-            <span className="font-extrabold text-xs sm:text-sm text-gray-900 dark:text-white line-clamp-2 leading-snug">
+            <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-2 leading-snug">
               {m.awayTeam.name}
             </span>
           </div>
         </div>
 
-        {/* 4. Score Prediction Interactive Box (When Open) */}
+        {/* 4. Interactive Score Stepper (When Match Open) */}
         {isOpen && (
-          <div className="mt-5 pt-4 border-t border-gray-100 dark:border-gray-800/80">
+          <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/80">
             {/* Registration check alert */}
             {isLoggedIn && !isApprovedParticipant && (
-              <div className="mb-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-2">
+              <div className="mb-3 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs font-bold text-amber-800 dark:text-amber-300">
                   <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
                   <span>
@@ -361,7 +412,7 @@ export default function PredictionMatchCard({
                   <button
                     type="button"
                     onClick={onRequestRegister}
-                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-black shrink-0 transition-colors cursor-pointer"
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shrink-0 transition-colors cursor-pointer"
                   >
                     طلب الاشتراك
                   </button>
@@ -370,11 +421,11 @@ export default function PredictionMatchCard({
             )}
 
             <div className="text-center mb-3">
-              <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400">
                 {userPred
                   ? canEditPrediction
                     ? `توقعك المسجل (متاح التعديل لمدة ${remainingSeconds} ثانية):`
-                    : 'توقعك المثبت النهائي (انتهت مهلة التعديل 1 دقيقة):'
+                    : 'توقعك النهائي (انتهت مهلة التعديل 1 دقيقة):'
                   : 'حدد توقعك للنتيجة النهائية:'}
               </span>
             </div>
@@ -382,12 +433,12 @@ export default function PredictionMatchCard({
             <form onSubmit={handleSubmit} className="flex flex-col items-center gap-3">
               <div className="flex items-center justify-center gap-4 sm:gap-6 dir-ltr">
                 {/* Home Team Score Stepper */}
-                <div className="flex items-center bg-gray-50 dark:bg-gray-800/90 rounded-2xl p-1 border border-gray-200/80 dark:border-gray-700 shadow-2xs">
+                <div className="flex items-center bg-slate-50 dark:bg-slate-800/90 rounded-2xl p-1.5 border border-slate-200/80 dark:border-slate-700 shadow-2xs">
                   <button
                     type="button"
                     onClick={() => handleScoreChange('home', -1)}
                     disabled={homeScore <= 0 || !isLoggedIn || !isApprovedParticipant || !canEditPrediction}
-                    className="w-9 h-9 rounded-xl bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-black text-base flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 font-black text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
                     aria-label="إنقاص أهداف المضيف"
                   >
                     -
@@ -399,28 +450,28 @@ export default function PredictionMatchCard({
                     value={homeScore}
                     onChange={(e) => handleManualInput('home', e.target.value)}
                     disabled={!isLoggedIn || !isApprovedParticipant || !canEditPrediction}
-                    className="w-10 text-center font-black text-lg text-gray-900 dark:text-white bg-transparent border-none focus:outline-none disabled:opacity-50"
+                    className="w-12 text-center font-black text-xl text-slate-900 dark:text-white bg-transparent border-none focus:outline-none disabled:opacity-50"
                   />
                   <button
                     type="button"
                     onClick={() => handleScoreChange('home', 1)}
                     disabled={homeScore >= 20 || !isLoggedIn || !isApprovedParticipant || !canEditPrediction}
-                    className="w-9 h-9 rounded-xl bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-black text-base flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 font-black text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
                     aria-label="زيادة أهداف المضيف"
                   >
                     +
                   </button>
                 </div>
 
-                <span className="font-black text-xl text-gray-400">:</span>
+                <span className="font-black text-xl text-slate-400">:</span>
 
                 {/* Away Team Score Stepper */}
-                <div className="flex items-center bg-gray-50 dark:bg-gray-800/90 rounded-2xl p-1 border border-gray-200/80 dark:border-gray-700 shadow-2xs">
+                <div className="flex items-center bg-slate-50 dark:bg-slate-800/90 rounded-2xl p-1.5 border border-slate-200/80 dark:border-slate-700 shadow-2xs">
                   <button
                     type="button"
                     onClick={() => handleScoreChange('away', -1)}
                     disabled={awayScore <= 0 || !isLoggedIn || !isApprovedParticipant || !canEditPrediction}
-                    className="w-9 h-9 rounded-xl bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-black text-base flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 font-black text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
                     aria-label="إنقاص أهداف الضيف"
                   >
                     -
@@ -432,13 +483,13 @@ export default function PredictionMatchCard({
                     value={awayScore}
                     onChange={(e) => handleManualInput('away', e.target.value)}
                     disabled={!isLoggedIn || !isApprovedParticipant || !canEditPrediction}
-                    className="w-10 text-center font-black text-lg text-gray-900 dark:text-white bg-transparent border-none focus:outline-none disabled:opacity-50"
+                    className="w-12 text-center font-black text-xl text-slate-900 dark:text-white bg-transparent border-none focus:outline-none disabled:opacity-50"
                   />
                   <button
                     type="button"
                     onClick={() => handleScoreChange('away', 1)}
                     disabled={awayScore >= 20 || !isLoggedIn || !isApprovedParticipant || !canEditPrediction}
-                    className="w-9 h-9 rounded-xl bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-black text-base flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 font-black text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-2xs cursor-pointer"
                     aria-label="زيادة أهداف الضيف"
                   >
                     +
@@ -452,7 +503,7 @@ export default function PredictionMatchCard({
                   <button
                     type="button"
                     onClick={onRequestLogin}
-                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-brand text-white font-black text-xs sm:text-sm hover:bg-emerald-600 transition-all shadow-xs active:scale-95 cursor-pointer"
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-sky-600 text-white font-black text-xs sm:text-sm hover:bg-sky-700 transition-all shadow-xs active:scale-95 cursor-pointer"
                   >
                     سجل دخولك لتوقع النتيجة
                   </button>
@@ -472,8 +523,8 @@ export default function PredictionMatchCard({
                       justSaved
                         ? 'bg-emerald-600 text-white cursor-pointer'
                         : canEditPrediction && (isModified || !userPred)
-                        ? 'bg-brand text-white hover:bg-emerald-600 cursor-pointer'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                        ? 'bg-sky-600 text-white hover:bg-sky-700 cursor-pointer'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed'
                     }`}
                   >
                     {isSubmitting ? (
@@ -501,14 +552,14 @@ export default function PredictionMatchCard({
                         )
                       ) : (
                         <>
-                          <Lock className="w-4 h-4 text-gray-400" />
+                          <Lock className="w-4 h-4 text-slate-400" />
                           <span>تم القفل ({userPred.homeScore} - {userPred.awayScore})</span>
                         </>
                       )
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        <span>تثبيت التوقع (+{predictionMatch.pointsPerMatch || 2} نقاط)</span>
+                        <span>حفظ التوقع ({formatPointsLabel(ptsPerMatch)})</span>
                       </>
                     )}
                   </button>
@@ -518,16 +569,16 @@ export default function PredictionMatchCard({
           </div>
         )}
 
-        {/* Golden Predictor Card (if present and calculated) */}
+        {/* Golden Predictor Card (ONLY shown when Backend returns goldenPredictor or user isGolden) */}
         {isCalculated && predictionMatch.goldenPredictor && (
           <div className="mt-3 p-3.5 bg-gradient-to-r from-amber-500/15 via-yellow-400/20 to-amber-500/10 border-2 border-amber-400/80 dark:border-amber-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
             <div className="flex items-center gap-2.5">
-              <Sparkles className="w-6 h-6 text-amber-500 shrink-0 animate-bounce" />
+              <Crown className="w-6 h-6 text-amber-500 shrink-0 animate-bounce" />
               <div>
                 <div className="font-black text-xs text-amber-900 dark:text-amber-200 flex items-center gap-1">
                   <span>👑 صاحب التوقع الذهبي (+1 نقطة إضافية):</span>
                 </div>
-                <div className="text-xs font-bold text-gray-800 dark:text-gray-200 mt-0.5">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
                   انفرد المتسابق <span className="font-black text-amber-600 dark:text-amber-400">{predictionMatch.goldenPredictor.name}</span> بالتوقع الصحيح الوحيد!
                 </div>
               </div>
@@ -535,15 +586,15 @@ export default function PredictionMatchCard({
           </div>
         )}
 
-        {/* 5. Closed, Live, Pending, or Finished Match Status & User Score */}
+        {/* 5. Closed, Live, Pending, or Finished Match Details */}
         {!isOpen && (
-          <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800 space-y-2.5">
+          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
             {/* User prediction summary if logged in */}
             {userPred ? (
-              <div className="flex items-center justify-between text-xs bg-gray-50/80 dark:bg-gray-800/60 p-2.5 rounded-xl border border-gray-100 dark:border-gray-800">
+              <div className="flex items-center justify-between text-xs bg-slate-50/80 dark:bg-slate-800/60 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-gray-500">توقعك المسجل:</span>
-                  <span className="font-mono font-black text-gray-900 dark:text-white px-2 py-0.5 rounded bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
+                  <span className="font-bold text-slate-500">توقعك المسجل:</span>
+                  <span className="font-mono font-black text-slate-900 dark:text-white px-2 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600">
                     {userPred.homeScore} - {userPred.awayScore}
                   </span>
                 </div>
@@ -552,45 +603,44 @@ export default function PredictionMatchCard({
                   {isCalculated ? (
                     userPred.isGolden ? (
                       <span className="font-black text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                        <Sparkles className="w-4 h-4 text-amber-500" />
-                        +{userPred.pointsEarned} نقاط (2 + 1 نقطة ذهبية) 👑
+                        <Crown className="w-4 h-4 text-amber-500" />
+                        توقع ذهبي 👑 (+{userPred.pointsEarned} نقطة)
                       </span>
                     ) : userPred.pointsEarned > 0 ? (
                       <span className="font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                         <CheckCircle2 className="w-4 h-4" />
-                        +{userPred.pointsEarned} نقطة (توقع دقيق!)
+                        توقع صحيح (+{userPred.pointsEarned} نقطة)
                       </span>
                     ) : (
-                      <span className="font-extrabold text-gray-400 flex items-center gap-1">
-                        0 نقطة (توقع خاطئ)
+                      <span className="font-extrabold text-slate-400 flex items-center gap-1">
+                        توقع خاطئ (0 نقطة)
                       </span>
                     )
                   ) : isPendingAdmin ? (
                     <span className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
-                      بانتظار اعتماد النتيجة
+                      بانتظار النتيجة
                     </span>
                   ) : isLive ? (
-                    <span className="font-bold text-red-500 flex items-center gap-1 animate-pulse">
+                    <span className="font-bold text-rose-500 flex items-center gap-1 animate-pulse">
                       <Radio className="w-3.5 h-3.5" />
-                      مباراة جارية الآن
+                      المباراة بدأت
                     </span>
                   ) : (
-                    <span className="font-bold text-gray-400">أغلقت التوقعات</span>
+                    <span className="font-bold text-slate-400">التوقع مغلق</span>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="text-center py-1 text-xs text-gray-400 font-bold">
+              <div className="text-center py-1 text-xs text-slate-400 font-bold">
                 {isCalculated
                   ? 'لم تشارك بتوقع لهذه المباراة.'
                   : 'أغلقت التوقعات لهذه المباراة مع بداية انطلاقها.'}
               </div>
             )}
 
-            {/* 6. Winners list & Share button (Requirement 4 & 10) */}
+            {/* 6. Winners list & Share button */}
             <div className="flex items-center justify-between pt-1 gap-2">
-              {/* Correct Predictors Toggle */}
               {isCalculated && predictionMatch.correctPredictorsCount !== undefined ? (
                 <button
                   type="button"
@@ -611,12 +661,11 @@ export default function PredictionMatchCard({
                 <div />
               )}
 
-              {/* Share Result Button */}
               {(isCalculated || isFinished || isLive) && (
                 <button
                   type="button"
                   onClick={handleShareResult}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold text-xs transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors cursor-pointer"
                   title="مشاركة نتيجة وتوقعات المباراة"
                 >
                   {copiedShare ? (
@@ -643,9 +692,9 @@ export default function PredictionMatchCard({
                   exit={{ opacity: 0, height: 0 }}
                   className="overflow-hidden pt-2"
                 >
-                  <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200/60 dark:border-emerald-800/60 space-y-2">
+                  <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/60 dark:border-emerald-800/60 space-y-2">
                     <div className="text-[11px] font-black text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
-                      <span>الفائزون بنقاط المباراة (+{predictionMatch.pointsPerMatch || 2} نقطة):</span>
+                      <span>الفائزون بنقاط المباراة ({formatPointsLabel(ptsPerMatch)}):</span>
                       <span>{predictionMatch.correctPredictorsCount} متسابق</span>
                     </div>
 
@@ -654,21 +703,24 @@ export default function PredictionMatchCard({
                         {predictionMatch.correctPredictors.map((winner) => (
                           <div
                             key={winner.id}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700/60 shadow-2xs text-xs font-bold text-gray-900 dark:text-white"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-700/60 shadow-2xs text-xs font-bold text-slate-900 dark:text-white"
                           >
                             <div className="w-5 h-5 rounded-full overflow-hidden bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center text-[10px] font-black text-emerald-700 dark:text-emerald-300">
                               {winner.avatar ? (
-                                <img src={winner.avatar} alt="" className="w-full h-full object-cover" />
+                                <img loading="lazy" src={winner.avatar} alt="" className="w-full h-full object-cover" />
                               ) : (
                                 winner.name.charAt(0)
                               )}
                             </div>
                             <span>{winner.name}</span>
+                            {winner.isGolden && (
+                              <span className="text-amber-500 text-[10px]" title="توقع ذهبي">👑</span>
+                            )}
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-xs text-gray-500 font-bold py-1 text-center">
+                      <div className="text-xs text-slate-500 font-bold py-1 text-center">
                         لا يوجد متسابقين توقعوا هذه النتيجة بدقة.
                       </div>
                     )}
@@ -682,3 +734,4 @@ export default function PredictionMatchCard({
     </motion.div>
   );
 }
+

@@ -47,6 +47,8 @@ import {
   getUserPredictionsHistory,
   getUserPredictionStats,
   saveUserPrediction,
+  updateUserPredictionById,
+  deleteUserPredictionById,
   getLeaderboard,
   getGoldenLeaderboard,
   getAdminPredictionMatches,
@@ -66,6 +68,11 @@ import {
   confirmAndEvaluatePredictionMatch,
   getAdminPredictionStats,
 } from './src/services/predictionService.ts';
+import {
+  validateScore,
+  validatePointsPerMatch,
+  validatePositiveId,
+} from './server/security/validators.ts';
 
 async function logActivity(
   userId: number,
@@ -97,7 +104,11 @@ async function startServer() {
   app.set('trust proxy', 1);
 
   // Initialize DB Schema & Run Automatic Migrations (e.g. Scrypt password migration)
-  await initializeDatabaseSchema();
+  try {
+    await initializeDatabaseSchema();
+  } catch (dbErr: any) {
+    console.warn('[Server Startup] Non-fatal DB initialization warning:', dbErr?.message || dbErr);
+  }
 
   // Security Headers via Helmet (configured to allow iframe & images)
   app.use(
@@ -109,12 +120,64 @@ async function startServer() {
     })
   );
 
-  // Secure CORS configuration
+  // Secure Environment-Aware CORS configuration
+  const isProduction = process.env.NODE_ENV === 'production';
+  const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
+  const configuredAllowedOrigins = rawAllowedOrigins
+    .split(',')
+    .map((o) => o.trim().toLowerCase())
+    .filter((o) => o.length > 0);
+
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, server-to-server, curl) or any origin in dev/preview
-        callback(null, true);
+        // Allow requests with no origin (mobile apps, server-to-server, curl, CLI)
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        const originLower = origin.toLowerCase().trim();
+
+        // In non-production environments (development / preview), allow localhost, 127.0.0.1 and AI Studio / Cloud Run preview domains
+        if (!isProduction) {
+          if (
+            originLower.startsWith('http://localhost:') ||
+            originLower.startsWith('http://127.0.0.1:') ||
+            originLower.endsWith('.run.app') ||
+            originLower.endsWith('.google.internal') ||
+            originLower.endsWith('.aistudio.google.com')
+          ) {
+            return callback(null, true);
+          }
+        }
+
+        // In Production, strictly check configured ALLOWED_ORIGINS
+        if (configuredAllowedOrigins.length > 0) {
+          if (configuredAllowedOrigins.includes(originLower)) {
+            return callback(null, true);
+          }
+          const isWildcardMatch = configuredAllowedOrigins.some((allowed) => {
+            if (allowed.startsWith('*.')) {
+              const base = allowed.slice(2);
+              return originLower.endsWith(base) || originLower === `https://${base}` || originLower === `http://${base}`;
+            }
+            return false;
+          });
+          if (isWildcardMatch) {
+            return callback(null, true);
+          }
+          return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+        }
+
+        // If in production without explicit ALLOWED_ORIGINS, permit current Cloud Run host domain
+        if (isProduction) {
+          if (originLower.endsWith('.run.app')) {
+            return callback(null, true);
+          }
+          return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+        }
+
+        return callback(null, true);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -1045,28 +1108,15 @@ async function startServer() {
   // Protected Match Sync Endpoint (Admin only or Cron Key, with concurrency lock)
   let isSyncInProgress = false;
 
-  app.post('/api/sync-matches', matchSyncLimiter, async (req, res) => {
+  app.post('/api/sync-matches', matchSyncLimiter, optionalAuth, async (req: AuthRequest, res) => {
     const cronSecret = process.env.CRON_SECRET;
     const reqSecret = req.headers['x-cron-secret'];
 
     const hasCronAuth = !!cronSecret && reqSecret === cronSecret;
-    if (!hasCronAuth) {
-      // Require Admin session
-      let isAdmin = false;
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split('Bearer ')[1]?.trim();
-        const decoded = verifyServerSessionToken(token);
-        if (decoded) {
-          const userRec = await db.select().from(users).where(eq(users.uid, decoded.uid)).limit(1);
-          if (userRec.length > 0 && (userRec[0].role === 'admin' || userRec[0].role === 'superadmin')) {
-            isAdmin = true;
-          }
-        }
-      }
-      if (!isAdmin) {
-        return res.status(403).json({ error: 'Forbidden: Admin authorization required for match synchronization' });
-      }
+    const isUserAdmin = req.dbUser && (req.dbUser.role === 'admin' || req.dbUser.role === 'superadmin');
+
+    if (!hasCronAuth && !isUserAdmin) {
+      return res.status(403).json({ error: 'Forbidden: Admin authorization or valid Cron Secret required for match synchronization' });
     }
 
     if (isSyncInProgress) {
@@ -1172,16 +1222,18 @@ async function startServer() {
    */
   app.put('/api/admin/predictions/participants/:id/status', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+      const idCheck = validatePositiveId(req.params.id, 'معرف المشترك');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
 
       const { status, notes } = req.body;
       if (!['approved', 'rejected', 'blocked', 'pending'].includes(status)) {
         return res.status(400).json({ error: 'حالة غير صالحة' });
       }
 
-      const result = await updateParticipantStatus(id, status, req.dbUser.id, notes);
-      await logActivity(req.dbUser.id, 'UPDATE_STATUS', 'CONTEST_PARTICIPANT', String(id), { status, notes });
+      const result = await updateParticipantStatus(idCheck.value, status, req.dbUser.id, notes);
+      await logActivity(req.dbUser.id, 'UPDATE_STATUS', 'CONTEST_PARTICIPANT', String(idCheck.value), { status, notes });
       return res.json(result);
     } catch (error: any) {
       console.error('Error updating participant status:', error);
@@ -1195,11 +1247,13 @@ async function startServer() {
    */
   app.delete('/api/admin/predictions/participants/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+      const idCheck = validatePositiveId(req.params.id, 'معرف المشترك');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
 
-      const result = await removeParticipant(id);
-      await logActivity(req.dbUser.id, 'DELETE', 'CONTEST_PARTICIPANT', String(id));
+      const result = await removeParticipant(idCheck.value);
+      await logActivity(req.dbUser.id, 'DELETE', 'CONTEST_PARTICIPANT', String(idCheck.value));
       return res.json(result);
     } catch (error: any) {
       console.error('Error removing participant:', error);
@@ -1262,19 +1316,79 @@ async function startServer() {
 
       const { predictionMatchId, homeScore, awayScore } = req.body;
 
-      const pId = parseInt(String(predictionMatchId), 10);
-      const hScore = parseInt(String(homeScore), 10);
-      const aScore = parseInt(String(awayScore), 10);
-
-      if (isNaN(pId) || isNaN(hScore) || isNaN(aScore)) {
-        return res.status(400).json({ error: 'بيانات التوقع غير صحيحة، يرجى إدخال أرقام صحيحة' });
+      const pIdCheck = validatePositiveId(predictionMatchId, 'معرف مباراة التوقع');
+      if (!pIdCheck.valid || pIdCheck.value === undefined) {
+        return res.status(400).json({ error: pIdCheck.error || 'معرف مباراة التوقع غير صالح' });
       }
 
-      const result = await saveUserPrediction(req.dbUser.id, pId, hScore, aScore);
+      const hScoreCheck = validateScore(homeScore, 'أهداف الفريق الأول');
+      if (!hScoreCheck.valid || hScoreCheck.value === undefined) {
+        return res.status(400).json({ error: hScoreCheck.error || 'أهداف الفريق الأول غير صحيحة' });
+      }
+
+      const aScoreCheck = validateScore(awayScore, 'أهداف الفريق الثاني');
+      if (!aScoreCheck.valid || aScoreCheck.value === undefined) {
+        return res.status(400).json({ error: aScoreCheck.error || 'أهداف الفريق الثاني غير صحيحة' });
+      }
+
+      const result = await saveUserPrediction(req.dbUser.id, pIdCheck.value, hScoreCheck.value, aScoreCheck.value);
       return res.json(result);
     } catch (error: any) {
       console.error('Error saving prediction:', error);
       return res.status(400).json({ error: error.message || 'فشل في حفظ التوقع' });
+    }
+  });
+
+  /**
+   * PUT /api/predictions/:id
+   * User: Update own prediction by ID within allowed 1-minute window.
+   */
+  app.put('/api/predictions/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول أولاً' });
+
+      const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف التوقع غير صالح' });
+      }
+
+      const { homeScore, awayScore } = req.body;
+      const hScoreCheck = validateScore(homeScore, 'أهداف الفريق الأول');
+      if (!hScoreCheck.valid || hScoreCheck.value === undefined) {
+        return res.status(400).json({ error: hScoreCheck.error || 'أهداف الفريق الأول غير صحيحة' });
+      }
+
+      const aScoreCheck = validateScore(awayScore, 'أهداف الفريق الثاني');
+      if (!aScoreCheck.valid || aScoreCheck.value === undefined) {
+        return res.status(400).json({ error: aScoreCheck.error || 'أهداف الفريق الثاني غير صحيحة' });
+      }
+
+      const result = await updateUserPredictionById(req.dbUser.id, idCheck.value, hScoreCheck.value, aScoreCheck.value);
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error updating prediction:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تعديل التوقع' });
+    }
+  });
+
+  /**
+   * DELETE /api/predictions/:id
+   * User: Delete own prediction by ID within allowed 1-minute window.
+   */
+  app.delete('/api/predictions/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول أولاً' });
+
+      const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف التوقع غير صالح' });
+      }
+
+      const result = await deleteUserPredictionById(req.dbUser.id, idCheck.value);
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error deleting prediction:', error);
+      return res.status(400).json({ error: error.message || 'فشل في حذف التوقع' });
     }
   });
 
@@ -1285,7 +1399,8 @@ async function startServer() {
   app.get('/api/predictions/leaderboard', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const currentUserId = req.dbUser ? req.dbUser.id : undefined;
-      const data = await getLeaderboard(currentUserId);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const data = await getLeaderboard(currentUserId, 100, isNaN(contestId as number) ? undefined : contestId);
       return res.json(data);
     } catch (error: any) {
       console.error('Error fetching predictions leaderboard:', error);
@@ -1300,7 +1415,8 @@ async function startServer() {
   app.get('/api/predictions/leaderboard/golden', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const currentUserId = req.dbUser ? req.dbUser.id : undefined;
-      const data = await getGoldenLeaderboard(currentUserId);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const data = await getGoldenLeaderboard(currentUserId, 100, isNaN(contestId as number) ? undefined : contestId);
       return res.json(data);
     } catch (error: any) {
       console.error('Error fetching golden leaderboard:', error);
@@ -1362,12 +1478,20 @@ async function startServer() {
   app.post('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
       const { matchId, pointsPerMatch } = req.body;
-      if (!matchId || typeof matchId !== 'string') {
+      if (!matchId || typeof matchId !== 'string' || !matchId.trim()) {
         return res.status(400).json({ error: 'معرف المباراة مطلوب' });
       }
 
-      const pts = pointsPerMatch !== undefined ? parseInt(String(pointsPerMatch), 10) : 2;
-      const result = await addMatchToPredictions(matchId.trim(), isNaN(pts) ? 2 : pts);
+      let pts = 2;
+      if (pointsPerMatch !== undefined && pointsPerMatch !== null) {
+        const ptsCheck = validatePointsPerMatch(pointsPerMatch, 'نقاط المباراة');
+        if (!ptsCheck.valid || ptsCheck.value === undefined) {
+          return res.status(400).json({ error: ptsCheck.error || 'نقاط المباراة غير صحيحة' });
+        }
+        pts = ptsCheck.value;
+      }
+
+      const result = await addMatchToPredictions(matchId.trim(), pts);
       await logActivity(req.dbUser.id, 'CREATE', 'PREDICTION_MATCH', matchId, { matchId, pointsPerMatch: pts });
       return res.status(201).json(result);
     } catch (error: any) {
@@ -1383,7 +1507,16 @@ async function startServer() {
   app.post('/api/admin/predictions/custom-match', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
       const { leagueName, leagueLogo, homeTeamName, homeTeamLogo, awayTeamName, awayTeamLogo, matchDate, pointsPerMatch } = req.body;
-      const pts = pointsPerMatch !== undefined ? parseInt(String(pointsPerMatch), 10) : 2;
+
+      let pts = 2;
+      if (pointsPerMatch !== undefined && pointsPerMatch !== null) {
+        const ptsCheck = validatePointsPerMatch(pointsPerMatch, 'نقاط المباراة');
+        if (!ptsCheck.valid || ptsCheck.value === undefined) {
+          return res.status(400).json({ error: ptsCheck.error || 'نقاط المباراة غير صحيحة' });
+        }
+        pts = ptsCheck.value;
+      }
+
       const result = await addCustomExternalMatchToPredictions({
         leagueName,
         leagueLogo,
@@ -1392,7 +1525,7 @@ async function startServer() {
         awayTeamName,
         awayTeamLogo,
         matchDate,
-        pointsPerMatch: isNaN(pts) ? 2 : pts,
+        pointsPerMatch: pts,
       });
       await logActivity(req.dbUser.id, 'CREATE_CUSTOM', 'PREDICTION_MATCH', String(result.id), {
         leagueName,
@@ -1413,15 +1546,19 @@ async function startServer() {
    */
   app.put('/api/admin/predictions/:id/points', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+      const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
 
       const { pointsPerMatch } = req.body;
-      const pts = parseInt(String(pointsPerMatch), 10);
-      if (isNaN(pts)) return res.status(400).json({ error: 'قيمة النقاط غير صحيحة' });
+      const ptsCheck = validatePointsPerMatch(pointsPerMatch, 'نقاط المباراة');
+      if (!ptsCheck.valid || ptsCheck.value === undefined) {
+        return res.status(400).json({ error: ptsCheck.error || 'قيمة النقاط غير صحيحة' });
+      }
 
-      const result = await updatePredictionMatchPoints(id, pts);
-      await logActivity(req.dbUser.id, 'UPDATE_POINTS', 'PREDICTION_MATCH', String(id), { pointsPerMatch: pts });
+      const result = await updatePredictionMatchPoints(idCheck.value, ptsCheck.value);
+      await logActivity(req.dbUser.id, 'UPDATE_POINTS', 'PREDICTION_MATCH', String(idCheck.value), { pointsPerMatch: ptsCheck.value });
       return res.json(result);
     } catch (error: any) {
       console.error('Error updating prediction match points:', error);
@@ -1435,15 +1572,33 @@ async function startServer() {
    */
   app.post('/api/admin/predictions/:id/confirm-result', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+      const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
 
       const { homeScore, awayScore } = req.body;
-      const parsedHome = homeScore !== undefined && homeScore !== null ? parseInt(String(homeScore), 10) : undefined;
-      const parsedAway = awayScore !== undefined && awayScore !== null ? parseInt(String(awayScore), 10) : undefined;
+      let parsedHome: number | undefined;
+      let parsedAway: number | undefined;
 
-      const result = await confirmAndEvaluatePredictionMatch(id, req.dbUser.id, parsedHome, parsedAway);
-      await logActivity(req.dbUser.id, 'CONFIRM_RESULT', 'PREDICTION_MATCH', String(id), {
+      if (homeScore !== undefined && homeScore !== null) {
+        const hCheck = validateScore(homeScore, 'أهداف الفريق الأول');
+        if (!hCheck.valid || hCheck.value === undefined) {
+          return res.status(400).json({ error: hCheck.error || 'أهداف الفريق الأول غير صحيحة' });
+        }
+        parsedHome = hCheck.value;
+      }
+
+      if (awayScore !== undefined && awayScore !== null) {
+        const aCheck = validateScore(awayScore, 'أهداف الفريق الثاني');
+        if (!aCheck.valid || aCheck.value === undefined) {
+          return res.status(400).json({ error: aCheck.error || 'أهداف الفريق الثاني غير صحيحة' });
+        }
+        parsedAway = aCheck.value;
+      }
+
+      const result = await confirmAndEvaluatePredictionMatch(idCheck.value, req.dbUser.id, parsedHome, parsedAway);
+      await logActivity(req.dbUser.id, 'CONFIRM_RESULT', 'PREDICTION_MATCH', String(idCheck.value), {
         finalScore: result.finalScore,
         evaluatedCount: result.evaluatedCount,
         pointsAwarded: result.pointsAwarded,
@@ -1466,12 +1621,14 @@ async function startServer() {
    */
   app.put('/api/admin/predictions/:id/toggle', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+      const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
 
       const { isActive } = req.body;
-      const result = await togglePredictionMatchActive(id, !!isActive);
-      await logActivity(req.dbUser.id, 'UPDATE', 'PREDICTION_MATCH', String(id), { isActive: !!isActive });
+      const result = await togglePredictionMatchActive(idCheck.value, !!isActive);
+      await logActivity(req.dbUser.id, 'UPDATE', 'PREDICTION_MATCH', String(idCheck.value), { isActive: !!isActive });
       return res.json(result);
     } catch (error: any) {
       console.error('Error toggling prediction match:', error);
@@ -1485,11 +1642,13 @@ async function startServer() {
    */
   app.delete('/api/admin/predictions/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+      const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
 
-      const result = await removePredictionMatch(id);
-      await logActivity(req.dbUser.id, 'DELETE', 'PREDICTION_MATCH', String(id));
+      const result = await removePredictionMatch(idCheck.value);
+      await logActivity(req.dbUser.id, 'DELETE', 'PREDICTION_MATCH', String(idCheck.value));
       return res.json(result);
     } catch (error: any) {
       console.error('Error removing prediction match:', error);

@@ -1,98 +1,189 @@
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, Eye, Share2, ChevronRight, Loader2, Maximize2, X, ExternalLink } from 'lucide-react';
+import { Clock, Eye, Share2, ChevronRight, Loader2, Maximize2, X, ExternalLink, Tag, Newspaper, ArrowLeft, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { fetchNewsById } from '../services/api';
+import { fetchNewsById, fetchNews } from '../services/api';
 import { useSEO } from '../hooks/useSEO';
 import { trackNewsRead, trackNewsShare } from '../services/analytics';
 import HomeSidebar from '../components/home/HomeSidebar';
+import NewsCard from '../components/news/NewsCard';
 import ToastModal from '../components/common/ToastModal';
 
 export default function NewsDetail() {
   const { id } = useParams<{ id: string }>();
   const [article, setArticle] = useState<any>(null);
+  const [relatedNews, setRelatedNews] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCopiedToast, setShowCopiedToast] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
-  useEffect(() => {
-    const loadNewsDetail = async () => {
-      try {
-        setIsLoading(true);
-        if (!id) throw new Error('لا يوجد معرف للخبر');
-        const data = await fetchNewsById(parseInt(id));
-        setArticle(data);
-        if (data?.title) {
-          trackNewsRead(id, data.title, data.category);
-        }
-      } catch (err: any) {
-        setError(err.message || 'حدث خطأ أثناء جلب تفاصيل الخبر');
-      } finally {
-        setIsLoading(false);
+  const loadNewsDetail = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      if (!id) throw new Error('لم يتم تحديد معرف الخبر');
+
+      const newsId = parseInt(id, 10);
+      const data = await fetchNewsById(newsId);
+
+      if (!data) {
+        throw new Error('عذراً، لم نتمكن من العثور على هذا الخبر.');
       }
-    };
+
+      setArticle(data);
+
+      if (data?.title) {
+        trackNewsRead(id, data.title, data.category);
+      }
+
+      // Fetch related news
+      const allNews = await fetchNews().catch(() => []);
+      if (Array.isArray(allNews)) {
+        const others = allNews.filter((n: any) => String(n.id) !== String(id));
+        // Prefer same category
+        const sameCategory = others.filter((n: any) => n.category === data.category);
+        const related = sameCategory.length >= 3 ? sameCategory : others;
+        setRelatedNews(related.slice(0, 3));
+      }
+    } catch (err: any) {
+      console.error('[NewsDetail] error:', err);
+      setError(err.message || 'حدث خطأ أثناء تحميل تفاصيل الخبر.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadNewsDetail();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [id]);
 
-  useSEO(article?.title || 'تفاصيل الخبر', article?.excerpt);
+  useSEO(article?.title || 'تفاصيل الخبر | KoraNews', article?.summary || article?.title);
 
+  // Loading Skeleton State
   if (isLoading) {
     return (
-      <div className="w-full h-64 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-brand" />
+      <div className="w-full max-w-5xl mx-auto space-y-6 animate-pulse select-none pb-12">
+        <div className="w-48 h-5 bg-slate-200 dark:bg-slate-800 rounded-md" />
+        <div className="w-3/4 h-10 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+        <div className="w-1/2 h-6 bg-slate-200 dark:bg-slate-800 rounded-md" />
+        <div className="w-full h-80 bg-slate-200 dark:bg-slate-800 rounded-3xl" />
+        <div className="space-y-3">
+          <div className="w-full h-4 bg-slate-200 dark:bg-slate-800 rounded" />
+          <div className="w-11/12 h-4 bg-slate-200 dark:bg-slate-800 rounded" />
+          <div className="w-4/5 h-4 bg-slate-200 dark:bg-slate-800 rounded" />
+        </div>
       </div>
     );
   }
 
+  // Error / Not Found State
   if (error || !article) {
     return (
-      <div className="flex flex-col items-center justify-center py-32 text-center">
-        <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-4">الخبر غير موجود</h2>
-        <p className="text-gray-500 mb-6">{error || 'عذراً، لم نتمكن من العثور على الخبر الذي تبحث عنه.'}</p>
-        <Link to="/news" className="bg-brand text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-600 transition-colors">
-          العودة للأخبار
-        </Link>
+      <div className="flex flex-col items-center justify-center py-20 text-center select-none">
+        <div className="p-4 rounded-3xl bg-rose-50 dark:bg-rose-950/30 text-rose-600 mb-4">
+          <Newspaper className="w-12 h-12" />
+        </div>
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 mb-2">
+          الخبر غير موجود
+        </h2>
+        <p className="text-xs sm:text-sm text-slate-500 max-w-md mb-6 font-bold">
+          {error || 'عذراً، قد يكون الخبر قد تم حذفه أو أن الرابط غير صحيح.'}
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={loadNewsDetail}
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm hover:bg-slate-200 transition-colors inline-flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>إعادة المحاولة</span>
+          </button>
+          <Link
+            to="/news"
+            className="bg-sky-600 text-white px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm hover:bg-sky-700 transition-colors shadow-xs"
+          >
+            العودة لقائمة الأخبار
+          </Link>
+        </div>
       </div>
     );
   }
 
+  const defaultImage = 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=1200';
+  const categoryName = article.category || 'أخبار الرياضة';
+  const authorName = article.author?.name || 'محرر الرياضة';
+  const authorAvatar = article.author?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100';
+
+  // Format content paragraphs
+  const contentParagraphs = typeof article.content === 'string'
+    ? article.content.split('\n\n').filter((p: string) => p.trim() !== '')
+    : [article.content || ''];
+
   return (
-    <div className="animate-in fade-in duration-500">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 mb-6">
-        <Link to="/" className="hover:text-brand transition-colors">الرئيسية</Link>
-        <ChevronRight className="w-4 h-4" />
-        <Link to="/news" className="hover:text-brand transition-colors">الأخبار</Link>
-        <ChevronRight className="w-4 h-4" />
-        <span className="text-brand truncate max-w-[200px] sm:max-w-[400px]">{article.title}</span>
+    <div className="animate-in fade-in duration-500 pb-12 select-none">
+      {/* 1. Breadcrumbs Header */}
+      <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-500 dark:text-slate-400 mb-4 sm:mb-6 overflow-x-auto no-scrollbar">
+        <Link to="/" className="hover:text-sky-600 transition-colors shrink-0">الرئيسية</Link>
+        <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+        <Link to="/news" className="hover:text-sky-600 transition-colors shrink-0">الأخبار</Link>
+        <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+        <span className="text-sky-600 dark:text-sky-400 font-black truncate max-w-[200px] sm:max-w-[350px]">
+          {article.title}
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
-        <div className="lg:col-span-8">
-          {/* Article Header */}
-          <div className="mb-6">
-            <h1 className="text-xl sm:text-4xl font-extrabold text-gray-900 dark:text-white leading-snug mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        {/* Main Article Content */}
+        <div className="lg:col-span-8 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-4 sm:p-7 shadow-xs">
+          
+          {/* Category Badge & Title */}
+          <div className="mb-4 sm:mb-6">
+            <span className="inline-flex items-center gap-1.5 bg-sky-600/10 text-sky-600 dark:text-sky-400 text-xs font-black px-3 py-1 rounded-xl border border-sky-600/20 mb-3 shadow-2xs">
+              <Tag className="w-3.5 h-3.5" />
+              <span>{categoryName}</span>
+            </span>
+
+            <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-slate-900 dark:text-slate-100 leading-snug sm:leading-tight mb-4">
               {article.title}
             </h1>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4 border-y border-gray-100 dark:border-gray-800">
+            {/* Author, Date, Views, Share */}
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4 border-y border-slate-100 dark:border-slate-800/80">
               <div className="flex items-center gap-3">
-                <img loading="lazy" 
-                  src={article.author?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100'} 
-                  alt={article.author?.name || 'كاتب'} 
-                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border-2 border-gray-100 dark:border-gray-700 shadow-sm" 
+                <img
+                  loading="lazy"
+                  src={authorAvatar}
+                  alt={authorName}
+                  className="w-10 h-10 rounded-full object-cover border-2 border-slate-100 dark:border-slate-700 shadow-xs"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100';
+                  }}
                 />
                 <div>
-                  <div className="font-bold text-xs sm:text-sm text-gray-900 dark:text-white">{article.author?.name || 'محرر'}</div>
-                  <div className="text-[11px] sm:text-xs text-gray-500 font-semibold flex items-center gap-2 mt-0.5">
-                    <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {new Date(article.createdAt || Date.now()).toLocaleDateString('ar-EG')}</span>
-                    <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-                    <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> {article.views || 0} قراءة</span>
+                  <div className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-slate-100">
+                    {authorName}
+                  </div>
+                  <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-2.5 mt-0.5">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-sky-500" />
+                      <span>{new Date(article.createdAt || Date.now()).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                    </span>
+                    {article.views !== undefined && (
+                      <>
+                        <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                        <span className="flex items-center gap-1">
+                          <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{article.views} مشاهدة</span>
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
-              <button 
+
+              {/* Share Button */}
+              <button
                 onClick={() => {
                   trackNewsShare(article.id || id || '', article.title, navigator.share ? 'system_share' : 'clipboard_copy');
                   if (navigator.share) {
@@ -102,69 +193,96 @@ export default function NewsDetail() {
                     setShowCopiedToast(true);
                   }
                 }}
-                className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-3.5 py-2 rounded-lg font-bold text-xs sm:text-sm transition-colors border border-gray-200 dark:border-gray-700 active:scale-95 cursor-pointer"
+                className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 px-4 py-2 rounded-xl font-black text-xs sm:text-sm transition-all border border-slate-200/60 dark:border-slate-700/60 cursor-pointer active:scale-95 shadow-2xs"
               >
-                <Share2 className="w-4 h-4" /> مشاركة
+                <Share2 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                <span>مشاركة الخبر</span>
               </button>
             </div>
           </div>
 
-          {/* Article Image - Rendered in its natural dimensions without crop restriction */}
+          {/* Hero Image */}
           {article.image && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              className="mb-6 sm:mb-8 rounded-2xl overflow-hidden shadow-sm bg-gray-100 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800/80 relative group"
-            >
-              <div 
+            <div className="mb-6 sm:mb-8 rounded-2xl overflow-hidden shadow-xs bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-800 relative group">
+              <div
                 onClick={() => setIsImageModalOpen(true)}
-                className="cursor-zoom-in relative block overflow-hidden"
+                className="cursor-zoom-in relative block"
                 title="انقر لعرض الصورة بالحجم الكامل"
               >
-                <img 
-                  loading="lazy" 
-                  src={article.image} 
-                  alt={article.title} 
-                  className="w-full h-auto max-h-[85vh] object-contain mx-auto block rounded-2xl transition-transform duration-300 group-hover:scale-[1.01]" 
+                <img
+                  loading="lazy"
+                  src={article.image || defaultImage}
+                  alt={article.title}
+                  className="w-full h-auto max-h-[70vh] object-cover mx-auto block rounded-2xl transition-transform duration-300 group-hover:scale-[1.01]"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = defaultImage;
+                  }}
                 />
                 
-                {/* Full-size view trigger indicator badge */}
-                <div className="absolute bottom-3 left-3 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <Maximize2 className="w-3.5 h-3.5" />
+                <div className="absolute bottom-3 left-3 bg-slate-950/70 hover:bg-slate-950/90 backdrop-blur-md text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <Maximize2 className="w-3.5 h-3.5 text-sky-400" />
                   <span>عرض بالحجم الكامل</span>
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
 
-          {/* Article Content */}
-          <div className="mb-10 sm:mb-12 text-gray-700 dark:text-gray-300 leading-relaxed sm:leading-loose font-medium text-base sm:text-lg whitespace-pre-wrap">
-            {article.content}
-          </div>
+          {/* Article Text Content (Mobile Reading Optimized Container) */}
+          <article className="mb-8 sm:mb-10 text-slate-800 dark:text-slate-200 leading-relaxed sm:leading-loose font-medium text-base sm:text-lg max-w-none">
+            {contentParagraphs.map((para: string, idx: number) => (
+              <p key={idx} className="mb-4 sm:mb-6 text-justify">
+                {para}
+              </p>
+            ))}
+          </article>
+
+          {/* Related News Grid Section */}
+          {relatedNews.length > 0 && (
+            <div className="pt-6 sm:pt-8 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base sm:text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Newspaper className="w-5 h-5 text-sky-600 shrink-0" />
+                  <span>أخبار ذات صلة</span>
+                </h3>
+                <Link
+                  to="/news"
+                  className="text-xs font-extrabold text-sky-600 hover:text-sky-700 flex items-center gap-1"
+                >
+                  <span>عرض المزيد</span>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                {relatedNews.map((item) => (
+                  <NewsCard key={item.id} article={item} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 space-y-6">
           <div className="sticky top-24">
             <HomeSidebar />
           </div>
         </div>
       </div>
 
-      {/* Full-Screen Original Image Lightbox Modal */}
+      {/* Full-Screen Image Modal */}
       <AnimatePresence>
         {isImageModalOpen && article.image && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setIsImageModalOpen(false)}
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6"
+            className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-4"
           >
-            {/* Top Bar with actions */}
-            <div 
-              onClick={e => e.stopPropagation()} 
-              className="w-full max-w-6xl flex items-center justify-between text-white mb-3"
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-5xl flex items-center justify-between text-white mb-3"
             >
               <span className="text-xs sm:text-sm font-bold truncate max-w-[70%] opacity-90">
                 {article.title}
@@ -190,29 +308,29 @@ export default function NewsDetail() {
               </div>
             </div>
 
-            {/* Image Container with native aspect ratio */}
-            <div 
-              onClick={e => e.stopPropagation()} 
-              className="relative max-w-full max-h-[88vh] flex items-center justify-center overflow-auto rounded-xl"
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-full max-h-[85vh] flex items-center justify-center overflow-auto rounded-xl"
             >
-              <img 
-                src={article.image} 
-                alt={article.title} 
-                className="max-w-full max-h-[85vh] w-auto h-auto object-contain rounded-xl shadow-2xl" 
+              <img loading="lazy"
+                src={article.image}
+                alt={article.title}
+                className="max-w-full max-h-[82vh] w-auto h-auto object-contain rounded-xl shadow-2xl"
               />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Copy Link Toast Modal */}
+      {/* Copy Toast Notification */}
       <ToastModal
         isOpen={showCopiedToast}
         onClose={() => setShowCopiedToast(false)}
-        title="تم النسخ بنجاح"
-        message="تم نسخ رابط الخبر إلى الحافظة!"
+        title="تم نسخ الرابط بنجاح"
+        message="تم نسخ رابط هذا الخبر للحافظة، يمكنك مشاركته مع أصدقائك الآن."
         type="success"
       />
     </div>
   );
 }
+

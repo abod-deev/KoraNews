@@ -51,16 +51,36 @@ const pool = createPool();
 export const db = drizzle(pool, { schema });
 
 /**
- * Ensures database schema tables, columns, and indexes are updated.
- * Automatically migrates any legacy plaintext passwords to secure scrypt hashes.
+ * Ensures database schema tables, columns, constraints, and indexes are created and updated.
+ * Execution order:
+ * 1. Base Independent Tables (users, categories, leagues, teams, contest_settings, standings_cache, email_verifications)
+ * 2. Primary Dependent Tables (matches, news, activity_logs, contest_participants)
+ * 3. Secondary Dependent Tables (comments, prediction_matches)
+ * 4. Prediction Records Tables (predictions, prediction_points)
+ * 5. Idempotent Column Additions & Constraints Migration
+ * 6. Indexes & Password Migration
  */
 export async function initializeDatabaseSchema() {
+  let client;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
+  } catch (connErr: any) {
+    console.warn('[DB Initialization] Could not acquire pool client during startup:', connErr?.message || connErr);
+    return;
+  }
+
+  try {
+    // 0. Attempt to grant schema usage if current user has grant authority
     try {
-      // 1. First ensure all base tables exist before attempting any column alterations
+      await client.query(`GRANT ALL ON SCHEMA public TO CURRENT_USER;`);
+    } catch {
+      // Non-fatal if current user doesn't have grant rights
+    }
+
+    // 1. Run DDL schema creation statements
+    try {
       await client.query(`
-        -- Users, News, Comments base tables
+        -- Base Tables (No Foreign Key Dependencies)
         CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
           uid TEXT NOT NULL UNIQUE,
@@ -83,28 +103,16 @@ export async function initializeDatabaseSchema() {
           created_at TIMESTAMP DEFAULT NOW()
         );
 
-        CREATE TABLE IF NOT EXISTS news (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          excerpt TEXT,
-          content TEXT NOT NULL,
-          image TEXT,
-          category_id INTEGER REFERENCES categories(id),
-          author_id INTEGER NOT NULL REFERENCES users(id),
-          views INTEGER DEFAULT 0,
-          is_featured BOOLEAN DEFAULT FALSE,
-          is_breaking BOOLEAN DEFAULT FALSE,
-          status TEXT DEFAULT 'published' NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
+        CREATE TABLE IF NOT EXISTS leagues (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          logo TEXT
         );
 
-        CREATE TABLE IF NOT EXISTS comments (
-          id SERIAL PRIMARY KEY,
-          content TEXT NOT NULL,
-          news_id INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          created_at TIMESTAMP DEFAULT NOW()
+        CREATE TABLE IF NOT EXISTS teams (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          logo TEXT
         );
 
         CREATE TABLE IF NOT EXISTS contest_settings (
@@ -120,25 +128,92 @@ export async function initializeDatabaseSchema() {
           updated_at TIMESTAMP DEFAULT NOW() NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS standings_cache (
+          league_id TEXT PRIMARY KEY,
+          season TEXT DEFAULT '2026' NOT NULL,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS email_verifications (
+          id SERIAL PRIMARY KEY,
+          email TEXT NOT NULL,
+          code_hash TEXT NOT NULL,
+          expires_at TIMESTAMP NOT NULL,
+          attempts INTEGER DEFAULT 0 NOT NULL,
+          last_sent_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          verified BOOLEAN DEFAULT FALSE NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+
+        -- Level 1 Dependent Tables
+        CREATE TABLE IF NOT EXISTS news (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          excerpt TEXT,
+          content TEXT NOT NULL,
+          image TEXT,
+          category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+          author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          views INTEGER DEFAULT 0,
+          is_featured BOOLEAN DEFAULT FALSE,
+          is_breaking BOOLEAN DEFAULT FALSE,
+          status TEXT DEFAULT 'published' NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS matches (
+          id TEXT PRIMARY KEY,
+          league_id TEXT REFERENCES leagues(id) ON DELETE SET NULL,
+          home_team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+          away_team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+          home_score INTEGER,
+          away_score INTEGER,
+          status TEXT NOT NULL,
+          match_time TEXT,
+          match_date TIMESTAMP NOT NULL,
+          source TEXT,
+          updated_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS activity_logs (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          action TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT,
+          details JSONB,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS contest_participants (
           id SERIAL PRIMARY KEY,
           user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          contest_id INTEGER REFERENCES contest_settings(id),
+          contest_id INTEGER REFERENCES contest_settings(id) ON DELETE SET NULL,
           status TEXT DEFAULT 'pending' NOT NULL,
           applied_at TIMESTAMP DEFAULT NOW() NOT NULL,
           reviewed_at TIMESTAMP,
-          reviewed_by INTEGER REFERENCES users(id),
+          reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
           notes TEXT,
           created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-          updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
-          CONSTRAINT uq_contest_user UNIQUE(user_id)
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
         );
 
-        -- Prediction System Tables (match_id is NULLABLE to support custom external matches)
+        -- Level 2 Dependent Tables
+        CREATE TABLE IF NOT EXISTS comments (
+          id SERIAL PRIMARY KEY,
+          content TEXT NOT NULL,
+          news_id INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        -- Prediction Matches (match_id is explicitly NULLABLE to support custom/external matches)
         CREATE TABLE IF NOT EXISTS prediction_matches (
           id SERIAL PRIMARY KEY,
           match_id TEXT REFERENCES matches(id) ON DELETE SET NULL,
-          contest_id INTEGER REFERENCES contest_settings(id),
+          contest_id INTEGER REFERENCES contest_settings(id) ON DELETE SET NULL,
           external_match_id TEXT,
           is_external BOOLEAN DEFAULT FALSE NOT NULL,
           custom_league_name TEXT,
@@ -157,16 +232,17 @@ export async function initializeDatabaseSchema() {
           calculated_at TIMESTAMP,
           is_confirmed_by_admin BOOLEAN DEFAULT FALSE NOT NULL,
           confirmed_at TIMESTAMP,
-          confirmed_by INTEGER REFERENCES users(id),
+          confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
           created_at TIMESTAMP DEFAULT NOW() NOT NULL,
           updated_at TIMESTAMP DEFAULT NOW() NOT NULL
         );
 
+        -- Predictions Table
         CREATE TABLE IF NOT EXISTS predictions (
           id SERIAL PRIMARY KEY,
           user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           prediction_match_id INTEGER NOT NULL REFERENCES prediction_matches(id) ON DELETE CASCADE,
-          contest_id INTEGER REFERENCES contest_settings(id),
+          contest_id INTEGER REFERENCES contest_settings(id) ON DELETE SET NULL,
           home_score INTEGER NOT NULL,
           away_score INTEGER NOT NULL,
           points_earned INTEGER DEFAULT 0 NOT NULL,
@@ -178,43 +254,24 @@ export async function initializeDatabaseSchema() {
           CONSTRAINT uq_user_prediction_match UNIQUE(user_id, prediction_match_id)
         );
 
+        -- Points Ledger Table
         CREATE TABLE IF NOT EXISTS prediction_points (
           id SERIAL PRIMARY KEY,
           user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           prediction_id INTEGER NOT NULL UNIQUE REFERENCES predictions(id) ON DELETE CASCADE,
           prediction_match_id INTEGER NOT NULL REFERENCES prediction_matches(id) ON DELETE CASCADE,
-          contest_id INTEGER REFERENCES contest_settings(id),
+          contest_id INTEGER REFERENCES contest_settings(id) ON DELETE SET NULL,
           points INTEGER DEFAULT 2 NOT NULL,
           is_golden_bonus BOOLEAN DEFAULT FALSE NOT NULL,
           reason TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT NOW() NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS email_verifications (
-          id SERIAL PRIMARY KEY,
-          email TEXT NOT NULL,
-          code_hash TEXT NOT NULL,
-          expires_at TIMESTAMP NOT NULL,
-          attempts INTEGER DEFAULT 0 NOT NULL,
-          last_sent_at TIMESTAMP DEFAULT NOW() NOT NULL,
-          verified BOOLEAN DEFAULT FALSE NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW() NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS activity_logs (
-          id SERIAL PRIMARY KEY,
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          action TEXT NOT NULL,
-          entity_type TEXT NOT NULL,
-          entity_id TEXT,
-          details JSONB,
-          created_at TIMESTAMP DEFAULT NOW() NOT NULL
-        );
-
-        -- 2. Ensure columns exist on already created tables (idempotent ALTERs)
+        -- 2. Idempotent Column Additions (Ensures schema consistency without data loss)
         ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE NOT NULL;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user' NOT NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT[] DEFAULT ARRAY[]::TEXT[];
         ALTER TABLE news ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'published' NOT NULL;
 
         -- Ensure prediction_matches columns
@@ -236,10 +293,19 @@ export async function initializeDatabaseSchema() {
         ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS confirmed_by INTEGER REFERENCES users(id);
         ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS contest_id INTEGER REFERENCES contest_settings(id);
 
-        -- Drop NOT NULL constraint on prediction_matches.match_id if it was created in older schema
+        -- Drop NOT NULL constraint on prediction_matches.match_id if present from an older schema
         DO $$
         BEGIN
           ALTER TABLE prediction_matches ALTER COLUMN match_id DROP NOT NULL;
+        EXCEPTION
+          WHEN OTHERS THEN NULL;
+        END $$;
+
+        -- Safely drop legacy single-column UNIQUE(user_id) constraint on contest_participants to support future multi-contest architecture
+        DO $$
+        BEGIN
+          ALTER TABLE contest_participants DROP CONSTRAINT IF EXISTS contest_participants_user_id_unique;
+          ALTER TABLE contest_participants DROP CONSTRAINT IF EXISTS uq_contest_user;
         EXCEPTION
           WHEN OTHERS THEN NULL;
         END $$;
@@ -256,21 +322,39 @@ export async function initializeDatabaseSchema() {
         -- Ensure contest_participants columns
         ALTER TABLE contest_participants ADD COLUMN IF NOT EXISTS contest_id INTEGER REFERENCES contest_settings(id);
 
-        -- 3. Create all performance and lookup indexes
+        -- 3. Create all performance, lookup, and uniqueness indexes
         CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
         CREATE INDEX IF NOT EXISTS idx_users_uid ON users(uid);
         CREATE INDEX IF NOT EXISTS idx_news_status ON news(status);
+        CREATE INDEX IF NOT EXISTS idx_news_category_id ON news(category_id);
+        CREATE INDEX IF NOT EXISTS idx_news_author_id ON news(author_id);
         CREATE INDEX IF NOT EXISTS idx_comments_news_id ON comments(news_id);
+        CREATE INDEX IF NOT EXISTS idx_matches_league_id ON matches(league_id);
+        CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(match_date);
         CREATE INDEX IF NOT EXISTS idx_email_verifications_email ON email_verifications(LOWER(email));
+
+        CREATE INDEX IF NOT EXISTS idx_contest_participants_user_id ON contest_participants(user_id);
+        CREATE INDEX IF NOT EXISTS idx_contest_participants_contest_id ON contest_participants(contest_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_contest_participants_contest_user ON contest_participants(contest_id, user_id);
+
         CREATE INDEX IF NOT EXISTS idx_prediction_matches_match_id ON prediction_matches(match_id);
+        CREATE INDEX IF NOT EXISTS idx_prediction_matches_contest_id ON prediction_matches(contest_id);
         CREATE INDEX IF NOT EXISTS idx_prediction_matches_is_active ON prediction_matches(is_active);
+
         CREATE INDEX IF NOT EXISTS idx_predictions_user_id ON predictions(user_id);
         CREATE INDEX IF NOT EXISTS idx_predictions_prediction_match_id ON predictions(prediction_match_id);
+        CREATE INDEX IF NOT EXISTS idx_predictions_contest_id ON predictions(contest_id);
+
         CREATE INDEX IF NOT EXISTS idx_prediction_points_user_id ON prediction_points(user_id);
         CREATE INDEX IF NOT EXISTS idx_prediction_points_match_id ON prediction_points(prediction_match_id);
+        CREATE INDEX IF NOT EXISTS idx_prediction_points_contest_id ON prediction_points(contest_id);
       `);
+    } catch (ddlErr: any) {
+      console.warn('[DB Migration Warning] DDL schema initialization encountered an issue:', ddlErr?.message || ddlErr);
+    }
 
-      // 4. Migrate any existing plaintext passwords to scrypt hashes
+    // 4. Migrate any legacy plaintext passwords to scrypt hashes
+    try {
       const res = await client.query(`SELECT id, password FROM users WHERE password IS NOT NULL AND password_hash IS NULL;`);
       if (res.rows && res.rows.length > 0) {
         const { hashPasswordSync } = await import('../../server/security/passwords.ts');
@@ -282,11 +366,15 @@ export async function initializeDatabaseSchema() {
         }
         console.log(`[DB Migration] Migrated ${res.rows.length} legacy user password(s) to scrypt hashes.`);
       }
-    } finally {
-      client.release();
+    } catch (migErr: any) {
+      console.warn('[DB Migration Warning] Password migration skipped:', migErr?.message || migErr);
     }
   } catch (err: any) {
-    console.warn('[DB Migration Warning] Schema check/migration notice:', err?.message || err);
+    console.error('[DB Migration Error] Non-fatal schema initialization warning:', err?.message || err);
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 }
 

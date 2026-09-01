@@ -299,7 +299,8 @@ export function determineMatchPredictionState(
   matchStatus: string,
   matchDate: Date | string | null,
   isConfirmedByAdmin: boolean,
-  isCalculated: boolean
+  isCalculated: boolean,
+  nowMs: number = Date.now()
 ): 'open' | 'upcoming' | 'live' | 'pending_admin' | 'calculated' {
   if (isCalculated && isConfirmedByAdmin) {
     return 'calculated';
@@ -320,14 +321,13 @@ export function determineMatchPredictionState(
   if (!matchDate) return 'upcoming';
   const kickoffTime = new Date(matchDate).getTime();
   if (isNaN(kickoffTime)) return 'upcoming';
-  const now = Date.now();
 
-  if (now >= kickoffTime) {
+  if (nowMs >= kickoffTime) {
     return 'live';
   }
 
-  // Pre-match lock window: Closed 1 minute before kickoff
-  if (now >= kickoffTime - 60 * 1000) {
+  // Pre-match lock window: Closed 1 minute (60,000ms) before kickoff
+  if (nowMs >= kickoffTime - 60 * 1000) {
     return 'upcoming';
   }
 
@@ -337,7 +337,8 @@ export function determineMatchPredictionState(
 export function isMatchOpenForPrediction(
   predictionMatchIsActive: boolean,
   matchStatus: string,
-  matchDate: Date | string | null
+  matchDate: Date | string | null,
+  nowMs: number = Date.now()
 ): boolean {
   if (!predictionMatchIsActive) return false;
   if (matchStatus === 'FINISHED' || matchStatus === 'LIVE' || matchStatus === 'IN_PLAY' || matchStatus === 'PAUSED') {
@@ -348,9 +349,9 @@ export function isMatchOpenForPrediction(
   const kickoffTime = new Date(matchDate).getTime();
   if (isNaN(kickoffTime)) return false;
 
-  // Closes strictly 1 minute (60,000ms) before match start time
+  // Closes strictly 1 minute (60,000ms) before match start time based on Server Time
   const lockTime = kickoffTime - 60 * 1000;
-  return Date.now() < lockTime;
+  return nowMs < lockTime;
 }
 
 // ==========================================
@@ -876,12 +877,163 @@ export async function saveUserPrediction(
   });
 }
 
+/**
+ * User: Update an existing prediction by ID with strict ownership validation and 1-minute window constraint.
+ */
+export async function updateUserPredictionById(
+  userId: number,
+  predictionId: number,
+  homeScore: number,
+  awayScore: number
+) {
+  if (
+    typeof homeScore !== 'number' ||
+    typeof awayScore !== 'number' ||
+    !Number.isInteger(homeScore) ||
+    !Number.isInteger(awayScore) ||
+    homeScore < 0 ||
+    awayScore < 0 ||
+    homeScore > 30 ||
+    awayScore > 30
+  ) {
+    throw new Error('يرجى إدخال أرقام صحيحة للأهداف بين 0 و 30');
+  }
+
+  return await withDbRetry(async () => {
+    const pred = await db.query.predictions.findFirst({
+      where: eq(predictions.id, predictionId),
+      with: {
+        predictionMatch: {
+          with: {
+            match: true,
+          },
+        },
+      },
+    });
+
+    if (!pred) {
+      throw new Error('التوقع غير موجود');
+    }
+
+    // STRICT OWNERSHIP CHECK
+    if (pred.userId !== userId) {
+      throw new Error('غير مصرح لك بتعديل توقع لمستخدم آخر');
+    }
+
+    if (pred.isEvaluated) {
+      throw new Error('تم تقييم هذا التوقع بالفعل ولا يمكن تعديله');
+    }
+
+    const pm = pred.predictionMatch;
+    if (!pm || !pm.isActive || pm.isCalculated || pm.isConfirmedByAdmin) {
+      throw new Error('المباراة المحددة مغلقة أو تم اعتماد نتيجتها');
+    }
+
+    const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
+    const matchDateVal = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
+
+    const kickoffTime = new Date(matchDateVal).getTime();
+    if (!isNaN(kickoffTime) && Date.now() >= kickoffTime - 60 * 1000) {
+      throw new Error('تم إغلاق التوقعات لهذه المباراة قبل دقيقة من موعد انطلاقها');
+    }
+
+    const isOpen = isMatchOpenForPrediction(pm.isActive, matchStatus, matchDateVal);
+    if (!isOpen) {
+      throw new Error('انتهى وقت التوقع لهذه المباراة');
+    }
+
+    const createdAtTime = new Date(pred.createdAt).getTime();
+    const elapsed = Date.now() - createdAtTime;
+    if (elapsed > 60 * 1000) {
+      throw new Error('انتهت المهلة المسموح بها لتعديل التوقع (دقيقة واحدة من وقت التسجيل)');
+    }
+
+    const updated = await db
+      .update(predictions)
+      .set({
+        homeScore,
+        awayScore,
+        updatedAt: new Date(),
+      })
+      .where(eq(predictions.id, pred.id))
+      .returning();
+
+    const remainingSeconds = Math.max(0, Math.round((60 * 1000 - elapsed) / 1000));
+
+    return {
+      success: true,
+      message: 'تم تحديث التوقع بنجاح',
+      remainingEditSeconds: remainingSeconds,
+      prediction: {
+        id: updated[0].id,
+        homeScore: updated[0].homeScore,
+        awayScore: updated[0].awayScore,
+      },
+    };
+  });
+}
+
+/**
+ * User: Delete an existing prediction by ID with strict ownership validation and 1-minute window constraint.
+ */
+export async function deleteUserPredictionById(userId: number, predictionId: number) {
+  return await withDbRetry(async () => {
+    const pred = await db.query.predictions.findFirst({
+      where: eq(predictions.id, predictionId),
+      with: {
+        predictionMatch: {
+          with: {
+            match: true,
+          },
+        },
+      },
+    });
+
+    if (!pred) {
+      throw new Error('التوقع غير موجود');
+    }
+
+    // STRICT OWNERSHIP CHECK
+    if (pred.userId !== userId) {
+      throw new Error('غير مصرح لك بحذف توقع لمستخدم آخر');
+    }
+
+    if (pred.isEvaluated) {
+      throw new Error('تم تقييم هذا التوقع بالفعل ولا يمكن حذفه');
+    }
+
+    const pm = pred.predictionMatch;
+    if (pm && (pm.isCalculated || pm.isConfirmedByAdmin)) {
+      throw new Error('تم اعتماد نتيجة المباراة بالفعل');
+    }
+
+    const createdAtTime = new Date(pred.createdAt).getTime();
+    const elapsed = Date.now() - createdAtTime;
+    if (elapsed > 60 * 1000) {
+      throw new Error('انتهت المهلة المسموح بها لحذف التوقع (دقيقة واحدة من وقت التسجيل)');
+    }
+
+    await db.delete(predictions).where(eq(predictions.id, pred.id));
+    return { success: true, message: 'تم حذف التوقع بنجاح' };
+  });
+}
+
 // ==========================================
 // LEADERBOARDS (MAIN & GOLDEN)
 // ==========================================
 
-export async function getLeaderboard(currentUserId?: number, limit = 100) {
+export async function getLeaderboard(currentUserId?: number, limit = 100, contestId?: number) {
   return await withDbRetry(async () => {
+    let targetContestId = contestId;
+    if (targetContestId === undefined) {
+      const activeContest = await db.query.contestSettings.findFirst({
+        where: eq(contestSettings.status, 'active'),
+      });
+      if (activeContest) {
+        targetContestId = activeContest.id;
+      }
+    }
+
     // 1. Get all approved participants
     const approvedParticipants = await db.query.contestParticipants.findMany({
       where: eq(contestParticipants.status, 'approved'),
@@ -901,21 +1053,20 @@ export async function getLeaderboard(currentUserId?: number, limit = 100) {
     const leaderboardData = allUsers
       .filter((u) => approvedUserIds.has(u.id) || (currentUserId && u.id === currentUserId))
       .map((u) => {
-        const totalPoints = (u.predictionPoints || []).reduce((acc, curr) => acc + (curr.points || 0), 0);
-        const totalPredictions = (u.predictions || []).length;
-        const correctPredictions = (u.predictions || []).filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
-        const goldenPredictions = (u.predictions || []).filter((p) => p.isGolden).length;
-        const goldenPoints = (u.predictions || []).reduce((acc, p) => acc + (p.goldenPoints || 0), 0);
-        const evaluatedCount = (u.predictions || []).filter((p) => p.isEvaluated).length;
-        const successRate = evaluatedCount > 0 ? Math.round((correctPredictions / evaluatedCount) * 100) : 0;
+        const filteredPoints = (u.predictionPoints || []).filter(
+          (pt) => !targetContestId || pt.contestId === targetContestId || !pt.contestId
+        );
+        const filteredPreds = (u.predictions || []).filter(
+          (p) => !targetContestId || p.contestId === targetContestId || !p.contestId
+        );
 
-        let earliestPointTime = Number.MAX_SAFE_INTEGER;
-        if (u.predictionPoints && u.predictionPoints.length > 0) {
-          for (const pt of u.predictionPoints) {
-            const t = new Date(pt.createdAt).getTime();
-            if (t < earliestPointTime) earliestPointTime = t;
-          }
-        }
+        const totalPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
+        const totalPredictions = filteredPreds.length;
+        const correctPredictions = filteredPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
+        const goldenPredictions = filteredPreds.filter((p) => p.isGolden).length;
+        const goldenPoints = filteredPreds.reduce((acc, p) => acc + (p.goldenPoints || 0), 0);
+        const evaluatedCount = filteredPreds.filter((p) => p.isEvaluated).length;
+        const successRate = evaluatedCount > 0 ? Math.round((correctPredictions / evaluatedCount) * 100) : 0;
 
         return {
           id: u.id,
@@ -928,27 +1079,20 @@ export async function getLeaderboard(currentUserId?: number, limit = 100) {
           goldenPoints,
           totalPredictions,
           successRate,
-          earliestPointTime,
           isCurrentUser: currentUserId ? u.id === currentUserId : false,
         };
       })
       .filter((u) => u.totalPredictions > 0 || u.totalPoints > 0 || (currentUserId && u.id === currentUserId));
 
-    // 3. Sorting (Requirement 11):
+    // 3. Strict Deterministic Sorting:
     // 1. Total Points DESC
     // 2. Correct Predictions DESC
     // 3. Golden Predictions DESC
-    // 4. Success Rate DESC
-    // 5. Total Predictions ASC
-    // 6. Earliest Point Time ASC
-    // 7. User ID ASC
+    // 4. userId ASC
     leaderboardData.sort((a, b) => {
       if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
       if (b.correctPredictions !== a.correctPredictions) return b.correctPredictions - a.correctPredictions;
       if (b.goldenPredictions !== a.goldenPredictions) return b.goldenPredictions - a.goldenPredictions;
-      if (b.successRate !== a.successRate) return b.successRate - a.successRate;
-      if (b.totalPredictions !== a.totalPredictions) return b.totalPredictions - a.totalPredictions;
-      if (a.earliestPointTime !== b.earliestPointTime) return a.earliestPointTime - b.earliestPointTime;
       return a.id - b.id;
     });
 
@@ -968,8 +1112,18 @@ export async function getLeaderboard(currentUserId?: number, limit = 100) {
   });
 }
 
-export async function getGoldenLeaderboard(currentUserId?: number, limit = 100) {
+export async function getGoldenLeaderboard(currentUserId?: number, limit = 100, contestId?: number) {
   return await withDbRetry(async () => {
+    let targetContestId = contestId;
+    if (targetContestId === undefined) {
+      const activeContest = await db.query.contestSettings.findFirst({
+        where: eq(contestSettings.status, 'active'),
+      });
+      if (activeContest) {
+        targetContestId = activeContest.id;
+      }
+    }
+
     // 1. Get all approved participants
     const approvedParticipants = await db.query.contestParticipants.findMany({
       where: eq(contestParticipants.status, 'approved'),
@@ -988,11 +1142,20 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100) 
     const goldenData = allUsers
       .filter((u) => approvedUserIds.has(u.id) || (currentUserId && u.id === currentUserId))
       .map((u) => {
-        const totalPoints = (u.predictionPoints || []).reduce((acc, curr) => acc + (curr.points || 0), 0);
-        const goldenPredictions = (u.predictions || []).filter((p) => p.isGolden).length;
-        const goldenPoints = (u.predictions || []).reduce((acc, p) => acc + (p.goldenPoints || 0), 0);
-        const correctPredictions = (u.predictions || []).filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
-        const totalPredictions = (u.predictions || []).length;
+        const filteredPoints = (u.predictionPoints || []).filter(
+          (pt) => !targetContestId || pt.contestId === targetContestId || !pt.contestId
+        );
+        const filteredPreds = (u.predictions || []).filter(
+          (p) => !targetContestId || p.contestId === targetContestId || !p.contestId
+        );
+
+        const totalPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
+        const goldenPredictions = filteredPreds.filter((p) => p.isGolden).length;
+        const goldenPoints = filteredPreds.reduce((acc, p) => acc + (p.goldenPoints || 0), 0);
+        const correctPredictions = filteredPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
+        const totalPredictions = filteredPreds.length;
+        const evaluatedCount = filteredPreds.filter((p) => p.isEvaluated).length;
+        const successRate = evaluatedCount > 0 ? Math.round((correctPredictions / evaluatedCount) * 100) : 0;
 
         return {
           id: u.id,
@@ -1004,15 +1167,19 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100) 
           totalPoints,
           correctPredictions,
           totalPredictions,
+          successRate,
           isCurrentUser: currentUserId ? u.id === currentUserId : false,
         };
       })
       .filter((u) => u.goldenPredictions > 0 || (currentUserId && u.id === currentUserId));
 
-    // Sort by Golden Predictions DESC, then Golden Points DESC, then Total Points DESC
+    // Sort by:
+    // 1. Golden Predictions DESC (or Golden Points DESC: each golden prediction = +1 golden point)
+    // 2. Total Points DESC
+    // 3. Correct Predictions DESC
+    // 4. userId ASC
     goldenData.sort((a, b) => {
       if (b.goldenPredictions !== a.goldenPredictions) return b.goldenPredictions - a.goldenPredictions;
-      if (b.goldenPoints !== a.goldenPoints) return b.goldenPoints - a.goldenPoints;
       if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
       if (b.correctPredictions !== a.correctPredictions) return b.correctPredictions - a.correctPredictions;
       return a.id - b.id;
@@ -1215,8 +1382,7 @@ export async function confirmAndEvaluatePredictionMatch(
             status: 'FINISHED',
             updatedAt: new Date(),
           })
-          .where(eq(matches.id, pm.matchId))
-          .catch(() => null);
+          .where(eq(matches.id, pm.matchId));
       }
 
       return {
@@ -1243,10 +1409,10 @@ export async function confirmAndEvaluatePredictionMatch(
 
 export async function getAdminAvailableMatchesForSelection(dateFilter: 'today' | 'tomorrow' | 'all' = 'today') {
   return await withDbRetry(async () => {
-    // Determine dates for today and tomorrow
+    // Determine dates for today and tomorrow using UTC
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
 
     const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
     const tomorrowEnd = new Date(todayEnd.getTime() + 24 * 60 * 60 * 1000);

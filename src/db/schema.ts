@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { integer, pgTable, serial, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { integer, pgTable, serial, text, timestamp, boolean, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -62,7 +62,7 @@ export const contestSettings = pgTable('contest_settings', {
 
 export const contestParticipants = pgTable('contest_participants', {
   id: serial('id').primaryKey(),
-  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   contestId: integer('contest_id').references(() => contestSettings.id),
   status: text('status').default('pending').notNull(), // 'pending', 'approved', 'rejected', 'blocked'
   appliedAt: timestamp('applied_at').defaultNow().notNull(),
@@ -71,7 +71,9 @@ export const contestParticipants = pgTable('contest_participants', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  contestUserIdx: uniqueIndex('idx_contest_participants_contest_user').on(table.contestId, table.userId),
+}));
 
 export const predictionMatches = pgTable('prediction_matches', {
   id: serial('id').primaryKey(),

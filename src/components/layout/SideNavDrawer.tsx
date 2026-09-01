@@ -1,3 +1,4 @@
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
@@ -14,11 +15,14 @@ import {
   ShieldCheck,
   User as UserIcon,
   Trophy,
+  Award,
+  Medal,
+  Tag,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useEffect, useRef } from 'react';
+import { fetchCategories } from '../../services/api';
 import SiteLogo from './SiteLogo';
 
 interface SideNavDrawerProps {
@@ -31,6 +35,10 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
   const { user, logout } = useAuth();
   const { isDarkMode, toggleDarkMode } = useTheme();
   const drawerRef = useRef<HTMLDivElement>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+
+  // Touch swipe handling
+  const touchStartX = useRef<number | null>(null);
 
   const canAccessAdmin = !!(
     user &&
@@ -44,8 +52,21 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
     { name: 'الرئيسية', path: '/', icon: Home },
     { name: 'الأخبار', path: '/news', icon: Newspaper },
     { name: 'مباريات اليوم', path: '/matches', icon: Calendar },
-    { name: 'توقعات المباريات', path: '/predictions', icon: Trophy, isBadge: true },
   ];
+
+  const predictionNavItems = [
+    { name: 'توقعات المباريات', path: '/predictions', icon: Trophy },
+    { name: 'ترتيب التوقعات', path: '/predictions-leaderboard', icon: Award },
+    { name: 'الترتيب الذهبي', path: '/golden-leaderboard', icon: Medal },
+  ];
+
+  useEffect(() => {
+    fetchCategories().then((cats) => {
+      if (Array.isArray(cats) && cats.length > 0) {
+        setCategories(cats);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Auto close on route change
   useEffect(() => {
@@ -77,18 +98,34 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  // Touch listeners for Swipe-Right-to-Close in RTL
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diffX = touchEndX - touchStartX.current;
+    // In RTL, drawer is on the right. Swiping right (positive diffX > 50px) closes it.
+    if (diffX > 50) {
+      onClose();
+    }
+    touchStartX.current = null;
+  };
+
   if (typeof document === 'undefined') return null;
 
   return createPortal(
     <AnimatePresence>
       {isOpen && (
         <div
-          className="fixed inset-0 z-[9999] pointer-events-auto overflow-hidden dir-rtl"
+          className="fixed inset-0 z-[9999] pointer-events-auto overflow-hidden dir-rtl select-none"
           id="side-nav-drawer-root"
           role="dialog"
           aria-modal="true"
         >
-          {/* Lighter, smoother backdrop */}
+          {/* Overlay Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -99,28 +136,30 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
               onClose();
             }}
             aria-hidden="true"
-            className="absolute inset-0 bg-black/45 dark:bg-black/65 backdrop-blur-[2px] cursor-pointer"
+            className="absolute inset-0 bg-slate-950/60 dark:bg-black/75 backdrop-blur-xs cursor-pointer"
           />
 
-          {/* Side Drawer Container: Narrower, Compact (approx 78-84% mobile width, max ~300px) */}
+          {/* Drawer Panel */}
           <div className="absolute inset-y-0 right-0 max-w-full flex h-full">
             <motion.div
               ref={drawerRef}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-              className="pointer-events-auto w-[80vw] sm:w-76 max-w-[300px] h-full flex flex-col bg-white dark:bg-gray-950 text-gray-900 dark:text-white shadow-2xl border-l border-gray-200/80 dark:border-gray-800 select-none"
+              className="pointer-events-auto w-[78vw] sm:w-72 max-w-[280px] h-full flex flex-col bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 shadow-2xl border-l border-slate-200 dark:border-slate-800"
             >
-              {/* 1. Compact Header */}
-              <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800/80 bg-gray-50/70 dark:bg-gray-900/60">
-                <Link to="/" onClick={onClose} className="flex items-center gap-2.5 group">
+              {/* Header */}
+              <div className="shrink-0 flex items-center justify-between px-3.5 py-3 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60">
+                <Link to="/" onClick={onClose} className="flex items-center gap-2 group">
                   <SiteLogo size="sm" />
                 </Link>
 
                 <button
                   onClick={onClose}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
                   aria-label="إغلاق القائمة"
                   id="close-drawer-btn"
                 >
@@ -128,150 +167,173 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
                 </button>
               </div>
 
-              {/* 2. Compact, Streamlined Navigation Links */}
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 space-y-1">
-                {/* Main Links */}
-                {mainNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive =
-                    item.path === '/'
-                      ? location.pathname === '/'
-                      : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+              {/* Navigation Links Body */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 space-y-4 scrollbar-hide">
+                {/* Group 1: Main Links */}
+                <div>
+                  <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 px-2">
+                    الأقسام الرئيسية
+                  </h4>
+                  <div className="space-y-1">
+                    {mainNavItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive =
+                        item.path === '/'
+                          ? location.pathname === '/'
+                          : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
 
-                  return (
+                      return (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          onClick={onClose}
+                          className={`group flex items-center justify-between px-2.5 py-2 rounded-xl font-extrabold text-xs transition-all ${
+                            isActive
+                              ? 'bg-sky-600 text-white shadow-xs'
+                              : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400 dark:text-slate-500'}`} />
+                            <span className="font-extrabold">{item.name}</span>
+                          </div>
+
+                          <ChevronLeft className={`w-3.5 h-3.5 ${isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-600'}`} />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Group 2: Predictions & Contests */}
+                <div>
+                  <h4 className="text-[10px] font-black text-amber-600 dark:text-amber-500 uppercase tracking-wider mb-1.5 px-2 flex items-center gap-1">
+                    <Trophy className="w-3 h-3" />
+                    <span>مسابقة التوقعات</span>
+                  </h4>
+                  <div className="space-y-1">
+                    {predictionNavItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = location.pathname === item.path;
+
+                      return (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          onClick={onClose}
+                          className={`group flex items-center justify-between px-2.5 py-2 rounded-xl font-extrabold text-xs transition-all ${
+                            isActive
+                              ? 'bg-amber-500 text-white shadow-xs'
+                              : 'text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-amber-500'}`} />
+                            <span className="font-extrabold">{item.name}</span>
+                          </div>
+
+                          <ChevronLeft className={`w-3.5 h-3.5 ${isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-600'}`} />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Group 3: Categories if available */}
+                {categories.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 px-2">
+                      تصنيفات الأخبار
+                    </h4>
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1 scrollbar-hide">
+                      {categories.map((cat) => (
+                        <Link
+                          key={cat.id}
+                          to={`/news?category=${cat.slug || cat.id}`}
+                          onClick={onClose}
+                          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900"
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <Tag className="w-3 h-3 opacity-60 shrink-0" />
+                            <span className="truncate">{cat.name}</span>
+                          </div>
+                          <ChevronLeft className="w-3 h-3 opacity-40 shrink-0" />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Group 4: Profile & Admin */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-1">
+                  {user && (
                     <Link
-                      key={item.path}
-                      to={item.path}
+                      to="/profile"
                       onClick={onClose}
-                      className={`group flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all ${
-                        isActive
-                          ? 'bg-brand text-white shadow-xs'
-                          : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900'
+                      className={`group flex items-center justify-between px-2.5 py-2 rounded-xl font-extrabold text-xs transition-all ${
+                        location.pathname === '/profile'
+                          ? 'bg-sky-600 text-white shadow-xs'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                            isActive
-                              ? 'bg-white/20 text-white'
-                              : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 group-hover:text-brand'
-                          }`}
-                        >
-                          <Icon className="w-4 h-4" />
+                        <div className="w-5 h-5 rounded-full overflow-hidden bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
+                          {user.avatar ? (
+                            <img loading="lazy" src={user.avatar} alt="حسابي" className="w-full h-full object-cover" />
+                          ) : (
+                            <UserIcon className="w-3 h-3 text-sky-600" />
+                          )}
                         </div>
-                        <span className="text-xs sm:text-sm font-black">{item.name}</span>
+                        <span className="font-extrabold truncate max-w-[120px]">
+                          {user.name || user.displayName || 'الملف الشخصي'}
+                        </span>
                       </div>
-
-                      <ChevronLeft
-                        className={`w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5 ${
-                          isActive ? 'text-white/80' : 'text-gray-400 dark:text-gray-600'
-                        }`}
-                      />
+                      <ChevronLeft className="w-3.5 h-3.5 opacity-50" />
                     </Link>
-                  );
-                })}
+                  )}
 
-                {/* User Profile Link (if logged in) */}
-                {user && (
-                  <Link
-                    to="/profile"
-                    onClick={onClose}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all ${
-                      location.pathname === '/profile'
-                        ? 'bg-brand text-white shadow-xs'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center shrink-0 ${
-                          location.pathname === '/profile'
-                            ? 'bg-white/20 text-white'
-                            : 'bg-brand/10 border border-brand/20 text-brand'
-                        }`}
-                      >
-                        {user.avatar ? (
-                          <img src={user.avatar} alt="حسابي" className="w-full h-full object-cover" />
-                        ) : (
-                          <UserIcon className="w-4 h-4" />
-                        )}
-                      </div>
-                      <span className="text-xs sm:text-sm font-black truncate max-w-[130px]">
-                        {user.name || user.displayName || 'الملف الشخصي'}
-                      </span>
-                    </div>
-
-                    <ChevronLeft
-                      className={`w-3.5 h-3.5 ${
-                        location.pathname === '/profile' ? 'text-white/80' : 'text-gray-400 dark:text-gray-600'
+                  {canAccessAdmin && (
+                    <Link
+                      to="/admin"
+                      onClick={onClose}
+                      className={`group flex items-center justify-between px-2.5 py-2 rounded-xl font-extrabold text-xs transition-all ${
+                        location.pathname.startsWith('/admin')
+                          ? 'bg-sky-600 text-white shadow-xs'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
                       }`}
-                    />
-                  </Link>
-                )}
-
-                {/* Admin Dashboard Link (if authorized) */}
-                {canAccessAdmin && (
-                  <Link
-                    to="/admin"
-                    onClick={onClose}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all ${
-                      location.pathname.startsWith('/admin')
-                        ? 'bg-brand text-white shadow-xs'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                          location.pathname.startsWith('/admin')
-                            ? 'bg-white/20 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 group-hover:text-brand'
-                        }`}
-                      >
-                        <ShieldCheck className="w-4 h-4" />
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <ShieldCheck className="w-4 h-4 shrink-0 text-slate-400 dark:text-slate-500" />
+                        <span className="font-extrabold">لوحة التحكم</span>
                       </div>
-                      <span className="text-xs sm:text-sm font-black">لوحة التحكم</span>
-                    </div>
+                      <ChevronLeft className="w-3.5 h-3.5 opacity-50" />
+                    </Link>
+                  )}
 
-                    <ChevronLeft
-                      className={`w-3.5 h-3.5 ${
-                        location.pathname.startsWith('/admin') ? 'text-white/80' : 'text-gray-400 dark:text-gray-600'
-                      }`}
-                    />
-                  </Link>
-                )}
-
-                {/* Dark Mode Switch */}
-                <div className="pt-2 border-t border-gray-100 dark:border-gray-800/80 my-1">
                   <button
                     onClick={toggleDarkMode}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors cursor-pointer"
                     id="drawer-theme-toggle"
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-700 dark:text-gray-200">
-                        {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-600" />}
-                      </div>
-                      <span className="text-xs font-bold">
+                      {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+                      <span className="text-xs font-extrabold">
                         {isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
                       </span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-gray-400">
-                      تبديل
-                    </span>
                   </button>
                 </div>
               </div>
 
-              {/* 3. Compact Bottom Action: Login / Logout */}
-              <div className="shrink-0 p-3 border-t border-gray-100 dark:border-gray-800/80 bg-gray-50/70 dark:bg-gray-900/60">
+              {/* Bottom Login / Logout Action */}
+              <div className="shrink-0 p-3 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60">
                 {user ? (
                   <button
                     onClick={() => {
                       logout();
                       onClose();
                     }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 bg-white dark:bg-gray-800 border border-red-200/80 dark:border-red-900/40 shadow-2xs transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-extrabold text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-900/40 shadow-2xs transition-colors cursor-pointer"
                     id="drawer-logout-btn"
                   >
                     <LogOut className="w-3.5 h-3.5" />
@@ -281,7 +343,7 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
                   <Link
                     to="/login"
                     onClick={onClose}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-xs bg-brand text-white hover:bg-emerald-600 shadow-xs transition-all"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-extrabold text-xs bg-sky-600 hover:bg-sky-700 text-white shadow-xs transition-all"
                     id="drawer-login-btn"
                   >
                     <LogIn className="w-3.5 h-3.5" />
@@ -297,3 +359,4 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
     document.body
   );
 }
+

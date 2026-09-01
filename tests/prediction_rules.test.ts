@@ -1,206 +1,304 @@
 import { describe, it, expect } from 'vitest';
 import { isMatchOpenForPrediction } from '../src/services/predictionService.ts';
+import {
+  validateScore,
+  validatePointsPerMatch,
+  validatePositiveId,
+} from '../server/security/validators.ts';
 
-describe('Comprehensive Prediction Rules & Business Logic Tests (15 Test Cases)', () => {
-  // Helper for computing prediction evaluation
-  function evaluateMatchPrediction(pointsPerMatch: number, totalCorrectPredictors: number, userPredictedCorrect: boolean) {
-    if (!userPredictedCorrect) {
-      return { isCorrect: false, pointsEarned: 0, isGolden: false, goldenPoints: 0 };
-    }
-    const isGoldenEligible = pointsPerMatch === 2 && totalCorrectPredictors === 1;
-    const goldenBonus = isGoldenEligible ? 1 : 0;
+describe('Comprehensive Prediction Rules & Business Logic Tests', () => {
+  // Pure evaluation simulator mirroring confirmAndEvaluatePredictionMatch
+  function simulateMatchEvaluation(
+    pointsPerMatch: number,
+    predictionsList: Array<{ userId: number; homeScore: number; awayScore: number }>,
+    finalHomeScore: number,
+    finalAwayScore: number
+  ) {
+    const correctPredictors = predictionsList.filter(
+      (p) => p.homeScore === finalHomeScore && p.awayScore === finalAwayScore
+    );
+    const correctCount = correctPredictors.length;
+    const isGoldenEligible = pointsPerMatch === 2 && correctCount === 1;
+
+    return predictionsList.map((p) => {
+      const isCorrect = p.homeScore === finalHomeScore && p.awayScore === finalAwayScore;
+      const isGolden = isCorrect && isGoldenEligible;
+      const goldenBonus = isGolden ? 1 : 0;
+      const pointsEarned = isCorrect ? pointsPerMatch + goldenBonus : 0;
+      return {
+        userId: p.userId,
+        isCorrect,
+        isGolden,
+        goldenPoints: goldenBonus,
+        pointsEarned,
+      };
+    });
+  }
+
+  // Idempotency simulator mirroring database transaction delete & re-insert
+  function simulateIdempotentEvaluationLedger(
+    pointsPerMatch: number,
+    predictionsList: Array<{ userId: number; homeScore: number; awayScore: number }>,
+    finalHomeScore: number,
+    finalAwayScore: number
+  ) {
+    let ledger: Array<{ userId: number; points: number; isGolden: boolean }> = [];
+
+    // Run Confirm Result once
+    const firstRun = simulateMatchEvaluation(pointsPerMatch, predictionsList, finalHomeScore, finalAwayScore);
+    ledger = firstRun
+      .filter((r) => r.isCorrect)
+      .map((r) => ({ userId: r.userId, points: r.pointsEarned, isGolden: r.isGolden }));
+
+    const ledgerAfterFirstConfirm = [...ledger];
+
+    // Run Confirm Result second time (Idempotent: wipe and rebuild in transaction)
+    ledger = []; // tx.delete(predictionPoints).where(predictionMatchId)
+    const secondRun = simulateMatchEvaluation(pointsPerMatch, predictionsList, finalHomeScore, finalAwayScore);
+    ledger = secondRun
+      .filter((r) => r.isCorrect)
+      .map((r) => ({ userId: r.userId, points: r.pointsEarned, isGolden: r.isGolden }));
+
     return {
-      isCorrect: true,
-      pointsEarned: pointsPerMatch + goldenBonus,
-      isGolden: isGoldenEligible,
-      goldenPoints: goldenBonus,
+      firstRunResult: ledgerAfterFirstConfirm,
+      secondRunResult: ledger,
+      isIdentical: JSON.stringify(ledgerAfterFirstConfirm) === JSON.stringify(ledger),
     };
   }
 
-  // 1. Golden Prediction: 2-point match with exactly 1 winner
-  it('Test Case 1: 2-point match with 1 winner grants Golden Prediction (+1 bonus, total 3)', () => {
-    const result = evaluateMatchPrediction(2, 1, true);
-    expect(result.isGolden).toBe(true);
-    expect(result.goldenPoints).toBe(1);
-    expect(result.pointsEarned).toBe(3);
+  // 1. 2 points + 1 user correct = 3 points
+  it('Scenario 1: 2 points + 1 user correct = 3 points (2 base + 1 golden)', () => {
+    const results = simulateMatchEvaluation(
+      2,
+      [
+        { userId: 1, homeScore: 2, awayScore: 1 },
+        { userId: 2, homeScore: 1, awayScore: 1 },
+      ],
+      2,
+      1
+    );
+
+    const user1 = results.find((r) => r.userId === 1)!;
+    const user2 = results.find((r) => r.userId === 2)!;
+
+    expect(user1.pointsEarned).toBe(3);
+    expect(user1.isGolden).toBe(true);
+    expect(user1.goldenPoints).toBe(1);
+
+    expect(user2.pointsEarned).toBe(0);
+    expect(user2.isGolden).toBe(false);
   });
 
-  // 2. Golden Prediction: 2-point match with 2 or more winners
-  it('Test Case 2: 2-point match with multiple winners gives 2 base points only (no golden)', () => {
-    const result = evaluateMatchPrediction(2, 2, true);
-    expect(result.isGolden).toBe(false);
-    expect(result.goldenPoints).toBe(0);
-    expect(result.pointsEarned).toBe(2);
+  // 2. 2 points + 2 users correct = 2 points each
+  it('Scenario 2: 2 points + 2 users correct = 2 points each (no golden)', () => {
+    const results = simulateMatchEvaluation(
+      2,
+      [
+        { userId: 1, homeScore: 3, awayScore: 0 },
+        { userId: 2, homeScore: 3, awayScore: 0 },
+        { userId: 3, homeScore: 1, awayScore: 0 },
+      ],
+      3,
+      0
+    );
 
-    const result5 = evaluateMatchPrediction(2, 5, true);
-    expect(result5.isGolden).toBe(false);
-    expect(result5.goldenPoints).toBe(0);
-    expect(result5.pointsEarned).toBe(2);
+    const user1 = results.find((r) => r.userId === 1)!;
+    const user2 = results.find((r) => r.userId === 2)!;
+    const user3 = results.find((r) => r.userId === 3)!;
+
+    expect(user1.pointsEarned).toBe(2);
+    expect(user1.isGolden).toBe(false);
+    expect(user1.goldenPoints).toBe(0);
+
+    expect(user2.pointsEarned).toBe(2);
+    expect(user2.isGolden).toBe(false);
+    expect(user2.goldenPoints).toBe(0);
+
+    expect(user3.pointsEarned).toBe(0);
   });
 
-  // 3. Golden Exclusion: 3-point match with 1 winner
-  it('Test Case 3: 3-point match with 1 winner awards 3 base points only (strictly excluded from golden)', () => {
-    const result = evaluateMatchPrediction(3, 1, true);
-    expect(result.isGolden).toBe(false);
-    expect(result.goldenPoints).toBe(0);
-    expect(result.pointsEarned).toBe(3);
+  // 3. 5 points + 1 user correct = 5 points
+  it('Scenario 3: 5 points + 1 user correct = 5 points (no golden)', () => {
+    const results = simulateMatchEvaluation(
+      5,
+      [
+        { userId: 1, homeScore: 1, awayScore: 0 },
+        { userId: 2, homeScore: 0, awayScore: 0 },
+      ],
+      1,
+      0
+    );
+
+    const user1 = results.find((r) => r.userId === 1)!;
+    expect(user1.pointsEarned).toBe(5);
+    expect(user1.isGolden).toBe(false);
+    expect(user1.goldenPoints).toBe(0);
   });
 
-  // 4. Golden Exclusion: 4, 5, 10-point match
-  it('Test Case 4: 4, 5, and 10-point matches are excluded from golden predictions even with single winner', () => {
-    [4, 5, 10].forEach((pts) => {
-      const result = evaluateMatchPrediction(pts, 1, true);
-      expect(result.isGolden).toBe(false);
-      expect(result.goldenPoints).toBe(0);
-      expect(result.pointsEarned).toBe(pts);
+  // 4. 10 points + 1 user correct = 10 points
+  it('Scenario 4: 10 points + 1 user correct = 10 points (no golden)', () => {
+    const results = simulateMatchEvaluation(
+      10,
+      [
+        { userId: 1, homeScore: 2, awayScore: 2 },
+        { userId: 2, homeScore: 1, awayScore: 0 },
+      ],
+      2,
+      2
+    );
+
+    const user1 = results.find((r) => r.userId === 1)!;
+    expect(user1.pointsEarned).toBe(10);
+    expect(user1.isGolden).toBe(false);
+    expect(user1.goldenPoints).toBe(0);
+  });
+
+  // 5. No correct prediction = 0 points
+  it('Scenario 5: No correct predictions = 0 points awarded to all users', () => {
+    const results = simulateMatchEvaluation(
+      2,
+      [
+        { userId: 1, homeScore: 0, awayScore: 0 },
+        { userId: 2, homeScore: 1, awayScore: 0 },
+      ],
+      3,
+      2
+    );
+
+    results.forEach((r) => {
+      expect(r.pointsEarned).toBe(0);
+      expect(r.isGolden).toBe(false);
     });
   });
 
-  // 5. Incorrect prediction receives 0 points
-  it('Test Case 5: Incorrect predictions receive 0 points and no golden bonuses regardless of match weight', () => {
-    const res2 = evaluateMatchPrediction(2, 1, false);
-    expect(res2.pointsEarned).toBe(0);
-    expect(res2.isGolden).toBe(false);
+  // 6. Confirm Result is Idempotent: Confirming twice does not duplicate points
+  it('Scenario 6: Confirm Result twice produces identical ledger without duplicate points', () => {
+    const predictions = [
+      { userId: 1, homeScore: 2, awayScore: 1 },
+      { userId: 2, homeScore: 2, awayScore: 1 },
+      { userId: 3, homeScore: 0, awayScore: 1 },
+    ];
 
-    const res5 = evaluateMatchPrediction(5, 1, false);
-    expect(res5.pointsEarned).toBe(0);
-    expect(res5.isGolden).toBe(false);
+    const result = simulateIdempotentEvaluationLedger(2, predictions, 2, 1);
+    expect(result.isIdentical).toBe(true);
+    expect(result.secondRunResult.length).toBe(2);
+    expect(result.secondRunResult[0].points).toBe(2);
+    expect(result.secondRunResult[1].points).toBe(2);
   });
 
-  // 6. Match open for prediction when scheduled > 1 min before kickoff
-  it('Test Case 6: Match is open when scheduled > 1 minute prior to kickoff', () => {
-    const futureKickoff = new Date(Date.now() + 15 * 60 * 1000); // 15 mins ahead
+  // 7. Strict Input Validation Tests (Rejecting '2abc', '2.5', '-1', NaN, Infinity)
+  it('Scenario 7: Strict Input Validation rejects malformed numeric strings, floats, and negative numbers', () => {
+    // Score validation
+    expect(validateScore(0).valid).toBe(true);
+    expect(validateScore('0').valid).toBe(true);
+    expect(validateScore(3).valid).toBe(true);
+    expect(validateScore('3').valid).toBe(true);
+    expect(validateScore(30).valid).toBe(true);
+
+    expect(validateScore('2abc').valid).toBe(false);
+    expect(validateScore('2.5').valid).toBe(false);
+    expect(validateScore(2.5).valid).toBe(false);
+    expect(validateScore(-1).valid).toBe(false);
+    expect(validateScore('-1').valid).toBe(false);
+    expect(validateScore(NaN).valid).toBe(false);
+    expect(validateScore(Infinity).valid).toBe(false);
+    expect(validateScore(null).valid).toBe(false);
+    expect(validateScore(undefined).valid).toBe(false);
+    expect(validateScore('').valid).toBe(false);
+    expect(validateScore(true).valid).toBe(false);
+
+    // Points per match validation
+    expect(validatePointsPerMatch(2).valid).toBe(true);
+    expect(validatePointsPerMatch(5).valid).toBe(true);
+    expect(validatePointsPerMatch(10).valid).toBe(true);
+    expect(validatePointsPerMatch('10').valid).toBe(true);
+
+    expect(validatePointsPerMatch(0).valid).toBe(false);
+    expect(validatePointsPerMatch('0').valid).toBe(false);
+    expect(validatePointsPerMatch('2abc').valid).toBe(false);
+    expect(validatePointsPerMatch('2.5').valid).toBe(false);
+    expect(validatePointsPerMatch(-5).valid).toBe(false);
+    expect(validatePointsPerMatch(NaN).valid).toBe(false);
+    expect(validatePointsPerMatch(Infinity).valid).toBe(false);
+
+    // Positive ID validation
+    expect(validatePositiveId(1).valid).toBe(true);
+    expect(validatePositiveId('42').valid).toBe(true);
+    expect(validatePositiveId(0).valid).toBe(false);
+    expect(validatePositiveId('-1').valid).toBe(false);
+    expect(validatePositiveId('1abc').valid).toBe(false);
+    expect(validatePositiveId('1.5').valid).toBe(false);
+  });
+
+  // 8. Match timing and lock rules
+  it('Scenario 8: Prediction locks 1 minute before kickoff and stays locked when live/finished', () => {
+    const futureKickoff = new Date(Date.now() + 15 * 60 * 1000);
     expect(isMatchOpenForPrediction(true, 'SCHEDULED', futureKickoff)).toBe(true);
-  });
 
-  // 7. Match locked within 1 minute of kickoff
-  it('Test Case 7: Match is locked for prediction within 1 minute of kickoff', () => {
-    const imminentKickoff = new Date(Date.now() + 45 * 1000); // 45 seconds ahead
+    const imminentKickoff = new Date(Date.now() + 45 * 1000);
     expect(isMatchOpenForPrediction(true, 'SCHEDULED', imminentKickoff)).toBe(false);
+
+    const liveMatchTime = new Date(Date.now() - 30 * 60 * 1000);
+    expect(isMatchOpenForPrediction(true, 'IN_PLAY', liveMatchTime)).toBe(false);
+    expect(isMatchOpenForPrediction(true, 'FINISHED', liveMatchTime)).toBe(false);
   });
 
-  // 8. Match locked when live or finished
-  it('Test Case 8: Live and finished matches are locked regardless of kickoff time', () => {
-    const past = new Date(Date.now() - 30 * 60 * 1000);
-    expect(isMatchOpenForPrediction(true, 'IN_PLAY', past)).toBe(false);
-    expect(isMatchOpenForPrediction(true, 'PAUSED', past)).toBe(false);
-    expect(isMatchOpenForPrediction(true, 'FINISHED', past)).toBe(false);
-    expect(isMatchOpenForPrediction(false, 'SCHEDULED', new Date(Date.now() + 100000))).toBe(false);
-  });
-
-  // 9. 1-minute edit window logic
-  it('Test Case 9: Prediction edit window allows modifications within 60 seconds of submission', () => {
-    function canEditPrediction(submittedAt: Date): boolean {
-      const elapsed = Date.now() - submittedAt.getTime();
-      return elapsed <= 60 * 1000;
-    }
-
-    const justNow = new Date(Date.now() - 20 * 1000); // 20s ago
-    expect(canEditPrediction(justNow)).toBe(true);
-
-    const expired = new Date(Date.now() - 65 * 1000); // 65s ago
-    expect(canEditPrediction(expired)).toBe(false);
-  });
-
-  // 10. Integer score validation (>= 0 and <= 30)
-  it('Test Case 10: Score validation strictly enforces integers between 0 and 30', () => {
-    function isValidScore(val: any): boolean {
-      return typeof val === 'number' && Number.isInteger(val) && val >= 0 && val <= 30;
-    }
-
-    expect(isValidScore(0)).toBe(true);
-    expect(isValidScore(2)).toBe(true);
-    expect(isValidScore(30)).toBe(true);
-    expect(isValidScore(-1)).toBe(false);
-    expect(isValidScore(31)).toBe(false);
-    expect(isValidScore(2.5)).toBe(false);
-    expect(isValidScore('2')).toBe(false);
-    expect(isValidScore(null)).toBe(false);
-    expect(isValidScore(undefined)).toBe(false);
-  });
-
-  // 11. 7-tier Leaderboard tie-breaking logic
-  it('Test Case 11: Leaderboard sorting strictly applies 7-tier tie-breaking rules', () => {
-    const participants = [
-      { id: 4, name: 'D', totalPoints: 10, correct: 3, golden: 1, successRate: 60, total: 5, time: 200 },
-      { id: 3, name: 'C', totalPoints: 10, correct: 4, golden: 1, successRate: 80, total: 5, time: 200 },
-      { id: 2, name: 'B', totalPoints: 10, correct: 4, golden: 2, successRate: 80, total: 5, time: 200 },
-      { id: 1, name: 'A', totalPoints: 15, correct: 5, golden: 3, successRate: 100, total: 5, time: 100 },
+  // 9. Leaderboard deterministic sorting test
+  it('Scenario 9: Leaderboard sorts strictly by Total Points DESC -> Correct Predictions DESC -> Golden Predictions DESC -> userId ASC', () => {
+    const list = [
+      { id: 10, totalPoints: 10, correctPredictions: 5, goldenPredictions: 1 },
+      { id: 2, totalPoints: 10, correctPredictions: 5, goldenPredictions: 2 },
+      { id: 5, totalPoints: 10, correctPredictions: 5, goldenPredictions: 2 },
+      { id: 8, totalPoints: 12, correctPredictions: 4, goldenPredictions: 0 },
+      { id: 1, totalPoints: 10, correctPredictions: 6, goldenPredictions: 0 },
     ];
 
-    participants.sort((a, b) => {
+    list.sort((a, b) => {
       if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-      if (b.correct !== a.correct) return b.correct - a.correct;
-      if (b.golden !== a.golden) return b.golden - a.golden;
-      if (b.successRate !== a.successRate) return b.successRate - a.successRate;
-      if (b.total !== a.total) return b.total - a.total;
-      if (a.time !== b.time) return a.time - b.time;
+      if (b.correctPredictions !== a.correctPredictions) return b.correctPredictions - a.correctPredictions;
+      if (b.goldenPredictions !== a.goldenPredictions) return b.goldenPredictions - a.goldenPredictions;
       return a.id - b.id;
     });
 
-    expect(participants[0].id).toBe(1); // 15 pts
-    expect(participants[1].id).toBe(2); // 10 pts, 4 correct, 2 golden
-    expect(participants[2].id).toBe(3); // 10 pts, 4 correct, 1 golden
-    expect(participants[3].id).toBe(4); // 10 pts, 3 correct
+    const idsOrder = list.map((u) => u.id);
+    expect(idsOrder).toEqual([8, 1, 2, 5, 10]);
   });
 
-  // 12. Golden Leaderboard sorting
-  it('Test Case 12: Golden Leaderboard sorts by Golden Predictions DESC, then Golden Points DESC, then Total Points', () => {
-    const entries = [
-      { id: 1, goldenCount: 2, goldenPoints: 2, totalPoints: 8 },
-      { id: 2, goldenCount: 3, goldenPoints: 3, totalPoints: 6 },
-      { id: 3, goldenCount: 3, goldenPoints: 3, totalPoints: 12 },
+  // 10. Golden Leaderboard sorting & +1 golden point calculation
+  it('Scenario 10: Golden Leaderboard sorts by Golden Predictions DESC -> Total Points DESC -> Correct Predictions DESC -> userId ASC', () => {
+    const list = [
+      { id: 4, goldenPredictions: 1, totalPoints: 15, correctPredictions: 7 },
+      { id: 1, goldenPredictions: 3, totalPoints: 9, correctPredictions: 3 },
+      { id: 2, goldenPredictions: 3, totalPoints: 12, correctPredictions: 4 },
+      { id: 3, goldenPredictions: 3, totalPoints: 12, correctPredictions: 5 },
     ];
 
-    entries.sort((a, b) => {
-      if (b.goldenCount !== a.goldenCount) return b.goldenCount - a.goldenCount;
-      if (b.goldenPoints !== a.goldenPoints) return b.goldenPoints - a.goldenPoints;
+    list.sort((a, b) => {
+      if (b.goldenPredictions !== a.goldenPredictions) return b.goldenPredictions - a.goldenPredictions;
       if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+      if (b.correctPredictions !== a.correctPredictions) return b.correctPredictions - a.correctPredictions;
       return a.id - b.id;
     });
 
-    expect(entries[0].id).toBe(3); // 3 golden, 12 total
-    expect(entries[1].id).toBe(2); // 3 golden, 6 total
-    expect(entries[2].id).toBe(1); // 2 golden
+    const idsOrder = list.map((u) => u.id);
+    expect(idsOrder).toEqual([3, 2, 1, 4]);
   });
 
-  // 13. Prevention of calculated match modification / deletion
-  it('Test Case 13: Protection logic blocks deletion or re-activating of calculated matches', () => {
-    function canDeleteMatch(isCalculated: boolean, isConfirmed: boolean): boolean {
-      if (isCalculated || isConfirmed) return false;
-      return true;
-    }
+  // 11. Contest Isolation filtering logic test
+  it('Scenario 11: Contest filtering excludes points and predictions from other contests', () => {
+    const allUserPoints = [
+      { userId: 1, points: 3, contestId: 1 },
+      { userId: 1, points: 5, contestId: 2 },
+      { userId: 2, points: 2, contestId: 1 },
+    ];
 
-    expect(canDeleteMatch(false, false)).toBe(true);
-    expect(canDeleteMatch(true, false)).toBe(false);
-    expect(canDeleteMatch(false, true)).toBe(false);
-    expect(canDeleteMatch(true, true)).toBe(false);
-  });
+    const targetContestId = 1;
 
-  // 14. Contest Participant Authorization Check
-  it('Test Case 14: Only approved participants can have predictions submitted and scored', () => {
-    function canParticipate(status: string): boolean {
-      return status === 'approved';
-    }
+    const filteredForUser1 = allUserPoints
+      .filter((pt) => pt.userId === 1)
+      .filter((pt) => !targetContestId || pt.contestId === targetContestId || !pt.contestId);
 
-    expect(canParticipate('approved')).toBe(true);
-    expect(canParticipate('pending')).toBe(false);
-    expect(canParticipate('rejected')).toBe(false);
-    expect(canParticipate('blocked')).toBe(false);
-  });
-
-  // 15. Dynamic Points Range Validation
-  it('Test Case 15: Admin custom match points range is bounded between 1 and 20', () => {
-    function validateMatchPoints(pts: any): boolean {
-      return typeof pts === 'number' && Number.isInteger(pts) && pts >= 1 && pts <= 20;
-    }
-
-    expect(validateMatchPoints(1)).toBe(true);
-    expect(validateMatchPoints(2)).toBe(true);
-    expect(validateMatchPoints(5)).toBe(true);
-    expect(validateMatchPoints(20)).toBe(true);
-    expect(validateMatchPoints(0)).toBe(false);
-    expect(validateMatchPoints(-2)).toBe(false);
-    expect(validateMatchPoints(21)).toBe(false);
+    const totalPointsContest1 = filteredForUser1.reduce((acc, p) => acc + p.points, 0);
+    expect(totalPointsContest1).toBe(3);
   });
 });

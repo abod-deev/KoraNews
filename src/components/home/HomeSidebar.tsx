@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import StandingsWidget from './StandingsWidget';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Eye } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { fetchNews } from '../../services/api';
@@ -9,41 +9,46 @@ export default function HomeSidebar() {
   const [mostViewed, setMostViewed] = useState<any[]>([]);
 
   useEffect(() => {
-    fetchNews().then(data => {
-      // Sort by views descending and take top 5
-      const sorted = [...data].sort((a, b) => b.views - a.views).slice(0, 5);
-      setMostViewed(sorted);
-    }).catch(console.error);
+    fetchNews()
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const sorted = [...data].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
+          setMostViewed(sorted);
+        }
+      })
+      .catch(console.error);
   }, []);
 
   return (
-    <aside className="w-full space-y-6">
-      {/* Most Viewed */}
-      <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md rounded-3xl border border-gray-100 dark:border-gray-800/60 p-6 shadow-lg">
-        <h2 className="text-lg font-extrabold mb-5 flex items-center gap-2 border-b border-gray-100 dark:border-gray-800 pb-3 text-gray-900 dark:text-white">
-          <TrendingUp className="w-5 h-5 text-red-500" />
-          الأكثر قراءة
+    <aside className="w-full space-y-4 sm:space-y-6 select-none">
+      {/* Most Viewed Box */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-4 sm:p-5 shadow-xs">
+        <h2 className="text-xs sm:text-base font-extrabold mb-4 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 text-slate-900 dark:text-slate-100">
+          <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500 shrink-0" />
+          <span>الأكثر قراءة هذا الأسبوع</span>
         </h2>
-        <div className="space-y-4">
+
+        <div className="space-y-3.5">
           {mostViewed.map((item, i) => (
-            <Link to={`/news/${item.id}`} key={item.id} className="block">
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
+            <Link to={`/news/${item.id}`} key={item.id} className="block group">
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="flex gap-4 items-start group cursor-pointer"
+                transition={{ delay: i * 0.05 }}
+                className="flex gap-3 items-start cursor-pointer"
               >
-                <div className="text-3xl font-black text-gray-100 dark:text-gray-800 leading-none group-hover:text-brand/20 transition-colors mt-1">
+                <div className="text-xl sm:text-2xl font-black text-slate-300 dark:text-slate-700 leading-none group-hover:text-sky-600 transition-colors shrink-0 w-6">
                   0{i + 1}
                 </div>
-                <div>
-                  <h3 className="font-bold text-gray-800 dark:text-gray-200 leading-snug group-hover:text-brand transition-colors text-sm sm:text-base">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-extrabold text-slate-800 dark:text-slate-200 leading-snug group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors text-xs sm:text-sm line-clamp-2">
                     {item.title}
                   </h3>
-                  <span className="text-xs font-semibold text-gray-500 mt-2 block">
-                    {item.views || 0} قراءة
-                  </span>
+                  <div className="flex items-center gap-1 text-[10px] sm:text-xs font-bold text-slate-400 mt-1">
+                    <Eye className="w-3 h-3 text-sky-500" />
+                    <span>{item.views || 0} قراءة</span>
+                  </div>
                 </div>
               </motion.div>
             </Link>
@@ -56,3 +61,4 @@ export default function HomeSidebar() {
     </aside>
   );
 }
+

@@ -391,7 +391,7 @@ export default function Admin() {
           >
             <div className="w-7 h-7 rounded-full overflow-hidden bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs">
               {user?.avatar ? (
-                <img src={user.avatar} alt="صورة الحساب" className="w-full h-full object-cover" />
+                <img loading="lazy" src={user.avatar} alt="صورة الحساب" className="w-full h-full object-cover" />
               ) : (
                 <span>{(user?.name || user?.email || 'U').charAt(0).toUpperCase()}</span>
               )}
@@ -616,7 +616,7 @@ export default function Admin() {
                       {editingNews.image && (
                         <div className="mt-2.5 p-2 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700/80">
                           <span className="text-[11px] font-bold text-gray-500 block mb-1.5">معاينة الصورة بالحجم الطبيعي بدون قص:</span>
-                          <img 
+                          <img loading="lazy" 
                             src={editingNews.image} 
                             alt="معاينة" 
                             className="max-h-56 w-auto max-w-full rounded-lg mx-auto object-contain shadow-xs border border-gray-200 dark:border-gray-700"
@@ -715,56 +715,90 @@ export default function Admin() {
                   </button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-right">
-                    <thead>
-                      <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-800 text-sm">
-                        <th className="pb-3 font-bold">العنوان</th>
-                        <th className="pb-3 font-bold">التصنيف والتمييز</th>
-                        <th className="pb-3 font-bold">الحالة</th>
-                        <th className="pb-3 font-bold">التاريخ</th>
-                        <th className="pb-3 font-bold">إجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {news.filter(n => {
-                        const matchesQuery = n.title.includes(searchQuery);
-                        const matchesStatus = filterStatus === "" || n.status === filterStatus;
-                        const matchesType = filterType === "" || (filterType === "breaking" && n.isBreaking) || (filterType === "featured" && n.isFeatured);
-                        return matchesQuery && matchesStatus && matchesType;
-                      }).map(item => (
-                        <tr key={item.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
-                          <td className="py-3 font-bold max-w-xs truncate">{item.title}</td>
-                          <td className="py-3">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {item.isBreaking && (
-                                <span className="bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
-                                  🔴 عاجل
-                                </span>
-                              )}
-                              {item.isFeatured && (
-                                <span className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
-                                  ⭐ مميز
-                                </span>
-                              )}
-                              {!item.isBreaking && !item.isFeatured && (
-                                <span className="text-gray-400 text-xs font-semibold">خبر عادي</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3">
-                            <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${item.status === 'published' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'}`}>
-                              {item.status === 'published' ? 'منشور' : 'مسودة'}
-                            </span>
-                          </td>
-                          <td className="py-3 text-sm text-gray-500">{new Date(item.createdAt).toLocaleDateString('ar-EG')}</td>
-                          <td className="py-3 flex items-center gap-2">
-                            <button onClick={() => setEditingNews(item)} className="p-1.5 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors"><Edit2 className="w-4 h-4" /></button>
-                            <button onClick={() => handleDeleteNews(item)} className="p-1.5 text-red-600 bg-red-50 dark:bg-red-950 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                          </td>
+                  <div className="hidden md:block">
+                    <table className="w-full text-right">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-800 text-sm">
+                          <th className="pb-3 font-bold">العنوان</th>
+                          <th className="pb-3 font-bold">التصنيف والتمييز</th>
+                          <th className="pb-3 font-bold">الحالة</th>
+                          <th className="pb-3 font-bold">التاريخ</th>
+                          <th className="pb-3 font-bold">إجراءات</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {news.filter(n => {
+                          const matchesQuery = n.title.includes(searchQuery);
+                          const matchesStatus = filterStatus === "" || n.status === filterStatus;
+                          const matchesType = filterType === "" || (filterType === "breaking" && n.isBreaking) || (filterType === "featured" && n.isFeatured);
+                          return matchesQuery && matchesStatus && matchesType;
+                        }).map(item => (
+                          <tr key={item.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
+                            <td className="py-3 font-bold max-w-xs truncate">{item.title}</td>
+                            <td className="py-3">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {item.isBreaking && (
+                                  <span className="bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
+                                    🔴 عاجل
+                                  </span>
+                                )}
+                                {item.isFeatured && (
+                                  <span className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
+                                    ⭐ مميز
+                                  </span>
+                                )}
+                                {!item.isBreaking && !item.isFeatured && (
+                                  <span className="text-gray-400 text-xs font-semibold">خبر عادي</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${item.status === 'published' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'}`}>
+                                {item.status === 'published' ? 'منشور' : 'مسودة'}
+                              </span>
+                            </td>
+                            <td className="py-3 text-sm text-gray-500">{new Date(item.createdAt).toLocaleDateString('ar-EG')}</td>
+                            <td className="py-3 flex items-center gap-2">
+                              <button onClick={() => setEditingNews(item)} className="p-1.5 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors"><Edit2 className="w-4 h-4" /></button>
+                              <button onClick={() => handleDeleteNews(item)} className="p-1.5 text-red-600 bg-red-50 dark:bg-red-950 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:hidden">
+                    {news.filter(n => {
+                      const matchesQuery = n.title.includes(searchQuery);
+                      const matchesStatus = filterStatus === "" || n.status === filterStatus;
+                      const matchesType = filterType === "" || (filterType === "breaking" && n.isBreaking) || (filterType === "featured" && n.isFeatured);
+                      return matchesQuery && matchesStatus && matchesType;
+                    }).map(item => (
+                      <div key={item.id} className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
+                        <div className="font-bold text-gray-900 dark:text-white mb-2 leading-tight">{item.title}</div>
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          {item.isBreaking && (
+                            <span className="bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md">
+                              🔴 عاجل
+                            </span>
+                          )}
+                          {item.isFeatured && (
+                            <span className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md">
+                              ⭐ مميز
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${item.status === 'published' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'}`}>
+                            {item.status === 'published' ? 'منشور' : 'مسودة'}
+                          </span>
+                          <span className="text-xs text-gray-500 mr-auto">{new Date(item.createdAt).toLocaleDateString('ar-EG')}</span>
+                        </div>
+                        <div className="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+                          <button onClick={() => setEditingNews(item)} className="flex-1 flex items-center justify-center gap-1.5 p-2 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold"><Edit2 className="w-3.5 h-3.5" /> تعديل</button>
+                          <button onClick={() => handleDeleteNews(item)} className="flex-1 flex items-center justify-center gap-1.5 p-2 text-red-600 bg-red-50 dark:bg-red-950 rounded-lg hover:bg-red-100 transition-colors text-xs font-bold"><Trash2 className="w-3.5 h-3.5" /> حذف</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -877,69 +911,117 @@ export default function Admin() {
             ) : (
               <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-right">
-                    <thead>
-                      <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-800">
-                        <th className="pb-3 font-bold">المستخدم</th>
-                        <th className="pb-3 font-bold">البريد الإلكتروني</th>
-                        <th className="pb-3 font-bold">الدور</th>
-                        <th className="pb-3 font-bold">الحالة</th>
-                        <th className="pb-3 font-bold">إجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {users.map(u => (
-                        <tr key={u.id}>
-                          <td className="py-3 font-bold">
-                            <div className="flex items-center gap-2">
-                              <span>{u.name}</span>
-                              {u.email === 'abod46071@gmail.com' && (
-                                <span className="bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
-                                  المالك الرئيسي
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 font-mono text-sm">{u.email}</td>
-                          <td className="py-3">
-                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${u.role === 'superadmin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' : (u.role === 'admin' ? 'bg-brand/10 text-brand' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300')}`}>
-                              {u.role === 'superadmin' ? 'المالك العام' : (u.role === 'admin' ? 'مسؤول (أدمن)' : 'مستخدم')}
-                            </span>
-                          </td>
-                          <td className="py-3">
-                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${u.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>
-                              {u.isActive ? 'نشط' : 'معطل'}
-                            </span>
-                          </td>
-                          <td className="py-3">
-                            {u.email === 'abod46071@gmail.com' || u.role === 'superadmin' ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800/80 px-2.5 py-1 rounded-lg">
-                                <Shield className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                                محمي
-                              </span>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <button 
-                                  onClick={() => setEditingUser(u)} 
-                                  className="p-1.5 rounded-lg transition-colors text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900"
-                                  title="تعديل الصلاحيات والرتبة"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteUser(u)} 
-                                  className="p-1.5 rounded-lg transition-colors text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/50 dark:hover:bg-red-900"
-                                  title="حذف المستخدم نهائياً"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
-                          </td>
+                  <div className="hidden md:block">
+                    <table className="w-full text-right">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-800">
+                          <th className="pb-3 font-bold">المستخدم</th>
+                          <th className="pb-3 font-bold">البريد الإلكتروني</th>
+                          <th className="pb-3 font-bold">الدور</th>
+                          <th className="pb-3 font-bold">الحالة</th>
+                          <th className="pb-3 font-bold">إجراءات</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {users.map(u => (
+                          <tr key={u.id}>
+                            <td className="py-3 font-bold">
+                              <div className="flex items-center gap-2">
+                                <span>{u.name}</span>
+                                {u.email === 'abod46071@gmail.com' && (
+                                  <span className="bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                                    المالك الرئيسي
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 font-mono text-sm">{u.email}</td>
+                            <td className="py-3">
+                              <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${u.role === 'superadmin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' : (u.role === 'admin' ? 'bg-brand/10 text-brand' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300')}`}>
+                                {u.role === 'superadmin' ? 'المالك العام' : (u.role === 'admin' ? 'مسؤول (أدمن)' : 'مستخدم')}
+                              </span>
+                            </td>
+                            <td className="py-3">
+                              <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${u.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>
+                                {u.isActive ? 'نشط' : 'معطل'}
+                              </span>
+                            </td>
+                            <td className="py-3">
+                              {u.email === 'abod46071@gmail.com' || u.role === 'superadmin' ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800/80 px-2.5 py-1 rounded-lg">
+                                  <Shield className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                  محمي
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <button 
+                                    onClick={() => setEditingUser(u)} 
+                                    className="p-1.5 rounded-lg transition-colors text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900"
+                                    title="تعديل الصلاحيات والرتبة"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeleteUser(u)} 
+                                    className="p-1.5 rounded-lg transition-colors text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/50 dark:hover:bg-red-900"
+                                    title="حذف المستخدم نهائياً"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:hidden">
+                    {users.map(u => (
+                      <div key={u.id} className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold text-gray-900 dark:text-white">{u.name}</span>
+                          {u.email === 'abod46071@gmail.com' && (
+                            <span className="bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                              المالك الرئيسي
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-mono text-xs text-gray-500 mb-3">{u.email}</div>
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${u.role === 'superadmin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' : (u.role === 'admin' ? 'bg-brand/10 text-brand' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300')}`}>
+                            {u.role === 'superadmin' ? 'المالك العام' : (u.role === 'admin' ? 'مسؤول (أدمن)' : 'مستخدم')}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${u.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>
+                            {u.isActive ? 'نشط' : 'معطل'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+                          {u.email === 'abod46071@gmail.com' || u.role === 'superadmin' ? (
+                            <span className="w-full flex justify-center items-center gap-1.5 text-xs font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800/80 p-2 rounded-lg">
+                              <Shield className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                              حساب محمي
+                            </span>
+                          ) : (
+                            <>
+                              <button 
+                                onClick={() => setEditingUser(u)} 
+                                className="flex-1 flex items-center justify-center gap-1.5 p-2 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" /> تعديل
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteUser(u)} 
+                                className="flex-1 flex items-center justify-center gap-1.5 p-2 text-red-600 bg-red-50 dark:bg-red-950 rounded-lg hover:bg-red-100 transition-colors text-xs font-bold"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> حذف
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

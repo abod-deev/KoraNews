@@ -28,7 +28,7 @@ export default function SiteLogo({ size = 'md', showText = true, className = '' 
   return (
     <div className={`flex items-center gap-2.5 select-none ${className}`}>
       {/* Official Site Logo Image (With world map, megaphone, blue typography - NO BALL) */}
-      <img
+      <img loading="lazy"
         src="/site-logo.jpg"
         alt="أخبار كرة القدم العالمية"
         referrerPolicy="no-referrer"

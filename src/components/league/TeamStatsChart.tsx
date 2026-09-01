@@ -73,7 +73,7 @@ export default function TeamStatsChart({ standings }: TeamStatsChartProps) {
       return (
         <div className="bg-gray-900 text-white p-3 rounded-xl shadow-xl border border-gray-700 text-right text-xs space-y-1.5 min-w-[160px]">
           <div className="flex items-center gap-2 border-b border-gray-700 pb-1.5 font-bold text-sm">
-            {data.logo && <img src={data.logo} alt={label} className="w-5 h-5 object-contain" />}
+            {data.logo && <img loading="lazy" src={data.logo} alt={label} className="w-5 h-5 object-contain" />}
             <span>#{data.rank} - {label}</span>
           </div>
           {chartMode === 'results' && (

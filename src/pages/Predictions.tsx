@@ -298,7 +298,7 @@ export default function Predictions() {
               </h1>
               <p className="text-xs sm:text-sm text-emerald-50 leading-relaxed font-bold">
                 {contestSettings?.description ||
-                  'توقع النتيجة النهائية الدقيقة لأقوى مباريات اليوم والغد. احصل على +2 نقطة عن كل نتيجة صحيحة وتنافس على صدارة الترتيب العام!'}
+                  'توقع النتيجة النهائية الدقيقة لأقوى مباريات اليوم والغد. احصل على نقاط التوقع الصحيح لكل مباراة وتنافس على صدارة الترتيب العام والتوقعات الذهبية!'}
               </p>
             </div>
 
@@ -555,11 +555,11 @@ export default function Predictions() {
           <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-gray-600 dark:text-gray-300 font-bold text-[11px] sm:text-xs">
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              التوقع الصحيح للنتيجة = <strong>+2 نقطة</strong>
+              التوقع الصحيح = <strong>نقاط المباراة المقررة (حسب البطاقة)</strong>
             </span>
             <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
               <Sparkles className="w-3.5 h-3.5" />
-              التوقع الذهبي (لمباريات 2 نقطة) = <strong>+1 نقطة إضافية (3 إجمالي) 👑</strong>
+              التوقع الذهبي المنفرد = <strong>+1 نقطة ذهبية إضافية 👑</strong>
             </span>
             <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
               <Clock className="w-3.5 h-3.5" />

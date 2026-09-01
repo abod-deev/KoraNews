@@ -1,20 +1,21 @@
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MatchRemindersProvider } from './contexts/MatchRemindersContext';
 import AnalyticsTracker from './components/common/AnalyticsTracker';
 import MainLayout from './components/layout/MainLayout';
-import Home from './pages/Home';
-import News from './pages/News';
-import NewsDetail from './pages/NewsDetail';
-import Matches from './pages/Matches';
-import LeagueDetails from './pages/LeagueDetails';
-import Predictions from './pages/Predictions';
-import PredictionsLeaderboardPage from './pages/PredictionsLeaderboardPage';
-import GoldenLeaderboardPage from './pages/GoldenLeaderboardPage';
-import Admin from './pages/Admin';
-import Login from './pages/Login';
-import Profile from './pages/Profile';
+const Home = lazy(() => import('./pages/Home'));
+const News = lazy(() => import('./pages/News'));
+const NewsDetail = lazy(() => import('./pages/NewsDetail'));
+const Matches = lazy(() => import('./pages/Matches'));
+const LeagueDetails = lazy(() => import('./pages/LeagueDetails'));
+const Predictions = lazy(() => import('./pages/Predictions'));
+const PredictionsLeaderboardPage = lazy(() => import('./pages/PredictionsLeaderboardPage'));
+const GoldenLeaderboardPage = lazy(() => import('./pages/GoldenLeaderboardPage'));
+const Admin = lazy(() => import('./pages/Admin'));
+const Login = lazy(() => import('./pages/Login'));
+const Profile = lazy(() => import('./pages/Profile'));
 import { Loader2 } from 'lucide-react';
 
 function AdminRoute() {
@@ -44,6 +45,7 @@ export default function App() {
         <MatchRemindersProvider>
           <BrowserRouter>
             <AnalyticsTracker />
+            <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-brand" /></div>}>
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Home />} />
@@ -60,6 +62,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
+            </Suspense>
           </BrowserRouter>
         </MatchRemindersProvider>
       </AuthProvider>
