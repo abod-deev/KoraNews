@@ -146,12 +146,13 @@ export default function PredictionMatchCard({
     if (m.homeScore !== null && m.awayScore !== null) {
       shareText += `⚽ النتيجة النهائية: ${m.homeTeam.name} (${m.homeScore}) - (${m.awayScore}) ${m.awayTeam.name}\n`;
     }
+    const pts = predictionMatch.pointsPerMatch || 2;
     if (predictionMatch.correctPredictorsCount && predictionMatch.correctPredictorsCount > 0) {
-      shareText += `🎯 عدد أصحاب التوقع الصحيح (+2 نقطة): ${predictionMatch.correctPredictorsCount} متسابق\n`;
+      shareText += `🎯 عدد أصحاب التوقع الصحيح (+${pts} نقطة): ${predictionMatch.correctPredictorsCount} متسابق\n`;
     }
     if (userPred) {
       shareText += `🎯 توقعي كان: (${userPred.homeScore} - ${userPred.awayScore}) ${
-        userPred.isEvaluated && userPred.pointsEarned === 2 ? '✅ أصبت التوقع (+2 نقطة)' : ''
+        userPred.isEvaluated && userPred.pointsEarned > 0 ? `✅ أصبت التوقع (+${userPred.pointsEarned} نقطة)` : ''
       }\n`;
     }
     shareText += `\nشارك وتوقع نتائج المباريات على KoraNews:\n${window.location.origin}/predictions`;
@@ -644,7 +645,7 @@ export default function PredictionMatchCard({
                 >
                   <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200/60 dark:border-emerald-800/60 space-y-2">
                     <div className="text-[11px] font-black text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
-                      <span>الفائزون بنقاط المباراة (+2 نقطة):</span>
+                      <span>الفائزون بنقاط المباراة (+{predictionMatch.pointsPerMatch || 2} نقطة):</span>
                       <span>{predictionMatch.correctPredictorsCount} متسابق</span>
                     </div>
 

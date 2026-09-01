@@ -66,27 +66,8 @@ export const requireAuth = async (
         };
       }
     } catch (fbErr) {
-      // If Firebase Admin verification encounters network/creds issue, inspect claims
-      try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const payloadJson = Buffer.from(parts[1], 'base64url').toString('utf-8');
-          const p = JSON.parse(payloadJson);
-          if (p && (p.user_id || p.sub) && (p.iss?.includes('securetoken.google.com') || p.firebase || p.aud)) {
-            // Validate expiration time if present
-            if (!p.exp || Date.now() / 1000 < p.exp) {
-              decodedToken = {
-                uid: p.user_id || p.sub || p.uid,
-                email: p.email || '',
-                name: p.name || (p.email ? p.email.split('@')[0] : 'مستخدم'),
-                picture: p.picture,
-              };
-            }
-          }
-        }
-      } catch {
-        decodedToken = null;
-      }
+      // Strictly reject any unverified token; no manual JWT decoding fallback
+      decodedToken = null;
     }
   }
 

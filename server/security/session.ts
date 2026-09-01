@@ -3,15 +3,26 @@ import crypto from 'crypto';
 // 14 days session duration in milliseconds
 export const SESSION_DURATION_MS = 14 * 24 * 60 * 60 * 1000;
 
-// Deterministic stable fallback secret if none provided in env (ensures restarts don't invalidate tokens)
-const STABLE_FALLBACK_SECRET = 'koranews-secure-session-auth-token-secret-fallback-key-2026-sha256';
+// Dynamic in-memory fallback secret generated on process start for local dev/testing only
+let _devFallbackSecret: string | null = null;
 
 export function getSessionSecret(): string {
   const secret = process.env.SESSION_SECRET?.trim();
   if (secret && secret.length >= 16) {
     return secret;
   }
-  return STABLE_FALLBACK_SECRET;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      '[Security Alert] SESSION_SECRET environment variable is missing or shorter than 16 characters in production. Sessions cannot be initialized safely.'
+    );
+  }
+
+  // Development/Testing fallback generated per process instance
+  if (!_devFallbackSecret) {
+    _devFallbackSecret = crypto.randomBytes(32).toString('hex');
+  }
+  return _devFallbackSecret;
 }
 
 export interface SessionPayload {

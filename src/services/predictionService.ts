@@ -784,6 +784,10 @@ export async function saveUserPrediction(
       throw new Error('التوقع لهذه المباراة غير متاح حالياً');
     }
 
+    if (pm.isCalculated || pm.isConfirmedByAdmin) {
+      throw new Error('تم اعتماد نتيجة هذه المباراة بالفعل ولا يمكن إرسال أو تعديل التوقعات لها');
+    }
+
     const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
     const matchDateVal = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
 
@@ -847,6 +851,7 @@ export async function saveUserPrediction(
         .values({
           userId,
           predictionMatchId,
+          contestId: pm.contestId,
           homeScore,
           awayScore,
           pointsEarned: 0,
@@ -1034,8 +1039,12 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100) 
 
 /**
  * Evaluates predictions for a specific prediction match with admin confirmation.
- * Strictly Idempotent: Can be run multiple times safely without duplicate points.
- * Requirement 6-8: If only 1 participant correctly predicts the score, award +3 Golden Points!
+ * Strictly Idempotent & Atomic: Runs in a single DB transaction.
+ * Golden Prediction Rules:
+ * - Eligible ONLY if pointsPerMatch === 2.
+ * - If correctCount === 1: User gets 2 (base) + 1 (golden) = 3 points.
+ * - If correctCount > 1: Each user gets 2 base points only (no golden).
+ * - If pointsPerMatch > 2 (e.g. 3, 4, 5, 10): No golden awarded, all winners get base points.
  */
 export async function confirmAndEvaluatePredictionMatch(
   predictionMatchId: number,
@@ -1043,162 +1052,188 @@ export async function confirmAndEvaluatePredictionMatch(
   finalHomeScore?: number | null,
   finalAwayScore?: number | null
 ) {
+  // Validate input score types if provided
+  if (finalHomeScore !== undefined && finalHomeScore !== null) {
+    if (
+      typeof finalHomeScore !== 'number' ||
+      !Number.isInteger(finalHomeScore) ||
+      finalHomeScore < 0 ||
+      finalHomeScore > 30
+    ) {
+      throw new Error('نتيجة الفريق الأول يجب أن تكون رقماً صحيحاً بين 0 و 30');
+    }
+  }
+
+  if (finalAwayScore !== undefined && finalAwayScore !== null) {
+    if (
+      typeof finalAwayScore !== 'number' ||
+      !Number.isInteger(finalAwayScore) ||
+      finalAwayScore < 0 ||
+      finalAwayScore > 30
+    ) {
+      throw new Error('نتيجة الفريق الثاني يجب أن تكون رقماً صحيحاً بين 0 و 30');
+    }
+  }
+
   return await withDbRetry(async () => {
-    // 1. Fetch prediction match with match info & predictions
-    const pm = await db.query.predictionMatches.findFirst({
-      where: eq(predictionMatches.id, predictionMatchId),
-      with: {
-        match: {
-          with: {
-            homeTeam: true,
-            awayTeam: true,
+    return await db.transaction(async (tx) => {
+      // 1. Fetch prediction match with match info & predictions inside transaction
+      const pm = await tx.query.predictionMatches.findFirst({
+        where: eq(predictionMatches.id, predictionMatchId),
+        with: {
+          match: {
+            with: {
+              homeTeam: true,
+              awayTeam: true,
+            },
+          },
+          predictions: {
+            with: {
+              user: true,
+            },
           },
         },
-        predictions: {
-          with: {
-            user: true,
-          },
-        },
-      },
-    });
+      });
 
-    if (!pm) {
-      throw new Error('مباراة التوقع غير موجودة');
-    }
-
-    // Determine actual final score
-    let homeScore = finalHomeScore !== undefined && finalHomeScore !== null
-      ? finalHomeScore
-      : (pm.customHomeScore !== null && pm.customHomeScore !== undefined ? pm.customHomeScore : pm.match?.homeScore);
-    let awayScore = finalAwayScore !== undefined && finalAwayScore !== null
-      ? finalAwayScore
-      : (pm.customAwayScore !== null && pm.customAwayScore !== undefined ? pm.customAwayScore : pm.match?.awayScore);
-
-    if (homeScore === null || awayScore === null || isNaN(homeScore) || isNaN(awayScore)) {
-      throw new Error('يرجى تحديد النتيجة النهائية للمباراة لتأكيدها واحتساب النقاط');
-    }
-
-    const homeTeamName = pm.customHomeName || pm.match?.homeTeam?.name || 'الفريق الأول';
-    const awayTeamName = pm.customAwayName || pm.match?.awayTeam?.name || 'الفريق الثاني';
-    const basePoints = pm.pointsPerMatch !== undefined && pm.pointsPerMatch !== null ? pm.pointsPerMatch : 2;
-
-    // Filter correct predictions
-    const correctPredictions = pm.predictions.filter(
-      (pred) => pred.homeScore === homeScore && pred.awayScore === awayScore
-    );
-    const correctCount = correctPredictions.length;
-    // Golden prediction rule: ONLY eligible if match value is EXACTLY 2 points AND exactly 1 participant predicted correctly!
-    const isGoldenEligible = basePoints === 2 && correctCount === 1;
-
-    // Clear existing ledger entries for this prediction match to guarantee strict idempotency
-    await db
-      .delete(predictionPoints)
-      .where(eq(predictionPoints.predictionMatchId, pm.id));
-
-    let evaluatedCount = 0;
-    let pointsAwarded = 0;
-    let goldenAwarded = 0;
-    const correctPredictors: Array<{ id: number; name: string; avatar: string | null; isGolden: boolean }> = [];
-
-    // 2. Iterate and evaluate each user prediction
-    for (const pred of pm.predictions) {
-      const isCorrect = pred.homeScore === homeScore && pred.awayScore === awayScore;
-      const isGolden = isCorrect && isGoldenEligible;
-      const goldenBonus = isGolden ? 1 : 0; // Exactly +1 Golden bonus point
-      const totalEarned = isCorrect ? basePoints + goldenBonus : 0;
-
-      // Update prediction row
-      await db
-        .update(predictions)
-        .set({
-          pointsEarned: totalEarned,
-          isEvaluated: true,
-          isGolden,
-          goldenPoints: goldenBonus,
-          updatedAt: new Date(),
-        })
-        .where(eq(predictions.id, pred.id));
-
-      if (isCorrect) {
-        if (pred.user) {
-          correctPredictors.push({
-            id: pred.user.id,
-            name: pred.user.name || 'مشارك',
-            avatar: pred.user.avatar || null,
-            isGolden,
-          });
-        }
-
-        const reasonText = isGolden
-          ? `توقع ذهبي منفرد: ${homeTeamName} ${homeScore} - ${awayScore} ${awayTeamName} (+2 نقطة أساسية + 1 نقطة ذهبية = 3 نقاط)`
-          : `توقع دقيق: ${homeTeamName} ${homeScore} - ${awayScore} ${awayTeamName} (+${basePoints} نقطة)`;
-
-        // Insert fresh clean ledger record
-        await db
-          .insert(predictionPoints)
-          .values({
-            userId: pred.userId,
-            predictionId: pred.id,
-            predictionMatchId: pm.id,
-            points: totalEarned,
-            isGoldenBonus: isGolden,
-            reason: reasonText,
-          })
-          .catch((err) => {
-            console.warn('[predictionService] Ledger insert notice:', err?.message || err);
-          });
-
-        pointsAwarded += totalEarned;
-        if (isGolden) goldenAwarded++;
+      if (!pm) {
+        throw new Error('مباراة التوقع غير موجودة');
       }
 
-      evaluatedCount++;
-    }
+      // Determine actual final score
+      let homeScore = finalHomeScore !== undefined && finalHomeScore !== null
+        ? finalHomeScore
+        : (pm.customHomeScore !== null && pm.customHomeScore !== undefined ? pm.customHomeScore : pm.match?.homeScore);
+      let awayScore = finalAwayScore !== undefined && finalAwayScore !== null
+        ? finalAwayScore
+        : (pm.customAwayScore !== null && pm.customAwayScore !== undefined ? pm.customAwayScore : pm.match?.awayScore);
 
-    // 3. Mark prediction match as confirmed & calculated
-    await db
-      .update(predictionMatches)
-      .set({
-        customHomeScore: homeScore,
-        customAwayScore: awayScore,
-        customStatus: 'FINISHED',
-        isConfirmedByAdmin: true,
-        confirmedAt: new Date(),
-        confirmedBy: adminUserId,
-        isCalculated: true,
-        calculatedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(predictionMatches.id, pm.id));
+      if (homeScore === null || awayScore === null || isNaN(homeScore) || isNaN(awayScore)) {
+        throw new Error('يرجى تحديد النتيجة النهائية للمباراة لتأكيدها واحتساب النقاط');
+      }
 
-    // Also update matches table status if relational match exists
-    if (pm.matchId) {
-      await db
-        .update(matches)
+      const homeTeamName = pm.customHomeName || pm.match?.homeTeam?.name || 'الفريق الأول';
+      const awayTeamName = pm.customAwayName || pm.match?.awayTeam?.name || 'الفريق الثاني';
+      const basePoints = pm.pointsPerMatch !== undefined && pm.pointsPerMatch !== null ? pm.pointsPerMatch : 2;
+
+      // Filter correct predictions
+      const correctPredictions = pm.predictions.filter(
+        (pred) => pred.homeScore === homeScore && pred.awayScore === awayScore
+      );
+      const correctCount = correctPredictions.length;
+
+      // STRICT GOLDEN PREDICTION RULE:
+      // Golden prediction is ONLY allowed if basePoints is EXACTLY 2 AND exactly 1 participant predicted correctly!
+      // If basePoints > 2 (e.g. 3, 4, 5, 10), Golden is NEVER eligible.
+      const isGoldenEligible = basePoints === 2 && correctCount === 1;
+
+      // Clear existing ledger entries for this prediction match to guarantee strict idempotency
+      await tx
+        .delete(predictionPoints)
+        .where(eq(predictionPoints.predictionMatchId, pm.id));
+
+      let evaluatedCount = 0;
+      let pointsAwarded = 0;
+      let goldenAwarded = 0;
+      const correctPredictors: Array<{ id: number; name: string; avatar: string | null; isGolden: boolean }> = [];
+
+      // 2. Iterate and evaluate each user prediction
+      for (const pred of pm.predictions) {
+        const isCorrect = pred.homeScore === homeScore && pred.awayScore === awayScore;
+        const isGolden = isCorrect && isGoldenEligible;
+        const goldenBonus = isGolden ? 1 : 0; // Exactly +1 Golden bonus point
+        const totalEarned = isCorrect ? basePoints + goldenBonus : 0;
+
+        // Update prediction row in transaction
+        await tx
+          .update(predictions)
+          .set({
+            pointsEarned: totalEarned,
+            isEvaluated: true,
+            isGolden,
+            goldenPoints: goldenBonus,
+            updatedAt: new Date(),
+          })
+          .where(eq(predictions.id, pred.id));
+
+        if (isCorrect) {
+          if (pred.user) {
+            correctPredictors.push({
+              id: pred.user.id,
+              name: pred.user.name || 'مشارك',
+              avatar: pred.user.avatar || null,
+              isGolden,
+            });
+          }
+
+          const reasonText = isGolden
+            ? `توقع ذهبي منفرد: ${homeTeamName} ${homeScore} - ${awayScore} ${awayTeamName} (+2 نقطة أساسية + 1 نقطة ذهبية = 3 نقاط)`
+            : `توقع دقيق: ${homeTeamName} ${homeScore} - ${awayScore} ${awayTeamName} (+${basePoints} نقطة)`;
+
+          // Insert fresh ledger record in transaction
+          await tx
+            .insert(predictionPoints)
+            .values({
+              userId: pred.userId,
+              predictionId: pred.id,
+              predictionMatchId: pm.id,
+              contestId: pm.contestId,
+              points: totalEarned,
+              isGoldenBonus: isGolden,
+              reason: reasonText,
+            });
+
+          pointsAwarded += totalEarned;
+          if (isGolden) goldenAwarded++;
+        }
+
+        evaluatedCount++;
+      }
+
+      // 3. Mark prediction match as confirmed & calculated
+      await tx
+        .update(predictionMatches)
         .set({
-          homeScore,
-          awayScore,
-          status: 'FINISHED',
+          customHomeScore: homeScore,
+          customAwayScore: awayScore,
+          customStatus: 'FINISHED',
+          isConfirmedByAdmin: true,
+          confirmedAt: new Date(),
+          confirmedBy: adminUserId,
+          isCalculated: true,
+          calculatedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(matches.id, pm.matchId))
-        .catch(() => null);
-    }
+        .where(eq(predictionMatches.id, pm.id));
 
-    return {
-      success: true,
-      evaluatedCount,
-      pointsAwarded,
-      goldenAwarded,
-      basePoints,
-      correctPredictorsCount: correctPredictors.length,
-      correctPredictors,
-      isGoldenPrediction: isGoldenEligible,
-      finalScore: {
-        home: homeScore,
-        away: awayScore,
-      },
-    };
+      // Also update matches table status if relational match exists
+      if (pm.matchId) {
+        await tx
+          .update(matches)
+          .set({
+            homeScore,
+            awayScore,
+            status: 'FINISHED',
+            updatedAt: new Date(),
+          })
+          .where(eq(matches.id, pm.matchId))
+          .catch(() => null);
+      }
+
+      return {
+        success: true,
+        evaluatedCount,
+        pointsAwarded,
+        goldenAwarded,
+        basePoints,
+        correctPredictorsCount: correctPredictors.length,
+        correctPredictors,
+        isGoldenPrediction: isGoldenEligible,
+        finalScore: {
+          home: homeScore,
+          away: awayScore,
+        },
+      };
+    });
   });
 }
 
@@ -1509,8 +1544,17 @@ export async function addCustomExternalMatchToPredictions(data: {
 
 export async function updatePredictionMatchPoints(id: number, pointsPerMatch: number) {
   return await withDbRetry(async () => {
-    if (!pointsPerMatch || pointsPerMatch < 1 || pointsPerMatch > 20) {
-      throw new Error('النقاط المحددة للمباراة يجب أن تكون بين 1 و 20');
+    if (!pointsPerMatch || pointsPerMatch < 1 || pointsPerMatch > 20 || !Number.isInteger(pointsPerMatch)) {
+      throw new Error('النقاط المحددة للمباراة يجب أن تكون رقماً صحيحاً بين 1 و 20');
+    }
+    const pm = await db.query.predictionMatches.findFirst({
+      where: eq(predictionMatches.id, id),
+    });
+    if (!pm) {
+      throw new Error('المباراة المحددة غير موجودة');
+    }
+    if (pm.isCalculated || pm.isConfirmedByAdmin) {
+      throw new Error('لا يمكن تعديل نقاط مباراة تم اعتماد نتيجتها واحتساب نقاطها بالفعل');
     }
     await db
       .update(predictionMatches)
@@ -1522,6 +1566,15 @@ export async function updatePredictionMatchPoints(id: number, pointsPerMatch: nu
 
 export async function togglePredictionMatchActive(id: number, isActive: boolean) {
   return await withDbRetry(async () => {
+    const pm = await db.query.predictionMatches.findFirst({
+      where: eq(predictionMatches.id, id),
+    });
+    if (!pm) {
+      throw new Error('المباراة المحددة غير موجودة');
+    }
+    if (isActive && (pm.isCalculated || pm.isConfirmedByAdmin)) {
+      throw new Error('لا يمكن تفعيل مباراة تم اعتماد نتيجتها واحتساب نقاطها');
+    }
     await db
       .update(predictionMatches)
       .set({ isActive, updatedAt: new Date() })
@@ -1532,6 +1585,15 @@ export async function togglePredictionMatchActive(id: number, isActive: boolean)
 
 export async function removePredictionMatch(id: number) {
   return await withDbRetry(async () => {
+    const pm = await db.query.predictionMatches.findFirst({
+      where: eq(predictionMatches.id, id),
+    });
+    if (!pm) {
+      throw new Error('المباراة المحددة غير موجودة');
+    }
+    if (pm.isCalculated || pm.isConfirmedByAdmin) {
+      throw new Error('لا يمكن حذف مباراة تم اعتماد نتيجتها واحتساب نقاط المشاركين فيها');
+    }
     await db.delete(predictionMatches).where(eq(predictionMatches.id, id));
     return { success: true };
   });

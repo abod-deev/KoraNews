@@ -47,7 +47,7 @@ export default function MyPredictionsList({
   const [filter, setFilter] = useState<'all' | 'correct' | 'wrong' | 'pending'>('all');
 
   const filteredList = predictions.filter((item) => {
-    if (filter === 'correct') return item.isEvaluated && item.pointsEarned === 2;
+    if (filter === 'correct') return item.isEvaluated && item.pointsEarned > 0;
     if (filter === 'wrong') return item.isEvaluated && item.pointsEarned === 0;
     if (filter === 'pending') return !item.isEvaluated;
     return true;
@@ -94,7 +94,7 @@ export default function MyPredictionsList({
           { id: 'all', label: `الكل (${predictions.length})` },
           {
             id: 'correct',
-            label: `صحيحة (${predictions.filter((p) => p.isEvaluated && p.pointsEarned === 2).length})`,
+            label: `صحيحة (${predictions.filter((p) => p.isEvaluated && p.pointsEarned > 0).length})`,
           },
           {
             id: 'wrong',
@@ -126,7 +126,7 @@ export default function MyPredictionsList({
           if (!m) return null;
 
           const matchDate = new Date(m.matchDate);
-          const isCorrect = item.isEvaluated && item.pointsEarned === 2;
+          const isCorrect = item.isEvaluated && item.pointsEarned > 0;
           const isWrong = item.isEvaluated && item.pointsEarned === 0;
 
           return (
@@ -205,7 +205,7 @@ export default function MyPredictionsList({
                   {isCorrect ? (
                     <span className="inline-flex items-center gap-1 font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-xl">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      +2 نقطة (توقع دقيق)
+                      +{item.pointsEarned} نقطة (توقع دقيق)
                     </span>
                   ) : isWrong ? (
                     <span className="inline-flex items-center gap-1 font-bold text-gray-400 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-xl">

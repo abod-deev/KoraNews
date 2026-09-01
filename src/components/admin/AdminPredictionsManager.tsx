@@ -314,11 +314,11 @@ export default function AdminPredictionsManager({
 
   // Participant status update (Approve, Reject, Block)
   const handleUpdateParticipantStatus = async (
-    userId: number,
+    participantId: number,
     newStatus: 'pending' | 'approved' | 'rejected' | 'blocked'
   ) => {
     try {
-      const res = await fetch(`/api/admin/predictions/participants/${userId}/status`, {
+      const res = await fetch(`/api/admin/predictions/participants/${participantId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1064,7 +1064,7 @@ export default function AdminPredictionsManager({
                               {status !== 'approved' && (
                                 <button
                                   type="button"
-                                  onClick={() => handleUpdateParticipantStatus(part.userId, 'approved')}
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
                                   className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
                                   title="اعتماد المشاركة"
                                 >
@@ -1076,7 +1076,7 @@ export default function AdminPredictionsManager({
                               {status !== 'rejected' && (
                                 <button
                                   type="button"
-                                  onClick={() => handleUpdateParticipantStatus(part.userId, 'rejected')}
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'rejected')}
                                   className="px-2.5 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-700 dark:text-gray-200 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                                   title="رفض الطلب"
                                 >
@@ -1088,7 +1088,7 @@ export default function AdminPredictionsManager({
                               {status !== 'blocked' ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleUpdateParticipantStatus(part.userId, 'blocked')}
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'blocked')}
                                   className="p-1.5 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/50 transition-colors cursor-pointer"
                                   title="حظر المستخدم من المسابقة"
                                 >
@@ -1097,7 +1097,7 @@ export default function AdminPredictionsManager({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => handleUpdateParticipantStatus(part.userId, 'approved')}
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
                                   className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 font-bold text-xs cursor-pointer"
                                   title="إلغاء الحظر"
                                 >

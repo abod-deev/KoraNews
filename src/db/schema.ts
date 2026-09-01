@@ -63,6 +63,7 @@ export const contestSettings = pgTable('contest_settings', {
 export const contestParticipants = pgTable('contest_participants', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  contestId: integer('contest_id').references(() => contestSettings.id),
   status: text('status').default('pending').notNull(), // 'pending', 'approved', 'rejected', 'blocked'
   appliedAt: timestamp('applied_at').defaultNow().notNull(),
   reviewedAt: timestamp('reviewed_at'),
@@ -75,6 +76,7 @@ export const contestParticipants = pgTable('contest_participants', {
 export const predictionMatches = pgTable('prediction_matches', {
   id: serial('id').primaryKey(),
   matchId: text('match_id').references(() => matches.id, { onDelete: 'cascade' }),
+  contestId: integer('contest_id').references(() => contestSettings.id),
   externalMatchId: text('external_match_id'),
   isExternal: boolean('is_external').default(false).notNull(),
   customLeagueName: text('custom_league_name'),
@@ -102,6 +104,7 @@ export const predictions = pgTable('predictions', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   predictionMatchId: integer('prediction_match_id').references(() => predictionMatches.id, { onDelete: 'cascade' }).notNull(),
+  contestId: integer('contest_id').references(() => contestSettings.id),
   homeScore: integer('home_score').notNull(),
   awayScore: integer('away_score').notNull(),
   pointsEarned: integer('points_earned').default(0).notNull(),
@@ -117,6 +120,7 @@ export const predictionPoints = pgTable('prediction_points', {
   userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   predictionId: integer('prediction_id').references(() => predictions.id, { onDelete: 'cascade' }).notNull().unique(),
   predictionMatchId: integer('prediction_match_id').references(() => predictionMatches.id, { onDelete: 'cascade' }).notNull(),
+  contestId: integer('contest_id').references(() => contestSettings.id),
   points: integer('points').default(2).notNull(),
   isGoldenBonus: boolean('is_golden_bonus').default(false).notNull(),
   reason: text('reason').notNull(),
