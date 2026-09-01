@@ -91,7 +91,7 @@ export default function HeroSection() {
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative rounded-2xl sm:rounded-3xl overflow-hidden h-[230px] sm:h-[370px] lg:h-[430px] cursor-pointer shadow-md hover:shadow-xl transition-all duration-500 border border-slate-200/50 dark:border-slate-800/80"
+          className="relative rounded-2xl sm:rounded-3xl overflow-hidden h-[200px] sm:h-[370px] lg:h-[430px] cursor-pointer shadow-md hover:shadow-xl transition-all duration-500 border border-slate-200/50 dark:border-slate-800/80"
         >
           <img
             loading="lazy"
@@ -105,7 +105,7 @@ export default function HeroSection() {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent opacity-95"></div>
           
-          <div className="absolute bottom-0 p-4 sm:p-7 w-full flex flex-col items-start justify-end">
+          <div className="absolute bottom-0 p-3 sm:p-7 w-full flex flex-col items-start justify-end">
             <span className="bg-sky-600 text-white text-[10px] sm:text-xs font-black px-2.5 py-0.5 rounded-lg mb-2 inline-flex items-center gap-1 shadow-xs">
               <Flame className="w-3 h-3 text-amber-300" />
               <span>أبرز الأخبار</span>

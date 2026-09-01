@@ -16,7 +16,7 @@ export default function NewsCard({ article }: NewsCardProps) {
       to={`/news/${article.id}`} 
       className="group flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/80 overflow-hidden shadow-2xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 h-full select-none"
     >
-      <div className="relative h-40 sm:h-48 overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800">
+      <div className="relative h-32 sm:h-48 overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800">
         <img 
           loading="lazy" 
           src={article.image || defaultImage} 
@@ -28,13 +28,13 @@ export default function NewsCard({ article }: NewsCardProps) {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-80" />
         
-        <span className="absolute top-3 right-3 bg-sky-600/90 backdrop-blur-md text-white text-[10px] sm:text-xs font-black px-2.5 py-1 rounded-xl shadow-xs border border-white/20 flex items-center gap-1">
+        <span className="absolute top-2.5 right-2.5 bg-sky-600/90 backdrop-blur-md text-white text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-lg shadow-xs border border-white/20 flex items-center gap-1">
           {article.isFeatured && <Sparkles className="w-3 h-3 text-amber-300 fill-current" />}
           <span>{categoryName}</span>
         </span>
       </div>
       
-      <div className="p-3.5 sm:p-5 flex flex-col flex-1">
+      <div className="p-3 sm:p-5 flex flex-col flex-1">
         <h3 className="text-xs sm:text-base font-extrabold text-slate-900 dark:text-slate-100 mb-2.5 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors line-clamp-2 leading-snug">
           {article.title}
         </h3>

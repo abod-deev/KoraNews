@@ -22,7 +22,7 @@ export default function HomeSidebar() {
   return (
     <aside className="w-full space-y-4 sm:space-y-6 select-none">
       {/* Most Viewed Box */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-4 sm:p-5 shadow-xs">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/80 p-3 sm:p-5 shadow-xs">
         <h2 className="text-xs sm:text-base font-extrabold mb-4 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 text-slate-900 dark:text-slate-100">
           <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500 shrink-0" />
           <span>الأكثر قراءة هذا الأسبوع</span>

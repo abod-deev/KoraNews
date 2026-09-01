@@ -74,17 +74,17 @@ export default function BottomNav() {
             >
               <div className="relative">
                 {item.avatar ? (
-                  <div className={`w-5 h-5 rounded-full overflow-hidden border ${active ? 'border-sky-600 ring-2 ring-sky-500/20' : 'border-slate-300 dark:border-slate-700'}`}>
+                  <div className={`w-4.5 h-4.5 sm:w-5 sm:h-5 rounded-full overflow-hidden border ${active ? 'border-sky-600 ring-2 ring-sky-500/20' : 'border-slate-300 dark:border-slate-700'}`}>
                     <img loading="lazy" src={item.avatar} alt="حسابي" className="w-full h-full object-cover" />
                   </div>
                 ) : (
-                  <Icon className={`w-5 h-5 transition-transform ${active ? 'scale-110 stroke-[2.5]' : 'scale-100'}`} />
+                  <Icon className={`w-4.5 h-4.5 sm:w-5 sm:h-5 transition-transform ${active ? 'scale-110 stroke-[2.5]' : 'scale-100'}`} />
                 )}
                 {item.path === '/matches' && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse ring-2 ring-white dark:ring-slate-950" />
                 )}
               </div>
-              <span className={`text-[10px] mt-1 leading-none ${active ? 'font-black text-sky-600 dark:text-sky-400' : 'font-bold'}`}>
+              <span className={`text-[10px] mt-0.5 leading-none ${active ? 'font-black text-sky-600 dark:text-sky-400' : 'font-bold'}`}>
                 {item.name}
               </span>
             </Link>

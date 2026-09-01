@@ -1,12 +1,12 @@
 export interface AuthUser {
   id?: string | number;
+  uid?: string;
   email?: string;
   name?: string;
   displayName?: string;
   role?: string;
   isAdmin?: boolean;
   avatar?: string;
-  [key: string]: any;
 }
 
 export type User = AuthUser;

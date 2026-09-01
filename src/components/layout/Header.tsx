@@ -49,15 +49,15 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-slate-200/80 dark:border-slate-800/80 shadow-2xs transition-all duration-200">
       <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-14 sm:h-16">
+        <div className="flex justify-between items-center h-12 sm:h-16">
           <div className="flex items-center gap-1.5 sm:gap-3">
             <button 
-              className="lg:hidden w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer shrink-0" 
+              className="lg:hidden w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all cursor-pointer shrink-0" 
               onClick={() => setIsSideDrawerOpen(true)}
               aria-label="فتح القائمة الجانبية"
               id="open-side-drawer-btn"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <Link to="/" className="flex items-center gap-2 group shrink-0">
               <SiteLogo size="md" />
@@ -94,7 +94,7 @@ export default function Header() {
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={handleBellClick}
-                className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all relative cursor-pointer text-slate-600 dark:text-slate-300"
+                className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all relative cursor-pointer text-slate-600 dark:text-slate-300"
                 title="تنبيهات المباريات المفضلة"
                 aria-label="تنبيهات المباريات"
                 id="header-bell-btn"

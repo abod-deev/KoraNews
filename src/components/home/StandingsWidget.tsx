@@ -28,7 +28,7 @@ export default function StandingsWidget() {
   const currentLeagueObj = TOP_LEAGUES.find((l) => l.id === selectedLeague) || TOP_LEAGUES[0];
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 sm:p-5 shadow-xs select-none">
+    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-3 sm:p-5 shadow-xs select-none">
       {/* Title Header */}
       <div className="flex items-center justify-between gap-2 mb-3.5 border-b border-slate-100 dark:border-slate-800 pb-3">
         <div className="flex items-center gap-2">
