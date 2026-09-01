@@ -53,15 +53,6 @@ export default function HomeSidebar() {
 
       {/* Standings Widget */}
       <StandingsWidget />
-
-      {/* Ad Banner */}
-      <div className="bg-gray-50/80 dark:bg-gray-800/40 backdrop-blur-sm rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-700/60 h-[250px] flex items-center justify-center relative overflow-hidden group cursor-pointer shadow-inner">
-        <div className="absolute inset-0 bg-gradient-to-br from-brand/5 to-blue-500/5 group-hover:scale-105 transition-transform duration-500"></div>
-        <div className="relative z-10 text-center">
-          <span className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest block mb-2">إعلان</span>
-          <p className="font-bold text-gray-500 dark:text-gray-400">مساحة إعلانية (300x250)</p>
-        </div>
-      </div>
     </aside>
   );
 }

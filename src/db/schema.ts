@@ -47,10 +47,88 @@ export const comments = pgTable('comments', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+export const contestSettings = pgTable('contest_settings', {
+  id: serial('id').primaryKey(),
+  name: text('name').default('مسابقة توقعات KoraNews').notNull(),
+  description: text('description').default('توقع نتائج المباريات وتصدر الترتيب العام واكسب النقاط!').notNull(),
+  registrationStartDate: timestamp('registration_start_date'),
+  registrationEndDate: timestamp('registration_end_date'),
+  predictionsStartDate: timestamp('predictions_start_date'),
+  contestEndDate: timestamp('contest_end_date'),
+  status: text('status').default('active').notNull(), // 'registration_open', 'registration_closed', 'active', 'completed', 'paused'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const contestParticipants = pgTable('contest_participants', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  status: text('status').default('pending').notNull(), // 'pending', 'approved', 'rejected', 'blocked'
+  appliedAt: timestamp('applied_at').defaultNow().notNull(),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const predictionMatches = pgTable('prediction_matches', {
+  id: serial('id').primaryKey(),
+  matchId: text('match_id').references(() => matches.id, { onDelete: 'cascade' }),
+  externalMatchId: text('external_match_id'),
+  isExternal: boolean('is_external').default(false).notNull(),
+  customLeagueName: text('custom_league_name'),
+  customLeagueLogo: text('custom_league_logo'),
+  customHomeName: text('custom_home_name'),
+  customHomeLogo: text('custom_home_logo'),
+  customAwayName: text('custom_away_name'),
+  customAwayLogo: text('custom_away_logo'),
+  customHomeScore: integer('custom_home_score'),
+  customAwayScore: integer('custom_away_score'),
+  customMatchDate: timestamp('custom_match_date'),
+  customStatus: text('custom_status'),
+  pointsPerMatch: integer('points_per_match').default(2).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  isCalculated: boolean('is_calculated').default(false).notNull(),
+  calculatedAt: timestamp('calculated_at'),
+  isConfirmedByAdmin: boolean('is_confirmed_by_admin').default(false).notNull(),
+  confirmedAt: timestamp('confirmed_at'),
+  confirmedBy: integer('confirmed_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const predictions = pgTable('predictions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  predictionMatchId: integer('prediction_match_id').references(() => predictionMatches.id, { onDelete: 'cascade' }).notNull(),
+  homeScore: integer('home_score').notNull(),
+  awayScore: integer('away_score').notNull(),
+  pointsEarned: integer('points_earned').default(0).notNull(),
+  isEvaluated: boolean('is_evaluated').default(false).notNull(),
+  isGolden: boolean('is_golden').default(false).notNull(),
+  goldenPoints: integer('golden_points').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const predictionPoints = pgTable('prediction_points', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  predictionId: integer('prediction_id').references(() => predictions.id, { onDelete: 'cascade' }).notNull().unique(),
+  predictionMatchId: integer('prediction_match_id').references(() => predictionMatches.id, { onDelete: 'cascade' }).notNull(),
+  points: integer('points').default(2).notNull(),
+  isGoldenBonus: boolean('is_golden_bonus').default(false).notNull(),
+  reason: text('reason').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   news: many(news),
   comments: many(comments),
   activityLogs: many(activityLogs),
+  predictions: many(predictions),
+  predictionPoints: many(predictionPoints),
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -106,7 +184,7 @@ export const matches = pgTable('matches', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-export const matchesRelations = relations(matches, ({ one }) => ({
+export const matchesRelations = relations(matches, ({ one, many }) => ({
   league: one(leagues, {
     fields: [matches.leagueId],
     references: [leagues.id],
@@ -119,6 +197,49 @@ export const matchesRelations = relations(matches, ({ one }) => ({
     fields: [matches.awayTeamId],
     references: [teams.id],
   }),
+  predictionMatch: one(predictionMatches, {
+    fields: [matches.id],
+    references: [predictionMatches.matchId],
+  }),
+}));
+
+export const predictionMatchesRelations = relations(predictionMatches, ({ one, many }) => ({
+  match: one(matches, {
+    fields: [predictionMatches.matchId],
+    references: [matches.id],
+  }),
+  predictions: many(predictions),
+  predictionPoints: many(predictionPoints),
+}));
+
+export const predictionsRelations = relations(predictions, ({ one }) => ({
+  user: one(users, {
+    fields: [predictions.userId],
+    references: [users.id],
+  }),
+  predictionMatch: one(predictionMatches, {
+    fields: [predictions.predictionMatchId],
+    references: [predictionMatches.id],
+  }),
+  pointRecord: one(predictionPoints, {
+    fields: [predictions.id],
+    references: [predictionPoints.predictionId],
+  }),
+}));
+
+export const predictionPointsRelations = relations(predictionPoints, ({ one }) => ({
+  user: one(users, {
+    fields: [predictionPoints.userId],
+    references: [users.id],
+  }),
+  prediction: one(predictions, {
+    fields: [predictionPoints.predictionId],
+    references: [predictions.id],
+  }),
+  predictionMatch: one(predictionMatches, {
+    fields: [predictionPoints.predictionMatchId],
+    references: [predictionMatches.id],
+  }),
 }));
 
 export const activityLogs = pgTable('activity_logs', {
@@ -130,6 +251,17 @@ export const activityLogs = pgTable('activity_logs', {
   details: jsonb('details'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const contestParticipantsRelations = relations(contestParticipants, ({ one }) => ({
+  user: one(users, {
+    fields: [contestParticipants.userId],
+    references: [users.id],
+  }),
+  reviewer: one(users, {
+    fields: [contestParticipants.reviewedBy],
+    references: [users.id],
+  }),
+}));
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   user: one(users, {

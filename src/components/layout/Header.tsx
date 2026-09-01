@@ -6,6 +6,7 @@ import { useMatchReminders } from '../../contexts/MatchRemindersContext';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import SideNavDrawer from './SideNavDrawer';
+import SiteLogo from './SiteLogo';
 
 export default function Header() {
   const { isDarkMode, toggleDarkMode } = useTheme();
@@ -19,6 +20,7 @@ export default function Header() {
     { name: 'الرئيسية', path: '/' },
     { name: 'الأخبار', path: '/news' },
     { name: 'المباريات', path: '/matches' },
+    { name: 'توقعات المباريات', path: '/predictions' },
   ];
 
   // Close dropdown on outside click
@@ -55,9 +57,8 @@ export default function Header() {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <Link to="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-brand rounded-xl flex items-center justify-center text-white font-black text-sm shadow-xs shadow-brand/20">K</div>
-              <span className="text-lg sm:text-xl font-black text-brand tracking-tight">كورة نيوز</span>
+            <Link to="/" className="flex items-center gap-2 group">
+              <SiteLogo size="md" />
             </Link>
           </div>
 

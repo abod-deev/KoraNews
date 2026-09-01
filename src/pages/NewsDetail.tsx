@@ -1,9 +1,10 @@
 import { useParams, Link } from 'react-router-dom';
-import { motion } from 'motion/react';
-import { Clock, Eye, Share2, ChevronRight, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Clock, Eye, Share2, ChevronRight, Loader2, Maximize2, X, ExternalLink } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchNewsById } from '../services/api';
 import { useSEO } from '../hooks/useSEO';
+import { trackNewsRead, trackNewsShare } from '../services/analytics';
 import HomeSidebar from '../components/home/HomeSidebar';
 import ToastModal from '../components/common/ToastModal';
 
@@ -13,6 +14,7 @@ export default function NewsDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCopiedToast, setShowCopiedToast] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   useEffect(() => {
     const loadNewsDetail = async () => {
@@ -21,6 +23,9 @@ export default function NewsDetail() {
         if (!id) throw new Error('لا يوجد معرف للخبر');
         const data = await fetchNewsById(parseInt(id));
         setArticle(data);
+        if (data?.title) {
+          trackNewsRead(id, data.title, data.category);
+        }
       } catch (err: any) {
         setError(err.message || 'حدث خطأ أثناء جلب تفاصيل الخبر');
       } finally {
@@ -89,6 +94,7 @@ export default function NewsDetail() {
               </div>
               <button 
                 onClick={() => {
+                  trackNewsShare(article.id || id || '', article.title, navigator.share ? 'system_share' : 'clipboard_copy');
                   if (navigator.share) {
                     navigator.share({ title: article.title, url: window.location.href }).catch(() => {});
                   } else {
@@ -96,26 +102,38 @@ export default function NewsDetail() {
                     setShowCopiedToast(true);
                   }
                 }}
-                className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-3.5 py-2 rounded-lg font-bold text-xs sm:text-sm transition-colors border border-gray-200 dark:border-gray-700 active:scale-95"
+                className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-3.5 py-2 rounded-lg font-bold text-xs sm:text-sm transition-colors border border-gray-200 dark:border-gray-700 active:scale-95 cursor-pointer"
               >
                 <Share2 className="w-4 h-4" /> مشاركة
               </button>
             </div>
           </div>
 
-          {/* Article Image */}
+          {/* Article Image - Rendered in its natural dimensions without crop restriction */}
           {article.image && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }} 
               animate={{ opacity: 1, y: 0 }} 
-              className="mb-6 sm:mb-8 rounded-2xl overflow-hidden shadow-sm relative group"
+              className="mb-6 sm:mb-8 rounded-2xl overflow-hidden shadow-sm bg-gray-100 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800/80 relative group"
             >
-              <img loading="lazy" 
-                src={article.image} 
-                alt={article.title} 
-                className="w-full h-[240px] sm:h-[450px] object-cover group-hover:scale-105 transition-transform duration-700" 
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-gray-950/20 to-transparent"></div>
+              <div 
+                onClick={() => setIsImageModalOpen(true)}
+                className="cursor-zoom-in relative block overflow-hidden"
+                title="انقر لعرض الصورة بالحجم الكامل"
+              >
+                <img 
+                  loading="lazy" 
+                  src={article.image} 
+                  alt={article.title} 
+                  className="w-full h-auto max-h-[85vh] object-contain mx-auto block rounded-2xl transition-transform duration-300 group-hover:scale-[1.01]" 
+                />
+                
+                {/* Full-size view trigger indicator badge */}
+                <div className="absolute bottom-3 left-3 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span>عرض بالحجم الكامل</span>
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -132,6 +150,60 @@ export default function NewsDetail() {
           </div>
         </div>
       </div>
+
+      {/* Full-Screen Original Image Lightbox Modal */}
+      <AnimatePresence>
+        {isImageModalOpen && article.image && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsImageModalOpen(false)}
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6"
+          >
+            {/* Top Bar with actions */}
+            <div 
+              onClick={e => e.stopPropagation()} 
+              className="w-full max-w-6xl flex items-center justify-between text-white mb-3"
+            >
+              <span className="text-xs sm:text-sm font-bold truncate max-w-[70%] opacity-90">
+                {article.title}
+              </span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={article.image}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl text-xs flex items-center gap-1 transition-colors"
+                  title="فتح الصورة في تبويب جديد"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span className="hidden sm:inline">فتح الأصل</span>
+                </a>
+                <button
+                  onClick={() => setIsImageModalOpen(false)}
+                  className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl transition-colors cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Image Container with native aspect ratio */}
+            <div 
+              onClick={e => e.stopPropagation()} 
+              className="relative max-w-full max-h-[88vh] flex items-center justify-center overflow-auto rounded-xl"
+            >
+              <img 
+                src={article.image} 
+                alt={article.title} 
+                className="max-w-full max-h-[85vh] w-auto h-auto object-contain rounded-xl shadow-2xl" 
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Copy Link Toast Modal */}
       <ToastModal

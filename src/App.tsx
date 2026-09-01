@@ -2,12 +2,16 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MatchRemindersProvider } from './contexts/MatchRemindersContext';
+import AnalyticsTracker from './components/common/AnalyticsTracker';
 import MainLayout from './components/layout/MainLayout';
 import Home from './pages/Home';
 import News from './pages/News';
 import NewsDetail from './pages/NewsDetail';
 import Matches from './pages/Matches';
 import LeagueDetails from './pages/LeagueDetails';
+import Predictions from './pages/Predictions';
+import PredictionsLeaderboardPage from './pages/PredictionsLeaderboardPage';
+import GoldenLeaderboardPage from './pages/GoldenLeaderboardPage';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
@@ -39,12 +43,16 @@ export default function App() {
       <AuthProvider>
         <MatchRemindersProvider>
           <BrowserRouter>
+            <AnalyticsTracker />
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Home />} />
                 <Route path="news" element={<News />} />
                 <Route path="news/:id" element={<NewsDetail />} />
                 <Route path="matches" element={<Matches />} />
+                <Route path="predictions" element={<Predictions />} />
+                <Route path="predictions/leaderboard" element={<PredictionsLeaderboardPage />} />
+                <Route path="predictions/golden" element={<GoldenLeaderboardPage />} />
                 <Route path="leagues/:id" element={<LeagueDetails />} />
                 <Route path="admin" element={<AdminRoute />} />
                 <Route path="profile" element={<Profile />} />

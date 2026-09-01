@@ -542,6 +542,9 @@ async function processAndStoreMatches(apiMatches: any[]) {
       } else {
         await db.update(matches).set(matchData).where(eq(matches.id, matchId)).catch(() => null);
       }
+
+      // Update match record with fresh score and status
+      // (Prediction points calculation now requires manual admin confirmation per requirements)
     } catch (itemErr) {
       console.warn("[footballService] Match process item error:", itemErr);
     }

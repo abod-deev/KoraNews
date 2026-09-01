@@ -12,6 +12,7 @@ import {
   requireAuth,
   requirePermission,
   requireSuperAdmin,
+  optionalAuth,
   AuthRequest,
   createServerSessionToken,
   verifyServerSessionToken,
@@ -41,6 +42,30 @@ import {
   getStoredMatches,
   getStoredStandings,
 } from './src/services/footballService.ts';
+import {
+  getPredictionMatches,
+  getUserPredictionsHistory,
+  getUserPredictionStats,
+  saveUserPrediction,
+  getLeaderboard,
+  getGoldenLeaderboard,
+  getAdminPredictionMatches,
+  addMatchToPredictions,
+  addCustomExternalMatchToPredictions,
+  updatePredictionMatchPoints,
+  togglePredictionMatchActive,
+  removePredictionMatch,
+  getContestSettings,
+  updateContestSettings,
+  getUserParticipationStatus,
+  requestContestParticipation,
+  getAdminContestParticipants,
+  updateParticipantStatus,
+  removeParticipant,
+  getAdminAvailableMatchesForSelection,
+  confirmAndEvaluatePredictionMatch,
+  getAdminPredictionStats,
+} from './src/services/predictionService.ts';
 
 async function logActivity(
   userId: number,
@@ -1057,6 +1082,418 @@ async function startServer() {
       return res.status(500).json({ error: error.message || 'فشل في مزامنة المباريات' });
     } finally {
       isSyncInProgress = false;
+    }
+  });
+
+  // ==========================================
+  // MATCH PREDICTIONS & CONTEST SYSTEM (مسابقة وتوقعات المباريات)
+  // ==========================================
+
+  /**
+   * GET /api/predictions/contest/settings
+   * Fetch contest configuration and public rules.
+   */
+  app.get('/api/predictions/contest/settings', optionalAuth, async (_req, res) => {
+    try {
+      const settings = await getContestSettings();
+      return res.json(settings);
+    } catch (error: any) {
+      console.error('Error fetching contest settings:', error);
+      return res.status(500).json({ error: 'فشل في جلب إعدادات المسابقة' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/predictions/contest/settings
+   * Admin: Update contest configuration.
+   */
+  app.put('/api/admin/predictions/contest/settings', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const updated = await updateContestSettings(req.body);
+      await logActivity(req.dbUser.id, 'UPDATE', 'CONTEST_SETTINGS', String(updated.id), req.body);
+      return res.json({ success: true, settings: updated });
+    } catch (error: any) {
+      console.error('Error updating contest settings:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تحديث إعدادات المسابقة' });
+    }
+  });
+
+  /**
+   * GET /api/predictions/contest/my-status
+   * Fetch current user's registration status in the contest.
+   */
+  app.get('/api/predictions/contest/my-status', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول' });
+      const status = await getUserParticipationStatus(req.dbUser.id);
+      return res.json(status);
+    } catch (error: any) {
+      console.error('Error fetching participation status:', error);
+      return res.status(500).json({ error: 'فشل في جلب حالة الاشتراك' });
+    }
+  });
+
+  /**
+   * POST /api/predictions/contest/apply
+   * User: Submit pre-registration application for the contest.
+   */
+  app.post('/api/predictions/contest/apply', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول أولاً' });
+      const { notes } = req.body;
+      const result = await requestContestParticipation(req.dbUser.id, notes);
+      await logActivity(req.dbUser.id, 'APPLY', 'CONTEST_PARTICIPANT', String(req.dbUser.id));
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error requesting contest participation:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تقديم طلب الاشتراك' });
+    }
+  });
+
+  /**
+   * GET /api/admin/predictions/participants
+   * Admin: List all contest participants with filters.
+   */
+  app.get('/api/admin/predictions/participants', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const statusFilter = (req.query.status as string) || undefined;
+      const search = (req.query.search as string) || undefined;
+      const list = await getAdminContestParticipants(statusFilter, search);
+      return res.json(list);
+    } catch (error: any) {
+      console.error('Error fetching admin contest participants:', error);
+      return res.status(500).json({ error: 'فشل في جلب قائمة المشتركين' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/predictions/participants/:id/status
+   * Admin: Approve, reject, block, or reset participant.
+   */
+  app.put('/api/admin/predictions/participants/:id/status', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const { status, notes } = req.body;
+      if (!['approved', 'rejected', 'blocked', 'pending'].includes(status)) {
+        return res.status(400).json({ error: 'حالة غير صالحة' });
+      }
+
+      const result = await updateParticipantStatus(id, status, req.dbUser.id, notes);
+      await logActivity(req.dbUser.id, 'UPDATE_STATUS', 'CONTEST_PARTICIPANT', String(id), { status, notes });
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error updating participant status:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تعديل حالة المشترك' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/predictions/participants/:id
+   * Admin: Delete participant record.
+   */
+  app.delete('/api/admin/predictions/participants/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const result = await removeParticipant(id);
+      await logActivity(req.dbUser.id, 'DELETE', 'CONTEST_PARTICIPANT', String(id));
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error removing participant:', error);
+      return res.status(500).json({ error: 'فشل في حذف طلب الاشتراك' });
+    }
+  });
+
+  /**
+   * GET /api/predictions
+   * Fetch all active prediction matches (with user prediction if logged in).
+   */
+  app.get('/api/predictions', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.dbUser ? req.dbUser.id : null;
+      const list = await getPredictionMatches(userId);
+      return res.json(list);
+    } catch (error: any) {
+      console.error('Error fetching prediction matches:', error);
+      return res.status(500).json({ error: 'فشل في جلب مباريات التوقعات' });
+    }
+  });
+
+  /**
+   * GET /api/predictions/my
+   * Fetch current user's prediction history.
+   */
+  app.get('/api/predictions/my', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول' });
+      const history = await getUserPredictionsHistory(req.dbUser.id);
+      return res.json(history);
+    } catch (error: any) {
+      console.error('Error fetching user prediction history:', error);
+      return res.status(500).json({ error: 'فشل في جلب سجل التوقعات' });
+    }
+  });
+
+  /**
+   * GET /api/predictions/stats
+   * Fetch current user's points balance and statistics.
+   */
+  app.get('/api/predictions/stats', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول' });
+      const stats = await getUserPredictionStats(req.dbUser.id);
+      return res.json(stats);
+    } catch (error: any) {
+      console.error('Error fetching user prediction stats:', error);
+      return res.status(500).json({ error: 'فشل في جلب إحصائيات التوقعات' });
+    }
+  });
+
+  /**
+   * POST /api/predictions
+   * Submit or update a match prediction. Strictly validated on backend.
+   */
+  app.post('/api/predictions', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول أولاً للمشاركة في التوقعات' });
+
+      const { predictionMatchId, homeScore, awayScore } = req.body;
+
+      const pId = parseInt(String(predictionMatchId), 10);
+      const hScore = parseInt(String(homeScore), 10);
+      const aScore = parseInt(String(awayScore), 10);
+
+      if (isNaN(pId) || isNaN(hScore) || isNaN(aScore)) {
+        return res.status(400).json({ error: 'بيانات التوقع غير صحيحة، يرجى إدخال أرقام صحيحة' });
+      }
+
+      const result = await saveUserPrediction(req.dbUser.id, pId, hScore, aScore);
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error saving prediction:', error);
+      return res.status(400).json({ error: error.message || 'فشل في حفظ التوقع' });
+    }
+  });
+
+  /**
+   * GET /api/predictions/leaderboard
+   * Get the global predictions leaderboard.
+   */
+  app.get('/api/predictions/leaderboard', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const currentUserId = req.dbUser ? req.dbUser.id : undefined;
+      const data = await getLeaderboard(currentUserId);
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error fetching predictions leaderboard:', error);
+      return res.status(500).json({ error: 'فشل في جلب لائحة المتصدرين' });
+    }
+  });
+
+  /**
+   * GET /api/predictions/leaderboard/golden
+   * Get the Golden predictions leaderboard.
+   */
+  app.get('/api/predictions/leaderboard/golden', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const currentUserId = req.dbUser ? req.dbUser.id : undefined;
+      const data = await getGoldenLeaderboard(currentUserId);
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error fetching golden leaderboard:', error);
+      return res.status(500).json({ error: 'فشل في جلب لائحة التوقعات الذهبية' });
+    }
+  });
+
+  // ==========================================
+  // ADMIN PREDICTION MANAGEMENT ROUTES
+  // ==========================================
+
+  /**
+   * GET /api/admin/predictions/stats
+   * Admin: Fetch general stats for predictions contest dashboard.
+   */
+  app.get('/api/admin/predictions/stats', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const stats = await getAdminPredictionStats();
+      return res.json(stats);
+    } catch (error: any) {
+      console.error('Error fetching admin prediction stats:', error);
+      return res.status(500).json({ error: 'فشل في جلب إحصائيات التوقعات للإدارة' });
+    }
+  });
+
+  /**
+   * GET /api/admin/predictions/available-matches
+   * Admin: Get matches for Today and Tomorrow for quick selection.
+   */
+  app.get('/api/admin/predictions/available-matches', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const dateFilter = (req.query.date as 'today' | 'tomorrow' | 'all') || 'today';
+      const data = await getAdminAvailableMatchesForSelection(dateFilter);
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error fetching available matches for predictions:', error);
+      return res.status(500).json({ error: 'فشل في جلب المباريات المتاحة' });
+    }
+  });
+
+  /**
+   * GET /api/admin/predictions
+   * Fetch all prediction matches with admin meta and user participation.
+   */
+  app.get('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const data = await getAdminPredictionMatches();
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error fetching admin prediction matches:', error);
+      return res.status(500).json({ error: 'فشل في جلب مباريات التوقعات للإدارة' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions
+   * Add a system match to the prediction contest list with custom points per match.
+   */
+  app.post('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const { matchId, pointsPerMatch } = req.body;
+      if (!matchId || typeof matchId !== 'string') {
+        return res.status(400).json({ error: 'معرف المباراة مطلوب' });
+      }
+
+      const pts = pointsPerMatch !== undefined ? parseInt(String(pointsPerMatch), 10) : 2;
+      const result = await addMatchToPredictions(matchId.trim(), isNaN(pts) ? 2 : pts);
+      await logActivity(req.dbUser.id, 'CREATE', 'PREDICTION_MATCH', matchId, { matchId, pointsPerMatch: pts });
+      return res.status(201).json(result);
+    } catch (error: any) {
+      console.error('Error adding match to predictions:', error);
+      return res.status(400).json({ error: error.message || 'فشل في إضافة المباراة للتوقعات' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/custom-match
+   * Admin: Add a match from an external league not in KoraNews with custom points.
+   */
+  app.post('/api/admin/predictions/custom-match', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const { leagueName, leagueLogo, homeTeamName, homeTeamLogo, awayTeamName, awayTeamLogo, matchDate, pointsPerMatch } = req.body;
+      const pts = pointsPerMatch !== undefined ? parseInt(String(pointsPerMatch), 10) : 2;
+      const result = await addCustomExternalMatchToPredictions({
+        leagueName,
+        leagueLogo,
+        homeTeamName,
+        homeTeamLogo,
+        awayTeamName,
+        awayTeamLogo,
+        matchDate,
+        pointsPerMatch: isNaN(pts) ? 2 : pts,
+      });
+      await logActivity(req.dbUser.id, 'CREATE_CUSTOM', 'PREDICTION_MATCH', String(result.id), {
+        leagueName,
+        homeTeamName,
+        awayTeamName,
+        pointsPerMatch: pts,
+      });
+      return res.status(201).json(result);
+    } catch (error: any) {
+      console.error('Error adding custom prediction match:', error);
+      return res.status(400).json({ error: error.message || 'فشل في إضافة المباراة الخارجية' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/predictions/:id/points
+   * Admin: Update points for a prediction match.
+   */
+  app.put('/api/admin/predictions/:id/points', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const { pointsPerMatch } = req.body;
+      const pts = parseInt(String(pointsPerMatch), 10);
+      if (isNaN(pts)) return res.status(400).json({ error: 'قيمة النقاط غير صحيحة' });
+
+      const result = await updatePredictionMatchPoints(id, pts);
+      await logActivity(req.dbUser.id, 'UPDATE_POINTS', 'PREDICTION_MATCH', String(id), { pointsPerMatch: pts });
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error updating prediction match points:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تحديث نقاط المباراة' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/:id/confirm-result
+   * Admin: Manually confirm match final score, award points (+2) and display winners.
+   */
+  app.post('/api/admin/predictions/:id/confirm-result', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const { homeScore, awayScore } = req.body;
+      const parsedHome = homeScore !== undefined && homeScore !== null ? parseInt(String(homeScore), 10) : undefined;
+      const parsedAway = awayScore !== undefined && awayScore !== null ? parseInt(String(awayScore), 10) : undefined;
+
+      const result = await confirmAndEvaluatePredictionMatch(id, req.dbUser.id, parsedHome, parsedAway);
+      await logActivity(req.dbUser.id, 'CONFIRM_RESULT', 'PREDICTION_MATCH', String(id), {
+        finalScore: result.finalScore,
+        evaluatedCount: result.evaluatedCount,
+        pointsAwarded: result.pointsAwarded,
+      });
+
+      return res.json({
+        success: true,
+        message: `تم اعتماد النتيجة بنجاح واحتساب نقاط ${result.correctPredictorsCount} فائز وتحديث الترتيب.`,
+        data: result,
+      });
+    } catch (error: any) {
+      console.error('Error confirming match prediction result:', error);
+      return res.status(400).json({ error: error.message || 'فشل في اعتماد نتيجة المباراة' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/predictions/:id/toggle
+   * Toggle activation status of a prediction match.
+   */
+  app.put('/api/admin/predictions/:id/toggle', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const { isActive } = req.body;
+      const result = await togglePredictionMatchActive(id, !!isActive);
+      await logActivity(req.dbUser.id, 'UPDATE', 'PREDICTION_MATCH', String(id), { isActive: !!isActive });
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error toggling prediction match:', error);
+      return res.status(500).json({ error: 'فشل في تغيير حالة التوقع' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/predictions/:id
+   * Remove match from prediction contest.
+   */
+  app.delete('/api/admin/predictions/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
+
+      const result = await removePredictionMatch(id);
+      await logActivity(req.dbUser.id, 'DELETE', 'PREDICTION_MATCH', String(id));
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error removing prediction match:', error);
+      return res.status(500).json({ error: 'فشل في حذف المباراة من التوقعات' });
     }
   });
 

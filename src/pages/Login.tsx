@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { Loader2, Mail, Lock, User as UserIcon, Shield, AlertCircle, CheckCircle2, ArrowRight, RefreshCw, KeyRound, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { trackAuthEvent } from '../services/analytics';
 
 export default function Login() {
   const { user, signInWithGoogle, signInWithEmail, sendVerificationCode, verifyCodeAndSignUp, resendVerificationCode, loading } = useAuth();
@@ -100,6 +101,7 @@ export default function Login() {
         setResendTimer(20);
       } else {
         await signInWithEmail(email, password);
+        trackAuthEvent('login', 'email');
       }
     } catch (err: any) {
       console.error('Authentication error:', err);
@@ -124,6 +126,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       await verifyCodeAndSignUp(email, fullCode);
+      trackAuthEvent('signup', 'email_otp');
     } catch (err: any) {
       console.error('Verification error:', err);
       setErrorMsg(err.message || 'رمز التحقق غير صحيح، يرجى المحاولة مرة أخرى.');

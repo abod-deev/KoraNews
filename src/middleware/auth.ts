@@ -224,3 +224,68 @@ export const requireSuperAdmin = async (req: AuthRequest, res: Response, next: N
 
   next();
 };
+
+/**
+ * Optional authentication middleware:
+ * Populates req.user and req.dbUser if valid Bearer token exists, but does not block guests.
+ */
+export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = authHeader.split('Bearer ')[1]?.trim();
+  if (!token) {
+    return next();
+  }
+
+  let decodedToken: { uid: string; email: string; name?: string; picture?: string } | null = null;
+
+  if (token.startsWith('srv_')) {
+    const payload = verifyServerSessionToken(token);
+    if (payload) {
+      decodedToken = {
+        uid: payload.uid,
+        email: payload.email,
+        name: payload.name,
+      };
+    }
+  }
+
+  if (!decodedToken && !token.startsWith('srv_')) {
+    try {
+      const fbDecoded = await adminAuth.verifyIdToken(token);
+      if (fbDecoded && fbDecoded.uid) {
+        decodedToken = {
+          uid: fbDecoded.uid,
+          email: fbDecoded.email || '',
+          name: fbDecoded.name || (fbDecoded.email ? fbDecoded.email.split('@')[0] : 'مستخدم'),
+          picture: fbDecoded.picture,
+        };
+      }
+    } catch {
+      // Ignored for optional auth
+    }
+  }
+
+  if (decodedToken && decodedToken.uid) {
+    req.user = decodedToken;
+    try {
+      await withDbRetry(async () => {
+        let dbUsers = await db.select().from(users).where(eq(users.uid, decodedToken!.uid));
+        if (dbUsers.length === 0 && decodedToken!.email) {
+          dbUsers = await db.select().from(users).where(eq(users.email, decodedToken!.email.toLowerCase().trim()));
+        }
+        if (dbUsers.length > 0) {
+          req.dbUser = dbUsers[0];
+        }
+      });
+    } catch {
+      // Ignore DB fetch failure in optional auth
+    }
+  }
+
+  next();
+};
+

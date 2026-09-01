@@ -6,6 +6,7 @@ import { useSEO } from '../hooks/useSEO';
 import { Link } from 'react-router-dom';
 import MatchCard from '../components/common/MatchCard';
 import { getArabicTeamName } from '../utils/teamTranslations';
+import { trackMatchFilter } from '../services/analytics';
 
 const formatDateString = (dateObj: Date): string => {
   const year = dateObj.getFullYear();
@@ -113,6 +114,7 @@ export default function Matches() {
 
   useEffect(() => {
     fetchMatchesData(false);
+    trackMatchFilter(activeLeagueId, selectedDate, activeTab);
 
     // Auto-refresh every 20 seconds for live synchronized results
     const interval = setInterval(() => {

@@ -70,6 +70,68 @@ export async function initializeDatabaseSchema() {
         CREATE INDEX IF NOT EXISTS idx_news_status ON news(status);
         CREATE INDEX IF NOT EXISTS idx_comments_news_id ON comments(news_id);
         CREATE INDEX IF NOT EXISTS idx_email_verifications_email ON email_verifications(LOWER(email));
+
+        -- Prediction System Tables & Columns
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS points_per_match INTEGER DEFAULT 2 NOT NULL;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS external_match_id TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS is_external BOOLEAN DEFAULT FALSE NOT NULL;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_league_name TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_league_logo TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_home_name TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_home_logo TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_away_name TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_away_logo TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_home_score INTEGER;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_away_score INTEGER;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_match_date TIMESTAMP;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS custom_status TEXT;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS is_confirmed_by_admin BOOLEAN DEFAULT FALSE NOT NULL;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP;
+        ALTER TABLE prediction_matches ADD COLUMN IF NOT EXISTS confirmed_by INTEGER REFERENCES users(id);
+
+        ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_golden BOOLEAN DEFAULT FALSE NOT NULL;
+        ALTER TABLE predictions ADD COLUMN IF NOT EXISTS golden_points INTEGER DEFAULT 0 NOT NULL;
+
+        ALTER TABLE prediction_points ADD COLUMN IF NOT EXISTS is_golden_bonus BOOLEAN DEFAULT FALSE NOT NULL;
+
+        -- Prediction System Tables
+        CREATE TABLE IF NOT EXISTS prediction_matches (
+          id SERIAL PRIMARY KEY,
+          match_id TEXT NOT NULL UNIQUE REFERENCES matches(id) ON DELETE CASCADE,
+          is_active BOOLEAN DEFAULT TRUE NOT NULL,
+          is_calculated BOOLEAN DEFAULT FALSE NOT NULL,
+          calculated_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS predictions (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          prediction_match_id INTEGER NOT NULL REFERENCES prediction_matches(id) ON DELETE CASCADE,
+          home_score INTEGER NOT NULL,
+          away_score INTEGER NOT NULL,
+          points_earned INTEGER DEFAULT 0 NOT NULL,
+          is_evaluated BOOLEAN DEFAULT FALSE NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          CONSTRAINT uq_user_prediction_match UNIQUE(user_id, prediction_match_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS prediction_points (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          prediction_id INTEGER NOT NULL UNIQUE REFERENCES predictions(id) ON DELETE CASCADE,
+          prediction_match_id INTEGER NOT NULL REFERENCES prediction_matches(id) ON DELETE CASCADE,
+          points INTEGER DEFAULT 2 NOT NULL,
+          reason TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_prediction_matches_match_id ON prediction_matches(match_id);
+        CREATE INDEX IF NOT EXISTS idx_predictions_user_id ON predictions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_predictions_prediction_match_id ON predictions(prediction_match_id);
+        CREATE INDEX IF NOT EXISTS idx_prediction_points_user_id ON prediction_points(user_id);
       `);
 
       // 2. Migrate any existing plaintext passwords to scrypt hashes

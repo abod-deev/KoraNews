@@ -13,11 +13,13 @@ import {
   ChevronLeft,
   ShieldCheck,
   User as UserIcon,
+  Trophy,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useEffect, useRef } from 'react';
+import SiteLogo from './SiteLogo';
 
 interface SideNavDrawerProps {
   isOpen: boolean;
@@ -42,6 +44,7 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
     { name: 'الرئيسية', path: '/', icon: Home },
     { name: 'الأخبار', path: '/news', icon: Newspaper },
     { name: 'مباريات اليوم', path: '/matches', icon: Calendar },
+    { name: 'توقعات المباريات', path: '/predictions', icon: Trophy, isBadge: true },
   ];
 
   // Auto close on route change
@@ -112,12 +115,7 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
               {/* 1. Compact Header */}
               <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800/80 bg-gray-50/70 dark:bg-gray-900/60">
                 <Link to="/" onClick={onClose} className="flex items-center gap-2.5 group">
-                  <div className="w-8 h-8 bg-brand rounded-xl flex items-center justify-center text-white font-black text-base shadow-sm shadow-brand/25">
-                    K
-                  </div>
-                  <div>
-                    <span className="text-base font-black text-brand tracking-tight">كورة نيوز</span>
-                  </div>
+                  <SiteLogo size="sm" />
                 </Link>
 
                 <button

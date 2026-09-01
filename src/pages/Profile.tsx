@@ -404,7 +404,7 @@ export default function Profile() {
               ) : (
                 <div className="flex items-center gap-2.5 flex-wrap justify-center sm:justify-start">
                   <h1 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white">
-                    {displayName || 'مستخدم كورة نيوز'}
+                    {displayName || 'مستخدم أخبار كرة القدم العالمية'}
                   </h1>
 
                   {/* Pencil Edit Icon */}
