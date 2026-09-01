@@ -169,24 +169,6 @@ async function startServer() {
             return callback(null, true);
           }
           
-          // Strict Wildcard checking: Ensure it's a subdomain, not just ending with the base string
-          const isWildcardMatch = configuredAllowedOrigins.some((allowed) => {
-            if (allowed.startsWith('*.')) {
-              const base = allowed.slice(2);
-              try {
-                const originUrl = new URL(originLower);
-                return originUrl.hostname.endsWith('.' + base) || originUrl.hostname === base;
-              } catch (e) {
-                return false;
-              }
-            }
-            return false;
-          });
-
-          if (isWildcardMatch) {
-            return callback(null, true);
-          }
-
           return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
         }
 

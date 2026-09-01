@@ -9,7 +9,13 @@ export interface AuthUser {
   [key: string]: any;
 }
 
-export function checkIsAdmin(user: AuthUser | null | undefined): boolean {
+export type User = AuthUser;
+
+export function checkIsAdmin(user: User | null): boolean {
   if (!user) return false;
-  return !!(user.isAdmin || user.role === 'admin' || user.role === 'superadmin');
+  return !!(
+    user.isAdmin ||
+    user.role === 'admin' ||
+    user.role === 'superadmin'
+  );
 }
