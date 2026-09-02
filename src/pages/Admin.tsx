@@ -374,22 +374,22 @@ export default function Admin() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 dir-rtl">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+    <div className="max-w-7xl mx-auto p-3 sm:p-6 lg:p-8 dir-rtl">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-5 sm:mb-8 gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white flex items-center gap-3">
-            <Shield className="w-7 h-7 sm:w-8 sm:h-8 text-brand" />
-            لوحة الإدارة الشاملة
+          <h1 className="text-xl sm:text-3xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2 sm:gap-3">
+            <Shield className="w-5 h-5 sm:w-8 sm:h-8 text-brand shrink-0" />
+            <span>لوحة الإدارة الشاملة</span>
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1 font-medium text-xs sm:text-sm">مرحباً، {user?.name || user?.displayName || user?.email}</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-0.5 font-medium text-[11px] sm:text-sm">مرحباً، {user?.name || user?.displayName || user?.email}</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Link
             to="/profile"
-            className="flex items-center gap-2.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 rounded-2xl border border-gray-200 dark:border-gray-700 transition-colors shadow-xs"
+            className="flex items-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-2xl border border-gray-200 dark:border-gray-700 transition-colors shadow-2xs"
           >
-            <div className="w-7 h-7 rounded-full overflow-hidden bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full overflow-hidden bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs shrink-0">
               {user?.avatar ? (
                 <img loading="lazy" src={user.avatar} alt="صورة الحساب" className="w-full h-full object-cover" />
               ) : (
@@ -402,14 +402,14 @@ export default function Admin() {
       </div>
 
       {message && (
-        <div className={`p-4 rounded-xl mb-6 flex items-center gap-2 font-bold ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-          {message.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-          {message.text}
+        <div className={`p-3.5 rounded-xl mb-4 sm:mb-6 flex items-center gap-2 font-bold text-xs sm:text-sm ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {message.type === 'success' ? <CheckCircle className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+          <span>{message.text}</span>
         </div>
       )}
 
       {/* Tabs Navigation */}
-      <div className="flex overflow-x-auto gap-2 pb-4 mb-6 border-b border-gray-200 dark:border-gray-800 scrollbar-hide">
+      <div className="flex overflow-x-auto gap-1.5 sm:gap-2 pb-2.5 sm:pb-4 mb-4 sm:mb-6 border-b border-gray-200 dark:border-gray-800 scrollbar-hide">
         {[
           { id: 'overview', icon: LayoutDashboard, label: 'نظرة عامة' },
           { id: 'news', icon: FileText, label: 'إدارة الأخبار' },
@@ -420,40 +420,40 @@ export default function Admin() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm whitespace-nowrap transition-colors ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap transition-colors shrink-0 ${
               activeTab === tab.id 
-                ? 'bg-brand text-white' 
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                ? 'bg-brand text-white shadow-xs' 
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60'
             }`}
           >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
+            <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span>{tab.label}</span>
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         
         {/* OVERVIEW TAB */}
         {activeTab === 'overview' && stats && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-200 dark:border-gray-800">
-                <div className="text-gray-500 dark:text-gray-400 font-bold mb-2">إجمالي الأخبار</div>
-                <div className="text-3xl font-extrabold text-gray-900 dark:text-white">{stats.newsCount}</div>
+          <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="bg-white dark:bg-gray-900 p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+                <div className="text-gray-500 dark:text-gray-400 font-bold text-xs sm:text-sm mb-1.5">إجمالي الأخبار</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white">{stats.newsCount}</div>
               </div>
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-200 dark:border-gray-800">
-                <div className="text-emerald-500 font-bold mb-2">أخبار منشورة</div>
-                <div className="text-3xl font-extrabold text-gray-900 dark:text-white">{stats.publishedCount}</div>
+              <div className="bg-white dark:bg-gray-900 p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+                <div className="text-emerald-500 font-bold text-xs sm:text-sm mb-1.5">أخبار منشورة</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white">{stats.publishedCount}</div>
               </div>
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-200 dark:border-gray-800">
-                <div className="text-amber-500 font-bold mb-2">مسودات</div>
-                <div className="text-3xl font-extrabold text-gray-900 dark:text-white">{stats.draftsCount}</div>
+              <div className="bg-white dark:bg-gray-900 p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+                <div className="text-amber-500 font-bold text-xs sm:text-sm mb-1.5">مسودات</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white">{stats.draftsCount}</div>
               </div>
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-200 dark:border-gray-800">
-                <div className="text-brand font-bold mb-2">إجمالي المسؤولين</div>
-                <div className="text-3xl font-extrabold text-gray-900 dark:text-white">{stats.adminsCount} <span className="text-sm font-normal text-gray-400">من {stats.usersCount} مستخدم</span></div>
+              <div className="bg-white dark:bg-gray-900 p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+                <div className="text-brand font-bold text-xs sm:text-sm mb-1.5">إجمالي المسؤولين</div>
+                <div className="text-xl sm:text-3xl font-extrabold text-gray-900 dark:text-white">{stats.adminsCount} <span className="text-[11px] sm:text-sm font-normal text-gray-400">من {stats.usersCount}</span></div>
               </div>
             </div>
 

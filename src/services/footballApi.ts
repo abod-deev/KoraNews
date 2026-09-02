@@ -186,16 +186,17 @@ export async function apiFetchCompetition(idOrCode: string) {
 /**
  * Fetch standings for a particular competition.
  */
-export async function apiFetchStandings(competitionId: string, season?: string) {
-  const query = season ? `?season=${season}` : '';
+export async function apiFetchStandings(competitionId: string, season: string = '2026') {
+  const query = `?season=${season || '2026'}`;
   return fetchFromFootballData(`/competitions/${competitionId}/standings${query}`);
 }
 
 /**
  * Fetch matches for a specific competition.
  */
-export async function apiFetchCompetitionMatches(competitionId: string, filters: { dateFrom?: string; dateTo?: string; status?: string; matchday?: string } = {}) {
+export async function apiFetchCompetitionMatches(competitionId: string, filters: { dateFrom?: string; dateTo?: string; status?: string; matchday?: string; season?: string } = {}) {
   const params = new URLSearchParams();
+  params.append('season', filters.season || '2026');
   if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
   if (filters.dateTo) params.append('dateTo', filters.dateTo);
   if (filters.status) params.append('status', filters.status);

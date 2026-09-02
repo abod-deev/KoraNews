@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getMatchesWithResult, Match } from '../../services/sportsApi';
-import { Calendar, ChevronLeft, Loader2, Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
+import { getSystemTodayStr } from '../../utils/systemDateUtils';
+import { Calendar, ChevronLeft, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MatchCard from '../common/MatchCard';
 
@@ -23,32 +24,31 @@ export default function MatchesWidget() {
   const [selectedLeague, setSelectedLeague] = useState('all');
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isTodayMatches, setIsTodayMatches] = useState(true);
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Determine today's date strictly based on the system date
+    const todayStr = getSystemTodayStr();
     
     const loadMatches = (silent = false) => {
       if (!silent) setLoading(true);
       setHasError(false);
-      // 1. First attempt: fetch today's matches for selected league
+      
+      // Fetch exclusively today's matches for season 2026 based on system date
       getMatchesWithResult(todayStr, undefined, selectedLeague, '2026')
         .then((todayRes) => {
-          if (todayRes.matches && todayRes.matches.length > 0) {
-            setMatches(todayRes.matches.slice(0, 6)); // Display today's matches
-            setIsTodayMatches(true);
+          if (todayRes.error) {
+            setHasError(true);
+            setMatches([]);
           } else {
-            // 2. Fallback: fetch general season matches if today has no scheduled matches
-            return getMatchesWithResult(undefined, undefined, selectedLeague, '2026').then((genRes) => {
-              setMatches((genRes.matches || []).slice(0, 6));
-              setIsTodayMatches(false);
-            });
+            // Display only today's matches without falling back to other days
+            setMatches((todayRes.matches || []).slice(0, 6));
           }
         })
         .catch((err) => {
           console.warn("[MatchesWidget] Error fetching matches:", err);
           setHasError(true);
+          setMatches([]);
         })
         .finally(() => {
           if (!silent) setLoading(false);
@@ -65,6 +65,8 @@ export default function MatchesWidget() {
     return () => clearInterval(interval);
   }, [selectedLeague]);
 
+  const hasLiveMatches = matches.some(m => ['LIVE', 'IN_PLAY', 'PAUSED'].includes(m.status));
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-3 sm:p-6 shadow-xs select-none">
       {/* Widget Header */}
@@ -75,20 +77,20 @@ export default function MatchesWidget() {
           </div>
           <div>
             <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 leading-none">
-              {isTodayMatches ? 'مباريات اليوم' : 'أهم المباريات القادمة'}
+              مباريات اليوم
             </h2>
             <p className="text-[11px] font-bold text-slate-400 mt-0.5">موسم 2026 / 2027</p>
           </div>
 
-          {isTodayMatches ? (
+          {hasLiveMatches ? (
             <span className="bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] sm:text-[11px] font-black px-2.5 py-1 rounded-full border border-rose-500/20 flex items-center gap-1.5 shadow-2xs">
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
               <span>تغطية حية</span>
             </span>
           ) : (
             <span className="bg-sky-500/10 text-sky-600 dark:text-sky-400 text-[10px] sm:text-[11px] font-black px-2.5 py-1 rounded-full border border-sky-500/20 flex items-center gap-1.5 shadow-2xs">
-              <Sparkles className="w-3 h-3" />
-              <span>أبرز المواجهات</span>
+              <Calendar className="w-3 h-3" />
+              <span>مباريات اليوم</span>
             </span>
           )}
         </div>
@@ -128,7 +130,7 @@ export default function MatchesWidget() {
         <div className="min-h-[200px] flex flex-col items-center justify-center gap-2 py-8">
           <Loader2 className="w-8 h-8 animate-spin text-sky-600" />
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-            جاري جلب تحديثات المباريات المباشرة...
+            جاري جلب تحديثات مباريات اليوم...
           </span>
         </div>
       ) : hasError ? (
@@ -144,9 +146,15 @@ export default function MatchesWidget() {
           </button>
         </div>
       ) : matches.length === 0 ? (
-        <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/60 dark:border-slate-800 p-8 text-center">
-          <p className="text-slate-500 dark:text-slate-400 font-extrabold text-xs">
-            لا توجد مباريات جارية أو مجدولة لهذا التحديد اليوم.
+        <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 p-8 sm:p-10 text-center flex flex-col items-center justify-center gap-2.5">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 mb-1">
+            <Calendar className="w-6 h-6" />
+          </div>
+          <h3 className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-200">
+            لا توجد مباريات اليوم
+          </h3>
+          <p className="text-xs font-bold text-slate-400 dark:text-slate-500 max-w-sm">
+            لا توجد مباريات مجدولة لهذا اليوم.
           </p>
         </div>
       ) : (

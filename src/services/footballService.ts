@@ -1,9 +1,9 @@
 import { db, withDbRetry } from "../db/index.ts";
 import { matches, teams, leagues, standingsCache } from "../db/schema.ts";
-import { eq, sql, lt, desc, and } from "drizzle-orm";
+import { eq, sql, lt, desc, and, or } from "drizzle-orm";
 import { fetchFromFootballData, RateLimitError } from "./footballApi.ts";
 import { getArabicTeamName, translateTeamName, TEAM_AR_NAMES } from "../utils/teamTranslations.ts";
-import { PRE_STORED_LEAGUES, PRE_STORED_STANDINGS, PRE_STORED_MATCHES_TEMPLATE, type SeedMatchItem } from "./seedData.ts";
+import { PRE_STORED_LEAGUES, PRE_STORED_STANDINGS } from "./seedData.ts";
 
 export { getArabicTeamName, translateTeamName, TEAM_AR_NAMES };
 
@@ -209,64 +209,11 @@ export async function initFootballDb() {
       }
     }
 
-    // 3. Seed / ensure comprehensive matches in DB across all 13 leagues
-    console.log("[footballService] Ensuring complete match schedules across all leagues (including CL)...");
-    const now = new Date();
-
-    for (const tpl of PRE_STORED_MATCHES_TEMPLATE) {
-      try {
-        // Ensure home and away teams in teams table
-        for (const teamObj of [tpl.homeTeam, tpl.awayTeam]) {
-          const teamCheck = await db.select().from(teams).where(eq(teams.id, teamObj.id)).catch(() => []);
-          if (teamCheck.length === 0) {
-            await db.insert(teams).values({
-              id: teamObj.id,
-              name: teamObj.name,
-              logo: teamObj.logo,
-            }).catch(() => null);
-          }
-        }
-
-        // Calculate realistic match date/time
-        const matchDate = new Date(now);
-        matchDate.setDate(now.getDate() + tpl.dateOffsetDays);
-        matchDate.setUTCHours(tpl.hourUtc, tpl.minuteUtc, 0, 0);
-
-        let matchTimeStr = tpl.matchTime;
-        if (tpl.status === 'SCHEDULED') {
-          matchTimeStr = matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-        }
-
-        const existingM = await db.select().from(matches).where(eq(matches.id, tpl.id)).catch(() => []);
-        if (existingM.length === 0) {
-          await db.insert(matches).values({
-            id: tpl.id,
-            leagueId: tpl.leagueId,
-            homeTeamId: tpl.homeTeam.id,
-            awayTeamId: tpl.awayTeam.id,
-            homeScore: tpl.homeScore,
-            awayScore: tpl.awayScore,
-            status: tpl.status,
-            matchTime: matchTimeStr,
-            matchDate: matchDate,
-            source: 'pre-seeded',
-            updatedAt: new Date(),
-          }).catch(() => null);
-        } else {
-          // Keep match dates fresh relative to current time
-          await db.update(matches).set({
-            matchDate: matchDate,
-            matchTime: matchTimeStr,
-            updatedAt: new Date(),
-          }).where(eq(matches.id, tpl.id)).catch(() => null);
-        }
-      } catch (mErr) {
-        // continue
-      }
-    }
+    // 3. Purge any legacy mock / pre-seeded matches from DB to rely 100% on real data
+    await withDbRetry(() => db.delete(matches).where(or(eq(matches.source, 'pre-seeded'), eq(matches.source, 'pre-stored')))).catch(() => null);
 
     await refreshMemoryMatchesCache();
-    console.log("[footballService] Pre-stored database initialization complete for all 13 leagues.");
+    console.log("[footballService] Database initialization complete (relying exclusively on official data).");
   } catch (err: any) {
     console.warn("[footballService] Table init notice:", err.message || err);
   }
@@ -342,25 +289,21 @@ export async function syncMatchesCycle() {
 export async function syncSpecificLeagueMatches(leagueCode: string, targetSeason: string = '2026') {
   try {
     const code = COMPETITION_CODE_MAP[leagueCode] || ID_TO_CODE[leagueCode] || leagueCode;
-    console.log(`[footballSync] Syncing matches for specific league [${code}] (season 2026/2027)...`);
+    console.log(`[footballSync] Syncing matches for specific league [${code}] (season 2026 only)...`);
     
-    const endpoints = [
-      `/competitions/${code}/matches?season=${targetSeason}`,
-      `/competitions/${code}/matches`
-    ];
+    // Only query season 2026
+    const endpoint = `/competitions/${code}/matches?season=2026`;
 
-    for (const endpoint of endpoints) {
-      try {
-        const data = await fetchFromFootballData(endpoint, { ignoreCache: true }).catch(() => null);
-        if (data && Array.isArray(data.matches) && data.matches.length > 0) {
-          await processAndStoreMatches(data.matches);
-          console.log(`[footballSync] Stored ${data.matches.length} matches for [${code}] (season 2026/2027) in DB.`);
-          await refreshMemoryMatchesCache();
-          return;
-        }
-      } catch (seasonErr) {
-        // Continue to next endpoint attempt
+    try {
+      const data = await fetchFromFootballData(endpoint, { ignoreCache: true }).catch(() => null);
+      if (data && Array.isArray(data.matches) && data.matches.length > 0) {
+        await processAndStoreMatches(data.matches);
+        console.log(`[footballSync] Stored ${data.matches.length} matches for [${code}] (season 2026) in DB.`);
+        await refreshMemoryMatchesCache();
+        return;
       }
+    } catch (seasonErr) {
+      console.warn(`[footballSync] Season 2026 matches fetch notice for [${code}]:`, seasonErr);
     }
   } catch (e: any) {
     console.warn(`[footballSync] Could not sync matches for league ${leagueCode}:`, e.message || e);
@@ -418,6 +361,7 @@ export async function syncNextLeagueStandingsCycle() {
 export async function refreshMemoryMatchesCache() {
   try {
     const rows = await db.query.matches.findMany({
+      where: eq(matches.source, 'football-data.org'),
       with: {
         league: true,
         homeTeam: true,
@@ -426,10 +370,8 @@ export async function refreshMemoryMatchesCache() {
       orderBy: [desc(matches.matchDate)]
     });
 
-    if (rows && rows.length > 0) {
-      memoryMatchesCache = rows;
-      lastMatchesSyncTimestamp = Date.now();
-    }
+    memoryMatchesCache = rows || [];
+    lastMatchesSyncTimestamp = Date.now();
   } catch (err: any) {
     console.warn("[footballService] Refresh memory cache warning:", err.message || err);
   }
@@ -441,6 +383,30 @@ export async function refreshMemoryMatchesCache() {
 async function processAndStoreMatches(apiMatches: any[]) {
   for (const apiMatch of apiMatches) {
     if (!apiMatch || !apiMatch.id || !apiMatch.homeTeam || !apiMatch.awayTeam) continue;
+    
+    // Strictly Season 2026: Ignore matches from 2025, 2024, or previous seasons
+    if (apiMatch.season !== undefined && apiMatch.season !== null) {
+      if (typeof apiMatch.season === 'string' || typeof apiMatch.season === 'number') {
+        if (String(apiMatch.season) !== '2026') continue;
+      } else if (typeof apiMatch.season === 'object') {
+        if (apiMatch.season.startDate) {
+          const yr = new Date(apiMatch.season.startDate).getFullYear();
+          if (yr !== 2026) continue;
+        }
+      }
+    }
+    if (apiMatch.league && apiMatch.league.season && String(apiMatch.league.season) !== '2026') {
+      continue;
+    }
+    const matchDateCheck = new Date(apiMatch.utcDate || new Date());
+    if (!isNaN(matchDateCheck.getTime())) {
+      const year = matchDateCheck.getUTCFullYear();
+      const month = matchDateCheck.getUTCMonth() + 1;
+      if (year < 2026) continue;
+      if (year === 2027 && month > 7) continue;
+      if (year > 2027) continue;
+    }
+
     try {
       // 1. Determine Standard Normalized League Code
       const rawCode = apiMatch.competition?.code || '';
@@ -587,7 +553,31 @@ export async function getStoredMatches(filters: {
     });
   }
 
-  let result = allMatches;
+  // Exclude any mock / pre-seeded / pre-stored matches to guarantee 100% real matches
+  let result = allMatches.filter(m => m.source === 'football-data.org');
+
+  // 0. Season Filter (Strictly season 2026 ONLY - reject 2025, 2024, or any legacy seasons)
+  result = result.filter(m => {
+    const mSeason = (m as any).season;
+    if (mSeason !== undefined && mSeason !== null && String(mSeason) !== '2026') {
+      return false;
+    }
+    const lSeason = (m as any).league?.season;
+    if (lSeason !== undefined && lSeason !== null && String(lSeason) !== '2026') {
+      return false;
+    }
+    if (m.matchDate) {
+      const d = new Date(m.matchDate);
+      if (!isNaN(d.getTime())) {
+        const year = d.getUTCFullYear();
+        const month = d.getUTCMonth() + 1;
+        if (year < 2026) return false;
+        if (year === 2027 && month > 7) return false;
+        if (year > 2027) return false;
+      }
+    }
+    return true;
+  });
 
   // 1. Status Filter
   if (status) {
@@ -617,85 +607,22 @@ export async function getStoredMatches(filters: {
       );
     });
 
-    // If no matches for this specific league in DB, populate from pre-stored template immediately
-    if (leagueMatches.length === 0) {
-      const leagueTemplates = PRE_STORED_MATCHES_TEMPLATE.filter(
-        t => t.leagueId.toUpperCase() === targetCode || t.leagueId.toUpperCase() === rawUpper
-      );
-      if (leagueTemplates.length > 0) {
-        const now = new Date();
-        for (const tpl of leagueTemplates) {
-          const matchDate = new Date(now);
-          matchDate.setDate(now.getDate() + tpl.dateOffsetDays);
-          matchDate.setUTCHours(tpl.hourUtc, tpl.minuteUtc, 0, 0);
-
-          let matchTimeStr = tpl.matchTime;
-          if (tpl.status === 'SCHEDULED') {
-            matchTimeStr = matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-          }
-
-          await db.insert(matches).values({
-            id: tpl.id,
-            leagueId: tpl.leagueId,
-            homeTeamId: tpl.homeTeam.id,
-            awayTeamId: tpl.awayTeam.id,
-            homeScore: tpl.homeScore,
-            awayScore: tpl.awayScore,
-            status: tpl.status,
-            matchTime: matchTimeStr,
-            matchDate: matchDate,
-            source: 'pre-stored',
-            updatedAt: new Date(),
-          }).catch(() => null);
-        }
-
-        // Re-query league matches from DB to return immediately
-        const freshRows = await db.query.matches.findMany({
-          with: {
-            league: true,
-            homeTeam: true,
-            awayTeam: true
-          },
-          orderBy: [desc(matches.matchDate)]
-        }).catch(() => []);
-
-        leagueMatches = freshRows.filter(m => {
-          const mLeague = String(m.leagueId || '').toUpperCase();
-          const mCode = String(m.league?.id || '').toUpperCase();
-          return (
-            mLeague === rawUpper ||
-            mLeague === targetCode ||
-            mLeague === targetId ||
-            mCode === rawUpper ||
-            mCode === targetCode ||
-            mCode === targetId
-          );
-        });
-      }
-    }
-
     result = leagueMatches;
   }
 
-  // 3. Date Filter (Strict comparison without timezone drift)
+  // 3. Date Filter (Strict comparison against unified system date YYYY-MM-DD)
   if (date) {
     const reqDateStr = String(date).trim();
     result = result.filter(m => {
       if (!m.matchDate) return false;
+      const rawMatchDate = m.matchDate as unknown;
+      if (typeof rawMatchDate === 'string' && rawMatchDate.startsWith(reqDateStr)) {
+        return true;
+      }
       const d = new Date(m.matchDate);
+      if (isNaN(d.getTime())) return false;
       const isoDateUtc = d.toISOString().split('T')[0];
-
-      const year = d.getUTCFullYear();
-      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(d.getUTCDate()).padStart(2, '0');
-      const formattedUtc = `${year}-${month}-${day}`;
-
-      const localYear = d.getFullYear();
-      const localMonth = String(d.getMonth() + 1).padStart(2, '0');
-      const localDay = String(d.getDate()).padStart(2, '0');
-      const formattedLocal = `${localYear}-${localMonth}-${localDay}`;
-
-      return reqDateStr === isoDateUtc || reqDateStr === formattedUtc || reqDateStr === formattedLocal;
+      return isoDateUtc === reqDateStr;
     });
   }
 
@@ -718,6 +645,7 @@ export async function getStoredMatches(filters: {
     return {
       id: String(m.id),
       leagueId: String(normalizedCode),
+      season: '2026',
       leagueName,
       homeTeam: {
         id: String(m.homeTeam?.id || m.homeTeamId),

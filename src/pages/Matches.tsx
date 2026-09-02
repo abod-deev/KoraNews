@@ -2,35 +2,19 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Loader2, Calendar as CalendarIcon, RefreshCw, AlertTriangle, Filter, ArrowUpDown, Flame, Clock, Play, ShieldCheck } from 'lucide-react';
 import { getMatchesWithResult, getLeagues, getStandings, Match, League, Standing } from '../services/sportsApi';
+import { getSystemTodayStr, getSystemOffsetDateStr } from '../utils/systemDateUtils';
 import { useSEO } from '../hooks/useSEO';
 import { Link } from 'react-router-dom';
 import MatchCard from '../components/common/MatchCard';
 import { getArabicTeamName } from '../utils/teamTranslations';
 import { trackMatchFilter } from '../services/analytics';
 
-const formatDateString = (dateObj: Date): string => {
-  const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const day = String(dateObj.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const getTodayStr = () => formatDateString(new Date());
-
-const getYesterdayStr = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return formatDateString(d);
-};
-
-const getTomorrowStr = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return formatDateString(d);
-};
-
 export default function Matches() {
   useSEO('جدول المباريات والنتائج المباشرة 2026/2027', 'تابع جميع مباريات الدوري الإسباني، الإنجليزي والأبطال لموسم 2026/2027، النتائج المباشرة وجدول الترتيب.');
+
+  const todayStr = getSystemTodayStr();
+  const yesterdayStr = getSystemOffsetDateStr(-1);
+  const tomorrowStr = getSystemOffsetDateStr(1);
 
   const [matches, setMatches] = useState<Match[]>([]);
   const [, setLeagues] = useState<League[]>([]);
@@ -38,7 +22,7 @@ export default function Matches() {
   
   const [activeTab, setActiveTab] = useState<'all' | 'live' | 'finished' | 'scheduled'>('all');
   const [activeLeagueId, setActiveLeagueId] = useState<string>('all');
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayStr());
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [season] = useState<string>('2026');
   const [sortBy, setSortBy] = useState<'date_asc' | 'date_desc' | 'importance'>('date_asc');
   
@@ -84,9 +68,10 @@ export default function Matches() {
         const fetchedList = result.matches || [];
         setMatches(fetchedList);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (!silent) {
-        setErrorMessage(err.message || 'حدث خطأ غير متوقع. تأكد من اتصالك بالإنترنت.');
+        const msg = err instanceof Error ? err.message : 'حدث خطأ غير متوقع. تأكد من اتصالك بالإنترنت.';
+        setErrorMessage(msg);
         setMatches([]);
       }
     } finally {
@@ -114,10 +99,6 @@ export default function Matches() {
       .then(setStandings)
       .finally(() => setIsLoadingStandings(false));
   }, [activeLeagueId, standingsLeague]);
-
-  const todayStr = getTodayStr();
-  const yesterdayStr = getYesterdayStr();
-  const tomorrowStr = getTomorrowStr();
 
   const statusTabs = [
     { id: 'all', label: 'جميع الحالات', icon: CalendarIcon },
@@ -396,21 +377,34 @@ export default function Matches() {
                   </AnimatePresence>
                 </div>
               ) : (
-                <div className="py-16 text-center bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-8 shadow-xs space-y-3">
-                  <Trophy className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto" />
-                  <p className="text-sm font-black text-slate-700 dark:text-slate-300">
-                    لا توجد مباريات مطابقة للفلتر المحدد.
+                <div className="py-14 text-center bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-8 shadow-xs flex flex-col items-center justify-center gap-2.5">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 mb-1">
+                    {selectedDate === todayStr ? (
+                      <CalendarIcon className="w-6 h-6 text-sky-600" />
+                    ) : (
+                      <Trophy className="w-6 h-6 text-slate-400" />
+                    )}
+                  </div>
+                  <h3 className="text-base font-black text-slate-800 dark:text-slate-200">
+                    {selectedDate === todayStr ? 'لا توجد مباريات اليوم' : 'لا توجد مباريات مطابقة لهذا التحديد'}
+                  </h3>
+                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 max-w-sm">
+                    {selectedDate === todayStr
+                      ? 'لا توجد مباريات مجدولة لهذا اليوم.'
+                      : 'لا توجد مواجهات مسجلة حسب الفلتر أو التاريخ المحدد لموسم 2026.'}
                   </p>
-                  <button
-                    onClick={() => {
-                      setSelectedDate('');
-                      setActiveLeagueId('all');
-                      setActiveTab('all');
-                    }}
-                    className="inline-flex items-center gap-2 bg-sky-600 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-xs hover:bg-sky-700 cursor-pointer"
-                  >
-                    عرض كافة مباريات الموسم
-                  </button>
+                  {selectedDate && (
+                    <button
+                      onClick={() => {
+                        setSelectedDate('');
+                        setActiveLeagueId('all');
+                        setActiveTab('all');
+                      }}
+                      className="mt-2 inline-flex items-center gap-2 bg-sky-600 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-xs hover:bg-sky-700 cursor-pointer"
+                    >
+                      عرض كافة مباريات الموسم 2026
+                    </button>
+                  )}
                 </div>
               )}
             </div>

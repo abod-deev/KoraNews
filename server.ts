@@ -1080,8 +1080,9 @@ async function startServer() {
 
   app.get('/api/matches', async (req, res) => {
     try {
-      const { status, date, leagueId, season, sortBy } = req.query;
-      const targetSeason = (season as string) || '2026';
+      const { status, date, leagueId, sortBy } = req.query;
+      // Strictly enforce season 2026 on the backend
+      const targetSeason = '2026';
       const targetLeague = (leagueId as string) || 'all';
 
       const formattedMatches = await getStoredMatches({

@@ -627,17 +627,18 @@ export default function AdminPredictionsManager({
   return (
     <div className="space-y-6">
       {/* 1. Sub-Tabs Bar */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap bg-white dark:bg-gray-900 p-2 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xs scrollbar-hide">
+      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap bg-white dark:bg-gray-900 p-1.5 sm:p-2 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xs scrollbar-hide">
         {[
-          { id: 'matches', label: 'مباريات التوقعات واعتماد النتائج', icon: Trophy, count: predictionMatches.length },
-          { id: 'add_match', label: 'إضافة مباريات (اليوم / الغد / دوري خارجي)', icon: Plus },
+          { id: 'matches', label: 'مباريات التوقعات واعتماد النتائج', mobileLabel: 'مباريات التوقعات', icon: Trophy, count: predictionMatches.length },
+          { id: 'add_match', label: 'إضافة مباريات (اليوم / الغد / دوري خارجي)', mobileLabel: 'إضافة مباريات', icon: Plus },
           {
             id: 'participants',
             label: 'المتسابقون وطلبات الاشتراك',
+            mobileLabel: 'المتسابقين',
             icon: Users,
             badge: pendingParticipantsCount > 0 ? pendingParticipantsCount : undefined,
           },
-          { id: 'settings', label: 'إعدادات المسابقة', icon: Settings },
+          { id: 'settings', label: 'إعدادات المسابقة', mobileLabel: 'إعدادات', icon: Settings },
         ].map((tab) => {
           const Icon = tab.icon;
           const active = subTab === tab.id;
@@ -646,14 +647,15 @@ export default function AdminPredictionsManager({
               key={tab.id}
               type="button"
               onClick={() => setSubTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-4 sm:py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 active
                   ? 'bg-brand text-white shadow-xs'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-100 dark:border-gray-800'
               }`}
             >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
+              <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="inline sm:hidden">{tab.mobileLabel}</span>
               {tab.count !== undefined && (
                 <span
                   className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
@@ -664,8 +666,8 @@ export default function AdminPredictionsManager({
                 </span>
               )}
               {tab.badge !== undefined && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse">
-                  {tab.badge} جديد
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-black bg-amber-500 text-white animate-pulse">
+                  {tab.badge}
                 </span>
               )}
             </button>

@@ -1,5 +1,6 @@
 export type { Match, Standing, Team, Player, League } from './api_types.ts';
 import type { Match, Standing, Team, Player, League } from './api_types.ts';
+import { isMatchOnDate, isMatchSeason2026 } from '../utils/timezoneDateUtils.ts';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -18,36 +19,60 @@ export const getMatches = async (date?: string, status?: string, leagueId?: stri
 
 export const getMatchesWithResult = async (date?: string, status?: string, leagueId?: string, season: string = '2026', sortBy?: string): Promise<GetMatchesResponse> => {
   try {
-    let url = `${API_URL}/api/matches?season=${season}&`;
-    if (date) url += `date=${date}&`;
-    if (status) url += `status=${status}&`;
-    if (leagueId) url += `leagueId=${leagueId}&`;
-    if (sortBy) url += `sortBy=${sortBy}&`;
+    // Strictly enforce season 2026
+    const enforcedSeason = '2026';
+
+    let url = `${API_URL}/api/matches?season=${enforcedSeason}&`;
+    if (date) url += `date=${encodeURIComponent(date)}&`;
+    if (status) url += `status=${encodeURIComponent(status)}&`;
+    if (leagueId) url += `leagueId=${encodeURIComponent(leagueId)}&`;
+    if (sortBy) url += `sortBy=${encodeURIComponent(sortBy)}&`;
     
     const res = await fetch(url);
-    const data = await res.json().catch(() => null);
+    const data: unknown = await res.json().catch(() => null);
 
-    if (!res.ok || (data && data.error)) {
+    const errorPayload = data as { error?: boolean | string; message?: string } | null;
+    if (!res.ok || (errorPayload && errorPayload.error)) {
       let errorMsg = `خطأ في الخادم (${res.status})`;
-      if (res.status === 429 || data?.message?.includes('429') || data?.message?.includes('تجاوزت')) {
+      if (res.status === 429 || errorPayload?.message?.includes('429') || errorPayload?.message?.includes('تجاوزت')) {
         errorMsg = '⚠️ تجاوزت حد الطلبات المسموح (10 طلبات في الدقيقة). انتظر قليلاً.';
-      } else if (res.status === 403 || data?.message?.includes('403') || data?.message?.includes('غير صحيح')) {
+      } else if (res.status === 403 || errorPayload?.message?.includes('403') || errorPayload?.message?.includes('غير صحيح')) {
         errorMsg = '❌ مفتاح API غير صحيح أو غير مفعّل. تأكد من المفتاح.';
-      } else if (data?.message) {
-        errorMsg = data.message;
+      } else if (errorPayload?.message) {
+        errorMsg = errorPayload.message;
       }
       return { matches: [], error: errorMsg };
     }
 
     if (!Array.isArray(data)) return { matches: [] };
-    const matchesList = data.map((m: any) => ({
-      ...m,
-      leagueName: m.leagueName || m.league?.name || 'الدوري الإسباني'
-    }));
+    
+    // Enforce season 2026 and accurate date verification on client side
+    const rawMatches = data as Match[];
+    const matchesList: Match[] = rawMatches
+      .filter((m: Match) => {
+        // 1. Must strictly belong to Season 2026
+        if (!isMatchSeason2026(m)) return false;
+
+        // 2. If a specific date was requested, ensure the match date matches exactly
+        if (date) {
+          const matchDateVal = m.matchDate;
+          if (!isMatchOnDate(matchDateVal, date)) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map((m: Match) => ({
+        ...m,
+        season: '2026',
+        leagueName: m.leagueName || 'الدوري'
+      }));
+
     return { matches: matchesList };
-  } catch (error: any) {
-    console.warn('getMatches warning:', error?.message || error);
-    return { matches: [], error: error?.message || 'تعذر الاتصال بالخادم. حاول مرة أخرى لاحقاً.' };
+  } catch (error: unknown) {
+    const errMessage = error instanceof Error ? error.message : 'تعذر الاتصال بالخادم. حاول مرة أخرى لاحقاً.';
+    console.warn('getMatches warning:', errMessage);
+    return { matches: [], error: errMessage };
   }
 };
 

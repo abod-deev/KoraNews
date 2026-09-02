@@ -28,6 +28,7 @@ export interface League {
   id: string;
   name: string;
   logo: string;
+  season?: string | number;
 }
 
 export interface Match {
@@ -47,6 +48,7 @@ export interface Match {
   kickoffTime?: string;
   venue?: string | null;
   league?: League;
+  season?: string | number;
 }
 
 export interface Standing {
