@@ -191,25 +191,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (syncData.sessionToken && syncData.user) {
             saveSession(syncData.sessionToken, syncData.user);
           }
-        } else {
-          const errData = await syncRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'فشل في إكمال مزامنة حساب جوجل مع الخادم');
         }
       }
     } catch (error: any) {
       console.error('Error signing in with Google:', error);
-      const isIframe = typeof window !== 'undefined' && window.self !== window.top;
-      if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-        if (isIframe) {
-          throw new Error('تعذر إكمال تسجيل الدخول بواسطة جوجل داخل إطار المعاينة (iframe) بسبب سياسات أمان المتصفح. يرجى فتح التطبيق في نافذة جديدة أو استخدام البريد الإلكتروني وكلمة المرور مباشرة.');
-        } else {
-          throw new Error('تم إغلاق نافذة تسجيل الدخول من قبل المستخدم قبل اكتمال العملية.');
-        }
-      }
       if (error?.code === 'auth/popup-blocked') {
-        throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة (Popups) أو فتح التطبيق في نافذة جديدة والمحاولة مرة أخرى.');
+        throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
+      } else if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+        throw new Error('تم إغلاق نافذة تسجيل الدخول من قبل المستخدم.');
       }
-      throw new Error(error.message || 'حدث خطأ أثناء تسجيل الدخول بواسطة جوجل');
+      throw new Error(error.message || 'حدث خطأ في تسجيل الدخول بواسطة جوجل');
     }
   };
 

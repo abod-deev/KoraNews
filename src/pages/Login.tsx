@@ -20,7 +20,6 @@ import {
   Check,
   Crown,
   ShieldCheck,
-  ExternalLink,
 } from 'lucide-react';
 import { trackAuthEvent } from '../services/analytics';
 import { useSEO } from '../hooks/useSEO';
@@ -412,23 +411,10 @@ export default function Login() {
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs sm:text-sm font-bold flex flex-col gap-2.5 shadow-2xs"
+              className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs sm:text-sm font-bold flex items-start gap-2.5 shadow-2xs"
             >
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-500" />
-                <span className="flex-1 leading-relaxed">{errorMsg}</span>
-              </div>
-              {typeof window !== 'undefined' && window.self !== window.top && (
-                <a
-                  href={window.location.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-100 hover:bg-red-200 dark:bg-red-900/60 dark:hover:bg-red-900 text-red-800 dark:text-red-200 text-xs font-black transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>فتح في نافذة مستقلة</span>
-                </a>
-              )}
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-500" />
+              <span className="flex-1 leading-relaxed">{errorMsg}</span>
             </motion.div>
           )}
 
@@ -775,22 +761,6 @@ export default function Login() {
               )}
               <span>{submitting ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول بواسطة جوجل'}</span>
             </button>
-
-            {typeof window !== 'undefined' && window.self !== window.top && (
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center leading-relaxed">
-                💡 في حال استخدام المعاينة داخل إطار، يمكنك{' '}
-                <a
-                  href={window.location.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-0.5"
-                >
-                  فتح التطبيق في نافذة مستقلة
-                  <ExternalLink className="w-3 h-3" />
-                </a>{' '}
-                لتسجيل الدخول بجوجل بسلاسة.
-              </p>
-            )}
           </div>
         )}
       </div>
