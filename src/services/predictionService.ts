@@ -11,6 +11,18 @@ import {
   users,
 } from '../db/schema.ts';
 import { eq, and, sql, desc, asc, count, sum, inArray, or } from 'drizzle-orm';
+import { seedSaudiAndNationalTeams } from './seedSaudiAndNationalTeams.ts';
+
+export function normalizeArabicText(str: string): string {
+  return (str || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/[ة]/g, 'ه')
+    .replace(/[ى]/g, 'ي')
+    .replace(/[\u064B-\u065F]/g, '')
+    .replace(/\s+/g, ' ');
+}
 
 export interface PredictionMatchInfo {
   id: number;
@@ -974,18 +986,146 @@ export async function updateUserPredictionById(
 }
 
 /**
- * User: Delete an existing prediction by ID with strict ownership validation and 1-minute window constraint.
+ * User: Delete an existing prediction.
+ * Notice: Regular users cannot delete predictions per contest rules.
  */
 export async function deleteUserPredictionById(userId: number, predictionId: number) {
+  throw new Error('المستخدم العادي لا يستطيع حذف التوقعات');
+}
+
+/**
+ * Admin: Add or save a prediction for a participant on a match.
+ * If the match was already evaluated/confirmed, immediately evaluates this prediction
+ * and calculates points without double counting!
+ */
+export async function adminSaveUserPrediction(
+  adminUserId: number,
+  userId: number,
+  predictionMatchId: number,
+  homeScore: number,
+  awayScore: number
+) {
+  if (
+    typeof homeScore !== 'number' ||
+    typeof awayScore !== 'number' ||
+    !Number.isInteger(homeScore) ||
+    !Number.isInteger(awayScore) ||
+    homeScore < 0 ||
+    awayScore < 0 ||
+    homeScore > 30 ||
+    awayScore > 30
+  ) {
+    throw new Error('يرجى إدخال أرقام صحيحة للأهداف بين 0 و 30');
+  }
+
+  const result = await withDbRetry(async () => {
+    return await db.transaction(async (tx) => {
+      // 1. Verify user exists
+      const targetUser = await tx.query.users.findFirst({
+        where: eq(users.id, userId),
+      });
+      if (!targetUser) {
+        throw new Error('المستخدم المحدد غير موجود');
+      }
+
+      // 2. Verify prediction match exists
+      const pm = await tx.query.predictionMatches.findFirst({
+        where: eq(predictionMatches.id, predictionMatchId),
+      });
+      if (!pm) {
+        throw new Error('مباراة التوقع غير موجودة');
+      }
+
+      // 3. Check for existing prediction by this user on this match
+      const existing = await tx.query.predictions.findFirst({
+        where: and(
+          eq(predictions.userId, userId),
+          eq(predictions.predictionMatchId, predictionMatchId)
+        ),
+      });
+
+      let predictionId: number;
+
+      if (existing) {
+        await tx
+          .update(predictions)
+          .set({
+            homeScore,
+            awayScore,
+            updatedAt: new Date(),
+          })
+          .where(eq(predictions.id, existing.id));
+        predictionId = existing.id;
+      } else {
+        const inserted = await tx
+          .insert(predictions)
+          .values({
+            userId,
+            predictionMatchId,
+            contestId: pm.contestId,
+            homeScore,
+            awayScore,
+            pointsEarned: 0,
+            isEvaluated: false,
+            isGolden: false,
+            goldenPoints: 0,
+          })
+          .returning();
+        predictionId = inserted[0].id;
+      }
+
+      return {
+        success: true,
+        predictionId,
+        isCalculated: pm.isCalculated || pm.isConfirmedByAdmin,
+        customHomeScore: pm.customHomeScore,
+        customAwayScore: pm.customAwayScore,
+        message: 'تم حفظ توقع المتسابق بنجاح',
+      };
+    });
+  });
+
+  // If the match was already evaluated by admin, re-evaluate this match so points are updated automatically!
+  if (result.isCalculated) {
+    await confirmAndEvaluatePredictionMatch(
+      predictionMatchId,
+      adminUserId,
+      result.customHomeScore,
+      result.customAwayScore
+    ).catch(() => null);
+  }
+
+  return { success: true, message: result.message, predictionId: result.predictionId };
+}
+
+/**
+ * Admin: Update a prediction's score directly from admin panel.
+ * If the match was evaluated, triggers safe idempotent re-evaluation of points.
+ */
+export async function adminUpdateUserPrediction(
+  adminUserId: number,
+  predictionId: number,
+  homeScore: number,
+  awayScore: number
+) {
+  if (
+    typeof homeScore !== 'number' ||
+    typeof awayScore !== 'number' ||
+    !Number.isInteger(homeScore) ||
+    !Number.isInteger(awayScore) ||
+    homeScore < 0 ||
+    awayScore < 0 ||
+    homeScore > 30 ||
+    awayScore > 30
+  ) {
+    throw new Error('يرجى إدخال أرقام صحيحة للأهداف بين 0 و 30');
+  }
+
   return await withDbRetry(async () => {
     const pred = await db.query.predictions.findFirst({
       where: eq(predictions.id, predictionId),
       with: {
-        predictionMatch: {
-          with: {
-            match: true,
-          },
-        },
+        predictionMatch: true,
       },
     });
 
@@ -993,28 +1133,76 @@ export async function deleteUserPredictionById(userId: number, predictionId: num
       throw new Error('التوقع غير موجود');
     }
 
-    // STRICT OWNERSHIP CHECK
-    if (pred.userId !== userId) {
-      throw new Error('غير مصرح لك بحذف توقع لمستخدم آخر');
+    await db
+      .update(predictions)
+      .set({
+        homeScore,
+        awayScore,
+        updatedAt: new Date(),
+      })
+      .where(eq(predictions.id, predictionId));
+
+    // If match was already evaluated, recalculate safely to update points without duplication
+    if (pred.predictionMatch && (pred.predictionMatch.isCalculated || pred.predictionMatch.isConfirmedByAdmin)) {
+      await confirmAndEvaluatePredictionMatch(
+        pred.predictionMatchId,
+        adminUserId,
+        pred.predictionMatch.customHomeScore,
+        pred.predictionMatch.customAwayScore
+      );
     }
 
-    if (pred.isEvaluated) {
-      throw new Error('تم تقييم هذا التوقع بالفعل ولا يمكن حذفه');
+    return {
+      success: true,
+      message: 'تم تعديل التوقع بنجاح وتحديث النقاط والترتيب',
+    };
+  });
+}
+
+/**
+ * Admin: Delete any user prediction with complete points ledger cleanup and recalculation.
+ */
+export async function adminDeleteUserPrediction(
+  adminUserId: number,
+  predictionId: number
+) {
+  return await withDbRetry(async () => {
+    const pred = await db.query.predictions.findFirst({
+      where: eq(predictions.id, predictionId),
+      with: {
+        predictionMatch: true,
+      },
+    });
+
+    if (!pred) {
+      throw new Error('التوقع غير موجود');
     }
 
+    const pmId = pred.predictionMatchId;
     const pm = pred.predictionMatch;
+
+    await db.transaction(async (tx) => {
+      // 1. Delete associated points ledger entry
+      await tx.delete(predictionPoints).where(eq(predictionPoints.predictionId, predictionId));
+
+      // 2. Delete prediction
+      await tx.delete(predictions).where(eq(predictions.id, predictionId));
+    });
+
+    // 3. If match was evaluated, re-evaluate remaining predictions to update Golden rules and points
     if (pm && (pm.isCalculated || pm.isConfirmedByAdmin)) {
-      throw new Error('تم اعتماد نتيجة المباراة بالفعل');
+      await confirmAndEvaluatePredictionMatch(
+        pmId,
+        adminUserId,
+        pm.customHomeScore,
+        pm.customAwayScore
+      );
     }
 
-    const createdAtTime = new Date(pred.createdAt).getTime();
-    const elapsed = Date.now() - createdAtTime;
-    if (elapsed > 60 * 1000) {
-      throw new Error('انتهت المهلة المسموح بها لحذف التوقع (دقيقة واحدة من وقت التسجيل)');
-    }
-
-    await db.delete(predictions).where(eq(predictions.id, pred.id));
-    return { success: true, message: 'تم حذف التوقع بنجاح' };
+    return {
+      success: true,
+      message: 'تم حذف التوقع بنجاح وإلغاء أي نقاط كانت محتسبة له وتحديث الترتيب العام',
+    };
   });
 }
 
@@ -1658,7 +1846,190 @@ export async function addMatchToPredictions(matchId: string, pointsPerMatch: num
 
 /**
  * Admin: Add a match from an external league with custom points.
+ * Ensures leagues and teams are reused if existing, or created cleanly without duplicates,
+ * and links to the relational matches table.
  */
+export async function getOrCreateLeague(name: string, logo?: string | null) {
+  const cleanName = name?.trim();
+  if (!cleanName) throw new Error('اسم الدوري أو البطولة مطلوب');
+  const normClean = normalizeArabicText(cleanName);
+
+  const allLeagues = await db.select().from(leagues);
+  let found = allLeagues.find(
+    (l) =>
+      normalizeArabicText(l.name) === normClean ||
+      l.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+      l.id.toLowerCase() === cleanName.toLowerCase()
+  );
+
+  // Special match for Saudi Pro League
+  if (!found && (normClean.includes('روشن') || normClean.includes('saudi'))) {
+    found = allLeagues.find((l) => l.id === 'SPL' || normalizeArabicText(l.name).includes('روشن'));
+  }
+
+  if (found) {
+    if (logo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
+      await db.update(leagues).set({ logo: logo.trim() }).where(eq(leagues.id, found.id)).catch(() => null);
+      found.logo = logo.trim();
+    }
+    return found;
+  }
+
+  const slug = cleanName
+    .toLowerCase()
+    .replace(/[^\w\u0621-\u064A\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .slice(0, 24);
+  const newId = `ext_l_${slug || 'cust'}_${Date.now().toString(36)}`;
+  const defaultLogo = logo?.trim() || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=0284c7&color=fff&size=128`;
+
+  const inserted = await db
+    .insert(leagues)
+    .values({
+      id: newId,
+      name: cleanName,
+      logo: defaultLogo,
+    })
+    .returning();
+
+  return inserted[0];
+}
+
+export async function createAdminLeague(name: string, logo?: string | null) {
+  const cleanName = name?.trim();
+  if (!cleanName) throw new Error('اسم الدوري أو البطولة مطلوب');
+  const normClean = normalizeArabicText(cleanName);
+
+  const allLeagues = await db.select().from(leagues);
+  const exists = allLeagues.some(
+    (l) =>
+      normalizeArabicText(l.name) === normClean ||
+      l.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+      l.id.toLowerCase() === cleanName.toLowerCase() ||
+      (normClean.includes('روشن') && l.id === 'SPL')
+  );
+
+  if (exists) {
+    throw new Error(`الدوري أو البطولة "${cleanName}" مسجلة مسبقاً في النظام`);
+  }
+
+  return await getOrCreateLeague(cleanName, logo);
+}
+
+export async function getOrCreateTeam(name: string, logo?: string | null) {
+  const cleanName = name?.trim();
+  if (!cleanName) throw new Error('اسم الفريق مطلوب');
+  const normClean = normalizeArabicText(cleanName);
+
+  const allTeams = await db.select().from(teams);
+  let found = allTeams.find(
+    (t) =>
+      normalizeArabicText(t.name) === normClean ||
+      t.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+      t.id.toLowerCase() === cleanName.toLowerCase()
+  );
+
+  // Special match for national teams: e.g. "مصر" matching "منتخب مصر" or vice versa
+  if (!found) {
+    const withoutMontakhab = normClean.replace(/^منتخب\s+/, '');
+    found = allTeams.find((t) => {
+      const normT = normalizeArabicText(t.name);
+      return (
+        normT === withoutMontakhab ||
+        normT === `منتخب ${withoutMontakhab}` ||
+        normT.replace(/^منتخب\s+/, '') === withoutMontakhab
+      );
+    });
+  }
+
+  if (found) {
+    if (logo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
+      await db.update(teams).set({ logo: logo.trim() }).where(eq(teams.id, found.id)).catch(() => null);
+      found.logo = logo.trim();
+    }
+    return found;
+  }
+
+  const slug = cleanName
+    .toLowerCase()
+    .replace(/[^\w\u0621-\u064A\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .slice(0, 24);
+  const newId = `ext_t_${slug || 'cust'}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+  const defaultLogo = logo?.trim() || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=10b981&color=fff&size=128`;
+
+  const inserted = await db
+    .insert(teams)
+    .values({
+      id: newId,
+      name: cleanName,
+      logo: defaultLogo,
+    })
+    .returning();
+
+  return inserted[0];
+}
+
+export async function createAdminTeam(name: string, logo?: string | null) {
+  const cleanName = name?.trim();
+  if (!cleanName) throw new Error('اسم الفريق أو المنتخب مطلوب');
+  const normClean = normalizeArabicText(cleanName);
+
+  const allTeams = await db.select().from(teams);
+  const withoutMontakhab = normClean.replace(/^منتخب\s+/, '');
+  const exists = allTeams.some((t) => {
+    const normT = normalizeArabicText(t.name);
+    return (
+      normT === normClean ||
+      t.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+      t.id.toLowerCase() === cleanName.toLowerCase() ||
+      normT === withoutMontakhab ||
+      normT === `منتخب ${withoutMontakhab}` ||
+      normT.replace(/^منتخب\s+/, '') === withoutMontakhab
+    );
+  });
+
+  if (exists) {
+    throw new Error(`الفريق أو المنتخب "${cleanName}" مسجل مسبقاً في النظام`);
+  }
+
+  return await getOrCreateTeam(cleanName, logo);
+}
+
+export async function getExistingTeamsAndLeagues() {
+  return await withDbRetry(async () => {
+    // Ensure Saudi Pro League and national teams are seeded
+    await seedSaudiAndNationalTeams().catch(() => null);
+
+    const [allLeagues, allTeams] = await Promise.all([
+      db.select().from(leagues).orderBy(asc(leagues.name)),
+      db.select().from(teams).orderBy(asc(teams.name)),
+    ]);
+
+    // Deduplicate leagues by normalized name
+    const seenLeagueNames = new Set<string>();
+    const deduplicatedLeagues = allLeagues.filter((l) => {
+      const norm = normalizeArabicText(l.name);
+      if (seenLeagueNames.has(norm)) return false;
+      seenLeagueNames.add(norm);
+      return true;
+    });
+
+    // Deduplicate teams by normalized name
+    const seenTeamNames = new Set<string>();
+    const deduplicatedTeams = allTeams.filter((t) => {
+      const norm = normalizeArabicText(t.name);
+      if (seenTeamNames.has(norm)) return false;
+      seenTeamNames.add(norm);
+      return true;
+    });
+
+    return { leagues: deduplicatedLeagues, teams: deduplicatedTeams };
+  });
+}
+
 export async function addCustomExternalMatchToPredictions(data: {
   leagueName: string;
   leagueLogo?: string;
@@ -1680,19 +2051,42 @@ export async function addCustomExternalMatchToPredictions(data: {
       throw new Error('تاريخ المباراة غير صالح');
     }
 
-    const points = typeof data.pointsPerMatch === 'number' && data.pointsPerMatch >= 1 ? data.pointsPerMatch : 2;
+    const points = typeof data.pointsPerMatch === 'number' && data.pointsPerMatch >= 1 && data.pointsPerMatch <= 20 ? data.pointsPerMatch : 2;
 
+    // 1. Get or create league and teams in existing DB tables
+    const leagueRec = await getOrCreateLeague(data.leagueName, data.leagueLogo);
+    const homeTeamRec = await getOrCreateTeam(data.homeTeamName, data.homeTeamLogo);
+    const awayTeamRec = await getOrCreateTeam(data.awayTeamName, data.awayTeamLogo);
+
+    // 2. Insert into relational matches table
+    const newMatchId = data.externalMatchId?.trim() || `m_custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const matchTimeStr = parsedDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    await db.insert(matches).values({
+      id: newMatchId,
+      leagueId: leagueRec.id,
+      homeTeamId: homeTeamRec.id,
+      awayTeamId: awayTeamRec.id,
+      matchDate: parsedDate,
+      matchTime: matchTimeStr,
+      status: 'SCHEDULED',
+      source: 'admin_custom',
+      updatedAt: new Date(),
+    }).onConflictDoNothing();
+
+    // 3. Insert into predictionMatches table linked to matches.id
     const inserted = await db
       .insert(predictionMatches)
       .values({
+        matchId: newMatchId,
         isExternal: true,
         externalMatchId: data.externalMatchId || null,
-        customLeagueName: data.leagueName.trim(),
-        customLeagueLogo: data.leagueLogo ? data.leagueLogo.trim() : null,
-        customHomeName: data.homeTeamName.trim(),
-        customHomeLogo: data.homeTeamLogo ? data.homeTeamLogo.trim() : null,
-        customAwayName: data.awayTeamName.trim(),
-        customAwayLogo: data.awayTeamLogo ? data.awayTeamLogo.trim() : null,
+        customLeagueName: leagueRec.name,
+        customLeagueLogo: leagueRec.logo,
+        customHomeName: homeTeamRec.name,
+        customHomeLogo: homeTeamRec.logo,
+        customAwayName: awayTeamRec.name,
+        customAwayLogo: awayTeamRec.logo,
         customMatchDate: parsedDate,
         customStatus: 'SCHEDULED',
         pointsPerMatch: points,
@@ -1701,10 +2095,251 @@ export async function addCustomExternalMatchToPredictions(data: {
       .returning();
 
     return {
-      message: 'تمت إضافة مباراة الدوري الخارجي إلى مسابقة التوقعات بنجاح',
+      message: 'تمت إضافة مباراة الدوري الخارجي إلى مسابقة التوقعات بنجاح وربطها بقاعدة البيانات',
       id: inserted[0].id,
       predictionMatch: inserted[0],
     };
+  });
+}
+
+/**
+ * Admin: Update an existing prediction match's details:
+ * Teams, League, Date/Time, Points, Status, Result, and Active state.
+ */
+export async function updatePredictionMatchDetails(
+  id: number,
+  adminUserId: number,
+  data: {
+    homeTeamName?: string;
+    homeTeamLogo?: string | null;
+    awayTeamName?: string;
+    awayTeamLogo?: string | null;
+    leagueName?: string;
+    leagueLogo?: string | null;
+    matchDate?: string;
+    pointsPerMatch?: number;
+    homeScore?: number | null;
+    awayScore?: number | null;
+    status?: string;
+    isActive?: boolean;
+  }
+) {
+  return await withDbRetry(async () => {
+    // 1. Fetch prediction match
+    const pm = await db.query.predictionMatches.findFirst({
+      where: eq(predictionMatches.id, id),
+      with: {
+        match: {
+          with: {
+            homeTeam: true,
+            awayTeam: true,
+            league: true,
+          },
+        },
+      },
+    });
+
+    if (!pm) {
+      throw new Error('مباراة التوقع غير موجودة');
+    }
+
+    // 2. Resolve or create League, Home Team, Away Team
+    const finalLeagueName = (data.leagueName?.trim()) || pm.customLeagueName || pm.match?.league?.name || 'بطولة عامة';
+    const finalLeagueLogo = data.leagueLogo !== undefined ? data.leagueLogo : (pm.customLeagueLogo || pm.match?.league?.logo);
+    const leagueRec = await getOrCreateLeague(finalLeagueName, finalLeagueLogo);
+
+    const finalHomeName = (data.homeTeamName?.trim()) || pm.customHomeName || pm.match?.homeTeam?.name || 'الفريق الأول';
+    const finalHomeLogo = data.homeTeamLogo !== undefined ? data.homeTeamLogo : (pm.customHomeLogo || pm.match?.homeTeam?.logo);
+    const homeTeamRec = await getOrCreateTeam(finalHomeName, finalHomeLogo);
+
+    const finalAwayName = (data.awayTeamName?.trim()) || pm.customAwayName || pm.match?.awayTeam?.name || 'الفريق الثاني';
+    const finalAwayLogo = data.awayTeamLogo !== undefined ? data.awayTeamLogo : (pm.customAwayLogo || pm.match?.awayTeam?.logo);
+    const awayTeamRec = await getOrCreateTeam(finalAwayName, finalAwayLogo);
+
+    // 3. Resolve Match Date
+    let parsedDate: Date | null = null;
+    if (data.matchDate) {
+      const d = new Date(data.matchDate);
+      if (!isNaN(d.getTime())) {
+        parsedDate = d;
+      }
+    }
+    const finalDate = parsedDate || pm.customMatchDate || pm.match?.matchDate || new Date();
+
+    // 4. Resolve Points per match
+    let finalPoints = pm.pointsPerMatch || 2;
+    if (data.pointsPerMatch !== undefined && data.pointsPerMatch !== null) {
+      if (typeof data.pointsPerMatch === 'number' && data.pointsPerMatch >= 1 && data.pointsPerMatch <= 20) {
+        finalPoints = data.pointsPerMatch;
+      }
+    }
+
+    // 5. Resolve status & scores
+    const finalStatus = data.status || pm.customStatus || pm.match?.status || 'SCHEDULED';
+    let finalHomeScore = data.homeScore !== undefined ? data.homeScore : (pm.customHomeScore ?? pm.match?.homeScore ?? null);
+    let finalAwayScore = data.awayScore !== undefined ? data.awayScore : (pm.customAwayScore ?? pm.match?.awayScore ?? null);
+
+    if (finalHomeScore !== null && finalHomeScore !== undefined) finalHomeScore = Number(finalHomeScore);
+    if (finalAwayScore !== null && finalAwayScore !== undefined) finalAwayScore = Number(finalAwayScore);
+
+    const finalIsActive = data.isActive !== undefined ? !!data.isActive : pm.isActive;
+
+    // 6. Update relational match in matches table
+    let linkedMatchId = pm.matchId;
+    const matchTimeStr = finalDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    if (linkedMatchId) {
+      await db.update(matches).set({
+        leagueId: leagueRec.id,
+        homeTeamId: homeTeamRec.id,
+        awayTeamId: awayTeamRec.id,
+        matchDate: finalDate,
+        matchTime: matchTimeStr,
+        homeScore: finalHomeScore,
+        awayScore: finalAwayScore,
+        status: finalStatus,
+        updatedAt: new Date(),
+      }).where(eq(matches.id, linkedMatchId));
+    } else {
+      const newMatchId = `m_pred_${pm.id}_${Date.now()}`;
+      await db.insert(matches).values({
+        id: newMatchId,
+        leagueId: leagueRec.id,
+        homeTeamId: homeTeamRec.id,
+        awayTeamId: awayTeamRec.id,
+        matchDate: finalDate,
+        matchTime: matchTimeStr,
+        homeScore: finalHomeScore,
+        awayScore: finalAwayScore,
+        status: finalStatus,
+        source: 'admin_custom',
+        updatedAt: new Date(),
+      });
+      linkedMatchId = newMatchId;
+    }
+
+    // 7. Update predictionMatches record
+    await db.update(predictionMatches).set({
+      matchId: linkedMatchId,
+      customLeagueName: leagueRec.name,
+      customLeagueLogo: leagueRec.logo,
+      customHomeName: homeTeamRec.name,
+      customHomeLogo: homeTeamRec.logo,
+      customAwayName: awayTeamRec.name,
+      customAwayLogo: awayTeamRec.logo,
+      customMatchDate: finalDate,
+      customHomeScore: finalHomeScore,
+      customAwayScore: finalAwayScore,
+      customStatus: finalStatus,
+      pointsPerMatch: finalPoints,
+      isActive: finalIsActive,
+      updatedAt: new Date(),
+    }).where(eq(predictionMatches.id, pm.id));
+
+    // 8. Handle recalculation if status is FINISHED and scores are set
+    if (finalStatus === 'FINISHED' && finalHomeScore !== null && finalAwayScore !== null) {
+      await confirmAndEvaluatePredictionMatch(pm.id, adminUserId, finalHomeScore, finalAwayScore);
+    } else if (finalStatus !== 'FINISHED' && (pm.isCalculated || pm.isConfirmedByAdmin)) {
+      // Clear points safely if changed back from finished
+      await db.transaction(async (tx) => {
+        await tx.delete(predictionPoints).where(eq(predictionPoints.predictionMatchId, pm.id));
+        await tx.update(predictions).set({
+          isEvaluated: false,
+          pointsEarned: 0,
+          isGolden: false,
+          goldenPoints: 0,
+          updatedAt: new Date(),
+        }).where(eq(predictions.predictionMatchId, pm.id));
+        await tx.update(predictionMatches).set({
+          isCalculated: false,
+          isConfirmedByAdmin: false,
+          calculatedAt: null,
+          confirmedAt: null,
+          confirmedBy: null,
+        }).where(eq(predictionMatches.id, pm.id));
+      });
+    }
+
+    return {
+      success: true,
+      message: 'تم حفظ وتحديث بيانات التوقع والمباراة بنجاح',
+      id: pm.id,
+    };
+  });
+}
+
+/**
+ * Admin: Edit match result (home score, away score, status) with atomic point recalculation.
+ */
+export async function updatePredictionMatchResult(
+  id: number,
+  adminUserId: number,
+  data: {
+    homeScore: number;
+    awayScore: number;
+    status?: string;
+  }
+) {
+  const { homeScore, awayScore, status = 'FINISHED' } = data;
+
+  if (
+    typeof homeScore !== 'number' || !Number.isInteger(homeScore) || homeScore < 0 || homeScore > 30 ||
+    typeof awayScore !== 'number' || !Number.isInteger(awayScore) || awayScore < 0 || awayScore > 30
+  ) {
+    throw new Error('النتيجة يجب أن تكون أرقاماً صحيحة بين 0 و 30 لكلا الفريقين');
+  }
+
+  if (status === 'FINISHED') {
+    return await confirmAndEvaluatePredictionMatch(id, adminUserId, homeScore, awayScore);
+  }
+
+  return await withDbRetry(async () => {
+    return await db.transaction(async (tx) => {
+      const pm = await tx.query.predictionMatches.findFirst({
+        where: eq(predictionMatches.id, id),
+      });
+      if (!pm) throw new Error('مباراة التوقع غير موجودة');
+
+      // Clear points ledger
+      await tx.delete(predictionPoints).where(eq(predictionPoints.predictionMatchId, id));
+
+      // Reset predictions
+      await tx.update(predictions).set({
+        isEvaluated: false,
+        pointsEarned: 0,
+        isGolden: false,
+        goldenPoints: 0,
+        updatedAt: new Date(),
+      }).where(eq(predictions.predictionMatchId, id));
+
+      // Update predictionMatches
+      await tx.update(predictionMatches).set({
+        customHomeScore: homeScore,
+        customAwayScore: awayScore,
+        customStatus: status,
+        isCalculated: false,
+        isConfirmedByAdmin: false,
+        updatedAt: new Date(),
+      }).where(eq(predictionMatches.id, id));
+
+      // Update matches table if relational
+      if (pm.matchId) {
+        await tx.update(matches).set({
+          homeScore,
+          awayScore,
+          status,
+          updatedAt: new Date(),
+        }).where(eq(matches.id, pm.matchId));
+      }
+
+      return {
+        success: true,
+        message: `تم تحديث النتيجة إلى (${homeScore} - ${awayScore}) وحالة المباراة إلى (${status})`,
+        homeScore,
+        awayScore,
+        status,
+      };
+    });
   });
 }
 
@@ -1757,11 +2392,17 @@ export async function removePredictionMatch(id: number) {
     if (!pm) {
       throw new Error('المباراة المحددة غير موجودة');
     }
-    if (pm.isCalculated || pm.isConfirmedByAdmin) {
-      throw new Error('لا يمكن حذف مباراة تم اعتماد نتيجتها واحتساب نقاط المشاركين فيها');
-    }
-    await db.delete(predictionMatches).where(eq(predictionMatches.id, id));
-    return { success: true };
+
+    await db.transaction(async (tx) => {
+      // Cleanly remove any points recorded in ledger for this match
+      await tx.delete(predictionPoints).where(eq(predictionPoints.predictionMatchId, id));
+      // Delete any user predictions for this match
+      await tx.delete(predictions).where(eq(predictions.predictionMatchId, id));
+      // Delete prediction match entry
+      await tx.delete(predictionMatches).where(eq(predictionMatches.id, id));
+    });
+
+    return { success: true, message: 'تم حذف مباراة التوقع وكافة التوقعات والنقاط المرتبطة بها بنجاح' };
   });
 }
 

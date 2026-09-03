@@ -28,6 +28,7 @@ import {
   Target,
   Sparkles,
   RotateCw,
+  RefreshCw,
   Eye,
   CheckCircle2,
   Calendar,
@@ -57,6 +58,9 @@ export default function Admin() {
   const [filterStatus, setFilterStatus] = useState('');
   const [editingNews, setEditingNews] = useState<any>(null);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [message, setMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
 
   // Predictions Modal States
@@ -98,6 +102,22 @@ export default function Admin() {
     } catch (e) {}
   };
 
+  const fetchCategoriesList = async () => {
+    setIsLoadingCategories(true);
+    setCategoriesError(null);
+    try {
+      const res = await fetch('/api/categories');
+      if (!res.ok) throw new Error('فشل تحميل التصنيفات');
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Failed to load categories in admin:', err);
+      setCategoriesError('فشل تحميل التصنيفات');
+    } finally {
+      setIsLoadingCategories(false);
+    }
+  };
+
   const fetchUsers = async () => {
     try {
       const res = await fetch('/api/admin/users', { headers: { Authorization: `Bearer ${token}` } });
@@ -124,6 +144,7 @@ export default function Admin() {
     await Promise.all([
       fetchStats(),
       fetchNews(),
+      fetchCategoriesList(),
       fetchPredictions(),
       isSuperAdmin ? fetchUsers() : Promise.resolve(),
     ]);
@@ -133,6 +154,12 @@ export default function Admin() {
   useEffect(() => {
     if (token) loadData();
   }, [token]);
+
+  useEffect(() => {
+    if (activeTab === 'news' && categories.length === 0 && !isLoadingCategories) {
+      fetchCategoriesList();
+    }
+  }, [activeTab]);
 
   const showMsg = (type: 'success'|'error', text: string) => {
     setMessage({ type, text });
@@ -305,6 +332,46 @@ export default function Admin() {
   };
 
   // --- News Management ---
+  const handleStartAddNews = () => {
+    setEditingNews({
+      title: '',
+      content: '',
+      image: '',
+      status: 'published',
+      isFeatured: false,
+      isBreaking: false,
+      categoryId: '',
+    });
+    if (categories.length === 0) {
+      fetchCategoriesList();
+    }
+  };
+
+  const handleStartEditNews = (item: any) => {
+    let catId: any = item.categoryId || item.category?.id || '';
+    if (!catId && item.categoryName && categories.length > 0) {
+      const found = categories.find((c: any) => c.name === item.categoryName);
+      if (found) catId = found.id;
+    }
+    setEditingNews({
+      ...item,
+      categoryId: catId ? Number(catId) : '',
+    });
+    if (categories.length === 0) {
+      fetchCategoriesList();
+    }
+  };
+
+  const getCategoryName = (item: any) => {
+    if (item.category?.name) return item.category.name;
+    if (item.categoryName) return item.categoryName;
+    if (item.categoryId && categories.length > 0) {
+      const cat = categories.find((c: any) => c.id === item.categoryId);
+      if (cat) return cat.name;
+    }
+    return 'بدون تصنيف';
+  };
+
   const handleNewsSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingNews) return;
@@ -314,13 +381,26 @@ export default function Admin() {
       const url = isEdit ? `/api/news/${editingNews.id}` : '/api/news';
       const method = isEdit ? 'PUT' : 'POST';
       
+      const payload = {
+        title: editingNews.title,
+        content: editingNews.content,
+        image: editingNews.image || '',
+        isFeatured: !!editingNews.isFeatured,
+        isBreaking: !!editingNews.isBreaking,
+        status: editingNews.status || 'published',
+        categoryId: editingNews.categoryId ? Number(editingNews.categoryId) : null,
+      };
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(editingNews)
+        body: JSON.stringify(payload)
       });
       
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || await res.text() || 'حدث خطأ أثناء الحفظ');
+      }
       showMsg('success', isEdit ? 'تم تحديث الخبر بنجاح' : 'تم إضافة الخبر بنجاح');
       setEditingNews(null);
       fetchNews();
@@ -603,30 +683,47 @@ export default function Admin() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-bold mb-1.5 text-gray-700 dark:text-gray-300">
-                        رابط الصورة <span className="text-xs font-normal text-gray-500 dark:text-gray-400">(اختياري - نشر الخبر بدون صورة)</span>
-                      </label>
-                      <input 
-                        type="url" 
-                        placeholder="https://example.com/image.jpg"
-                        value={editingNews.image || ''} 
-                        onChange={e => setEditingNews({...editingNews, image: e.target.value})} 
-                        className="w-full p-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all text-left dir-ltr" 
-                      />
-                      {editingNews.image && (
-                        <div className="mt-2.5 p-2 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700/80">
-                          <span className="text-[11px] font-bold text-gray-500 block mb-1.5">معاينة الصورة بالحجم الطبيعي بدون قص:</span>
-                          <img loading="lazy" 
-                            src={editingNews.image} 
-                            alt="معاينة" 
-                            className="max-h-56 w-auto max-w-full rounded-lg mx-auto object-contain shadow-xs border border-gray-200 dark:border-gray-700"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                        </div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">
+                          تصنيف الخبر <span className="text-red-500">*</span>
+                        </label>
+                        {categoriesError && (
+                          <button
+                            type="button"
+                            onClick={fetchCategoriesList}
+                            className="text-xs text-red-500 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 font-bold"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isLoadingCategories ? 'animate-spin' : ''}`} />
+                            إعادة المحاولة
+                          </button>
+                        )}
+                      </div>
+                      <select
+                        required
+                        value={editingNews.categoryId !== undefined && editingNews.categoryId !== null ? String(editingNews.categoryId) : ''}
+                        onChange={e => setEditingNews({...editingNews, categoryId: e.target.value ? Number(e.target.value) : ''})}
+                        disabled={isLoadingCategories}
+                        className="w-full p-3.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all font-medium text-gray-900 dark:text-white disabled:opacity-50"
+                      >
+                        <option value="">-- اختر التصنيف المناسب --</option>
+                        {categories.map((cat: any) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                      {categories.length === 0 && !isLoadingCategories && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                          لم يتم العثور على تصنيفات، يرجى تحديث الصفحة أو الضغط على زر إعادة المحاولة.
+                        </p>
+                      )}
+                      {isLoadingCategories && (
+                        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" /> جاري تحميل التصنيفات...
+                        </p>
                       )}
                     </div>
+
                     <div>
                       <label className="block text-sm font-bold mb-1.5 text-gray-700 dark:text-gray-300">
                         حالة الخبر
@@ -635,12 +732,38 @@ export default function Admin() {
                         required 
                         value={editingNews.status || 'published'} 
                         onChange={e => setEditingNews({...editingNews, status: e.target.value})} 
-                        className="w-full p-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all font-medium text-gray-900 dark:text-white"
+                        className="w-full p-3.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all font-medium text-gray-900 dark:text-white"
                       >
                         <option value="published">منشور فوراً</option>
                         <option value="draft">مسودة (غير ظاهر للجمهور)</option>
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-1.5 text-gray-700 dark:text-gray-300">
+                      رابط الصورة <span className="text-xs font-normal text-gray-500 dark:text-gray-400">(اختياري - نشر الخبر بدون صورة)</span>
+                    </label>
+                    <input 
+                      type="url" 
+                      placeholder="https://example.com/image.jpg"
+                      value={editingNews.image || ''} 
+                      onChange={e => setEditingNews({...editingNews, image: e.target.value})} 
+                      className="w-full p-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all text-left dir-ltr" 
+                    />
+                    {editingNews.image && (
+                      <div className="mt-2.5 p-2 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700/80">
+                        <span className="text-[11px] font-bold text-gray-500 block mb-1.5">معاينة الصورة بالحجم الطبيعي بدون قص:</span>
+                        <img loading="lazy" 
+                          src={editingNews.image} 
+                          alt="معاينة" 
+                          className="max-h-56 w-auto max-w-full rounded-lg mx-auto object-contain shadow-xs border border-gray-200 dark:border-gray-700"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-2 flex flex-wrap gap-6 items-center bg-gray-50 dark:bg-gray-800/60 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
@@ -708,7 +831,7 @@ export default function Admin() {
                     </select>
                   </div>
                   <button 
-                    onClick={() => setEditingNews({ status: 'published', isFeatured: false, isBreaking: false, image: '' })} 
+                    onClick={handleStartAddNews} 
                     className="bg-brand text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 whitespace-nowrap shadow-sm hover:bg-brand/90 transition-colors"
                   >
                     <Plus className="w-5 h-5" /> إضافة خبر
@@ -736,20 +859,25 @@ export default function Admin() {
                           <tr key={item.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
                             <td className="py-3 font-bold max-w-xs truncate">{item.title}</td>
                             <td className="py-3">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {item.isBreaking && (
-                                  <span className="bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
-                                    🔴 عاجل
-                                  </span>
-                                )}
-                                {item.isFeatured && (
-                                  <span className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
-                                    ⭐ مميز
-                                  </span>
-                                )}
-                                {!item.isBreaking && !item.isFeatured && (
-                                  <span className="text-gray-400 text-xs font-semibold">خبر عادي</span>
-                                )}
+                              <div className="flex flex-col gap-1 items-start">
+                                <span className="text-xs font-bold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 rounded-md">
+                                  {getCategoryName(item)}
+                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {item.isBreaking && (
+                                    <span className="bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
+                                      🔴 عاجل
+                                    </span>
+                                  )}
+                                  {item.isFeatured && (
+                                    <span className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md">
+                                      ⭐ مميز
+                                    </span>
+                                  )}
+                                  {!item.isBreaking && !item.isFeatured && (
+                                    <span className="text-gray-400 text-[11px] font-medium">خبر عادي</span>
+                                  )}
+                                </div>
                               </div>
                             </td>
                             <td className="py-3">
@@ -759,7 +887,7 @@ export default function Admin() {
                             </td>
                             <td className="py-3 text-sm text-gray-500">{new Date(item.createdAt).toLocaleDateString('ar-EG')}</td>
                             <td className="py-3 flex items-center gap-2">
-                              <button onClick={() => setEditingNews(item)} className="p-1.5 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors"><Edit2 className="w-4 h-4" /></button>
+                              <button onClick={() => handleStartEditNews(item)} className="p-1.5 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors"><Edit2 className="w-4 h-4" /></button>
                               <button onClick={() => handleDeleteNews(item)} className="p-1.5 text-red-600 bg-red-50 dark:bg-red-950 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
                             </td>
                           </tr>
@@ -777,6 +905,9 @@ export default function Admin() {
                       <div key={item.id} className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                         <div className="font-bold text-gray-900 dark:text-white mb-2 leading-tight">{item.title}</div>
                         <div className="flex flex-wrap items-center gap-2 mb-3">
+                          <span className="bg-gray-200/80 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200 text-[11px] font-bold px-2 py-0.5 rounded-md">
+                            {getCategoryName(item)}
+                          </span>
                           {item.isBreaking && (
                             <span className="bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md">
                               🔴 عاجل
@@ -793,7 +924,7 @@ export default function Admin() {
                           <span className="text-xs text-gray-500 mr-auto">{new Date(item.createdAt).toLocaleDateString('ar-EG')}</span>
                         </div>
                         <div className="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
-                          <button onClick={() => setEditingNews(item)} className="flex-1 flex items-center justify-center gap-1.5 p-2 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold"><Edit2 className="w-3.5 h-3.5" /> تعديل</button>
+                          <button onClick={() => handleStartEditNews(item)} className="flex-1 flex items-center justify-center gap-1.5 p-2 text-blue-600 bg-blue-50 dark:bg-blue-950 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold"><Edit2 className="w-3.5 h-3.5" /> تعديل</button>
                           <button onClick={() => handleDeleteNews(item)} className="flex-1 flex items-center justify-center gap-1.5 p-2 text-red-600 bg-red-50 dark:bg-red-950 rounded-lg hover:bg-red-100 transition-colors text-xs font-bold"><Trash2 className="w-3.5 h-3.5" /> حذف</button>
                         </div>
                       </div>

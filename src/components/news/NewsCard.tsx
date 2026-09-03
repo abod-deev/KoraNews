@@ -8,27 +8,42 @@ interface NewsCardProps {
 
 export default function NewsCard({ article }: NewsCardProps) {
   const defaultImage = 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=600';
-  const categoryName = article.category || 'أخبار الرياضة';
-  const authorName = article.author?.name || 'محرر الرياضة';
+  const categoryName = typeof article?.category === 'object' && article?.category !== null
+    ? (article.category.name || 'أخبار الرياضة')
+    : (article?.category || article?.categoryName || 'أخبار الرياضة');
+  const authorName = typeof article?.author === 'object' && article?.author !== null
+    ? (article.author.name || 'محرر الرياضة')
+    : (typeof article?.author === 'string' ? article.author : (article?.authorName || 'محرر الرياضة'));
+  const authorAvatar = (typeof article?.author === 'object' && article?.author !== null && article.author.avatar)
+    ? article.author.avatar
+    : (typeof article?.authorAvatar === 'string' ? article.authorAvatar : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100');
 
   return (
     <Link 
       to={`/news/${article.id}`} 
       className="group flex flex-col bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-slate-800/80 overflow-hidden shadow-2xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 h-full select-none"
     >
-      <div className="relative h-32 sm:h-48 overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800">
+      <div className="relative w-full aspect-[16/9] overflow-hidden shrink-0 bg-slate-950 flex items-center justify-center">
+        {/* Ambient backdrop */}
+        <img 
+          src={article.image || defaultImage} 
+          alt="" 
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover blur-md opacity-40 scale-110 pointer-events-none" 
+        />
+        {/* Full unclipped image */}
         <img 
           loading="lazy" 
           src={article.image || defaultImage} 
           alt={article.title} 
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+          className="relative z-1 max-w-full max-h-full w-auto h-full object-contain group-hover:scale-105 transition-transform duration-500" 
           onError={(e) => {
             (e.target as HTMLImageElement).src = defaultImage;
           }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-80" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-80 pointer-events-none z-2" />
         
-        <span className="absolute top-2.5 right-2.5 bg-sky-600/90 backdrop-blur-md text-white text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-lg shadow-xs border border-white/20 flex items-center gap-1">
+        <span className="absolute top-2.5 right-2.5 bg-sky-600/90 backdrop-blur-md text-white text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-lg shadow-xs border border-white/20 flex items-center gap-1 z-10">
           {article.isFeatured && <Sparkles className="w-3 h-3 text-amber-300 fill-current" />}
           <span>{categoryName}</span>
         </span>
@@ -49,7 +64,7 @@ export default function NewsCard({ article }: NewsCardProps) {
           <div className="flex items-center gap-1.5 min-w-0">
             <img 
               loading="lazy" 
-              src={article.author?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100'} 
+              src={authorAvatar} 
               alt={authorName} 
               className="w-5 h-5 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" 
               onError={(e) => {

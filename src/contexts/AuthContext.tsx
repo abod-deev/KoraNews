@@ -3,9 +3,10 @@ import {
   signInWithPopup,
   signInWithCustomToken,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  GoogleAuthProvider
 } from 'firebase/auth';
-import { auth, googleAuthProvider } from '../lib/firebase';
+import { auth, browserPopupRedirectResolver } from '../lib/firebase';
 import { AuthUser } from '../utils/authHelpers';
 
 interface AuthContextType {
@@ -174,7 +175,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     try {
-      const result = await signInWithPopup(auth, googleAuthProvider);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       if (result?.user) {
         const idToken = await result.user.getIdToken();
         const syncRes = await fetch('/api/auth/sync', {
@@ -188,16 +191,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (syncData.sessionToken && syncData.user) {
             saveSession(syncData.sessionToken, syncData.user);
           }
+        } else {
+          const errData = await syncRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'فشل في إكمال مزامنة حساب جوجل مع الخادم');
         }
       }
     } catch (error: any) {
       console.error('Error signing in with Google:', error);
-      if (error?.code === 'auth/popup-blocked') {
-        throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
-      } else if (error?.code === 'auth/popup-closed-by-user') {
-        throw new Error('تم إغلاق نافذة تسجيل الدخول من قبل المستخدم.');
+      const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+      if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+        if (isIframe) {
+          throw new Error('تعذر إكمال تسجيل الدخول بواسطة جوجل داخل إطار المعاينة (iframe) بسبب سياسات أمان المتصفح. يرجى فتح التطبيق في نافذة جديدة أو استخدام البريد الإلكتروني وكلمة المرور مباشرة.');
+        } else {
+          throw new Error('تم إغلاق نافذة تسجيل الدخول من قبل المستخدم قبل اكتمال العملية.');
+        }
       }
-      throw new Error(error.message || 'حدث خطأ في تسجيل الدخول بواسطة جوجل');
+      if (error?.code === 'auth/popup-blocked') {
+        throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة (Popups) أو فتح التطبيق في نافذة جديدة والمحاولة مرة أخرى.');
+      }
+      throw new Error(error.message || 'حدث خطأ أثناء تسجيل الدخول بواسطة جوجل');
     }
   };
 

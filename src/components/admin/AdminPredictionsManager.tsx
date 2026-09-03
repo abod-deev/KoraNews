@@ -30,8 +30,12 @@ import {
   Filter,
   Flame,
   ShieldCheck,
+  X,
+  Shield,
+  PlusCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import ConfirmModal from '../common/ConfirmModal';
 
 interface AdminPredictionsManagerProps {
   token: string | null;
@@ -126,7 +130,32 @@ export default function AdminPredictionsManager({
   const [confirmingMatch, setConfirmingMatch] = useState<PredictionMatchItem | null>(null);
   const [manualHomeScore, setManualHomeScore] = useState<number>(0);
   const [manualAwayScore, setManualAwayScore] = useState<number>(0);
+  const [confirmingMatchStatus, setConfirmingMatchStatus] = useState<string>('FINISHED');
   const [isConfirmingScore, setIsConfirmingScore] = useState(false);
+
+  // Edit Prediction Match Full Details Modal State
+  const [editingMatch, setEditingMatch] = useState<PredictionMatchItem | null>(null);
+  const [editingMatchForm, setEditingMatchForm] = useState({
+    homeTeamName: '',
+    homeTeamLogo: '',
+    awayTeamName: '',
+    awayTeamLogo: '',
+    leagueName: '',
+    leagueLogo: '',
+    matchDate: '',
+    pointsPerMatch: 2,
+    homeScore: '' as number | string,
+    awayScore: '' as number | string,
+    status: 'SCHEDULED',
+    isActive: true,
+  });
+  const [isSavingMatchEdit, setIsSavingMatchEdit] = useState(false);
+
+  // Existing Teams & Leagues in System (for auto-complete and zero duplication)
+  const [existingData, setExistingData] = useState<{
+    leagues: Array<{ id: string; name: string; logo: string | null }>;
+    teams: Array<{ id: string; name: string; logo: string | null }>;
+  }>({ leagues: [], teams: [] });
 
   // Edit Points Modal State
   const [editingPointsMatch, setEditingPointsMatch] = useState<PredictionMatchItem | null>(null);
@@ -166,6 +195,87 @@ export default function AdminPredictionsManager({
   const [predictionModalSearch, setPredictionModalSearch] = useState('');
   const [predictionModalFilter, setPredictionModalFilter] = useState<'all' | 'correct' | 'golden' | 'incorrect'>('all');
   const [deleteModalItem, setDeleteModalItem] = useState<PredictionMatchItem | null>(null);
+
+  // Unified Confirmation Dialog State for all admin contest actions
+  const [confirmModalConfig, setConfirmModalConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    isLoading?: boolean;
+    onConfirm: () => Promise<void> | void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'تأكيد',
+    cancelText: 'إلغاء',
+    variant: 'warning',
+    isLoading: false,
+    onConfirm: () => {},
+  });
+
+  const requestConfirmation = ({
+    title,
+    message,
+    confirmText = 'تأكيد',
+    cancelText = 'إلغاء',
+    variant = 'warning',
+    onConfirm,
+  }: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    onConfirm: () => Promise<void> | void;
+  }) => {
+    setConfirmModalConfig({
+      isOpen: true,
+      title,
+      message,
+      confirmText,
+      cancelText,
+      variant,
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmModalConfig((prev) => ({ ...prev, isLoading: true }));
+        try {
+          await onConfirm();
+          setConfirmModalConfig((prev) => ({ ...prev, isOpen: false, isLoading: false }));
+        } catch {
+          setConfirmModalConfig((prev) => ({ ...prev, isLoading: false }));
+        }
+      },
+    });
+  };
+
+  // Create League Modal State
+  const [isCreateLeagueModalOpen, setIsCreateLeagueModalOpen] = useState(false);
+  const [newLeagueName, setNewLeagueName] = useState('');
+  const [newLeagueLogo, setNewLeagueLogo] = useState('');
+  const [isCreatingLeague, setIsCreatingLeague] = useState(false);
+
+  // Create Team Modal State
+  const [isCreateTeamModalOpen, setIsCreateTeamModalOpen] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamLogo, setNewTeamLogo] = useState('');
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+
+  // Add Participant Prediction Modal State
+  const [isAddUserPredModalOpen, setIsAddUserPredModalOpen] = useState(false);
+  const [newPredUserId, setNewPredUserId] = useState('');
+  const [newPredHomeScore, setNewPredHomeScore] = useState('');
+  const [newPredAwayScore, setNewPredAwayScore] = useState('');
+  const [isSavingUserPred, setIsSavingUserPred] = useState(false);
+
+  // Edit Participant Prediction Modal State
+  const [editingUserPred, setEditingUserPred] = useState<PredictionItem | null>(null);
+  const [editPredHomeScore, setEditPredHomeScore] = useState('');
+  const [editPredAwayScore, setEditPredAwayScore] = useState('');
+  const [isUpdatingUserPred, setIsUpdatingUserPred] = useState(false);
 
   // UI / Action loading states
   const [isLoading, setIsLoading] = useState(true);
@@ -239,6 +349,21 @@ export default function AdminPredictionsManager({
     }
   };
 
+  // Fetch all existing teams and leagues in the system for reuse and zero duplicates
+  const fetchExistingTeamsAndLeagues = async () => {
+    try {
+      const res = await fetch('/api/admin/predictions/teams-and-leagues', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExistingData(data);
+      }
+    } catch (e) {
+      console.error('Error fetching existing teams and leagues:', e);
+    }
+  };
+
   const loadAll = async () => {
     setIsLoading(true);
     await Promise.all([
@@ -246,6 +371,7 @@ export default function AdminPredictionsManager({
       fetchAvailableMatches('all'),
       fetchParticipants(),
       fetchContestSettings(),
+      fetchExistingTeamsAndLeagues(),
     ]);
     setIsLoading(false);
   };
@@ -277,35 +403,45 @@ export default function AdminPredictionsManager({
       return;
     }
 
-    setIsActionLoading(true);
-    try {
-      const res = await fetch('/api/admin/predictions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          matchId: selectedMatchId,
-          pointsPerMatch: pts,
-        }),
-      });
+    const matched = availableMatches.find((m) => m.id === selectedMatchId);
+    const matchLabel = matched ? `${matched.homeTeam.name} ضد ${matched.awayTeam.name}` : 'المباراة المحددة';
 
-      const data = await res.json();
-      if (!res.ok) {
-        onShowMessage('error', data.error || 'فشل في إضافة المباراة');
-      } else {
-        onShowMessage('success', `تمت إضافة المباراة لمسابقات التوقع بنجاح (${pts} نقاط)!`);
-        setSelectedMatchId(null);
-        setSelectedMatchPoints(2);
-        await Promise.all([fetchPredictionMatches(), fetchAvailableMatches('all')]);
-        setSubTab('matches');
-      }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
-    } finally {
-      setIsActionLoading(false);
-    }
+    requestConfirmation({
+      title: 'إضافة مباراة للتوقعات',
+      message: `هل أنت متأكد من إتاحة مباراة (${matchLabel}) للتوقع في المسابقة بـ (${pts} نقاط)؟`,
+      confirmText: 'تأكيد الإضافة',
+      onConfirm: async () => {
+        setIsActionLoading(true);
+        try {
+          const res = await fetch('/api/admin/predictions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              matchId: selectedMatchId,
+              pointsPerMatch: pts,
+            }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في إضافة المباراة');
+          } else {
+            onShowMessage('success', `تمت إضافة المباراة لمسابقات التوقع بنجاح (${pts} نقاط)!`);
+            setSelectedMatchId(null);
+            setSelectedMatchPoints(2);
+            await Promise.all([fetchPredictionMatches(), fetchAvailableMatches('all')]);
+            setSubTab('matches');
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
   // Add external custom league match
@@ -322,43 +458,50 @@ export default function AdminPredictionsManager({
       return;
     }
 
-    setIsActionLoading(true);
-    try {
-      const res = await fetch('/api/admin/predictions/custom-match', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          ...customMatch,
-          pointsPerMatch: pts,
-        }),
-      });
+    requestConfirmation({
+      title: 'إضافة مباراة خاصة للتوقعات',
+      message: `هل أنت متأكد من إضافة مباراة (${customMatch.homeTeamName} ضد ${customMatch.awayTeamName}) في بطولة (${customMatch.leagueName}) بـ (${pts} نقاط) إلى مسابقة التوقعات؟`,
+      confirmText: 'تأكيد الإضافة',
+      onConfirm: async () => {
+        setIsActionLoading(true);
+        try {
+          const res = await fetch('/api/admin/predictions/custom-match', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              ...customMatch,
+              pointsPerMatch: pts,
+            }),
+          });
 
-      const data = await res.json();
-      if (!res.ok) {
-        onShowMessage('error', data.error || 'فشل في إضافة المباراة الخاصة');
-      } else {
-        onShowMessage('success', `تمت إضافة مباراة الدوري الخاص للتوقعات بنجاح (${pts} نقاط)!`);
-        setCustomMatch({
-          leagueName: '',
-          leagueLogo: '',
-          homeTeamName: '',
-          homeTeamLogo: '',
-          awayTeamName: '',
-          awayTeamLogo: '',
-          matchDate: new Date().toISOString().slice(0, 16),
-          pointsPerMatch: 2,
-        });
-        await fetchPredictionMatches();
-        setSubTab('matches');
-      }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
-    } finally {
-      setIsActionLoading(false);
-    }
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في إضافة المباراة الخاصة');
+          } else {
+            onShowMessage('success', `تمت إضافة مباراة الدوري الخاص للتوقعات بنجاح (${pts} نقاط)!`);
+            setCustomMatch({
+              leagueName: '',
+              leagueLogo: '',
+              homeTeamName: '',
+              homeTeamLogo: '',
+              awayTeamName: '',
+              awayTeamLogo: '',
+              matchDate: new Date().toISOString().slice(0, 16),
+              pointsPerMatch: 2,
+            });
+            await fetchPredictionMatches();
+            setSubTab('matches');
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
   // Update Points for an Existing Match
@@ -372,178 +515,611 @@ export default function AdminPredictionsManager({
       return;
     }
 
-    setIsSavingPoints(true);
-    try {
-      const res = await fetch(`/api/admin/predictions/${editingPointsMatch.id}/points`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ pointsPerMatch: pts }),
-      });
+    requestConfirmation({
+      title: 'تعديل نقاط المباراة',
+      message: `هل أنت متأكد من تغيير نقاط الفوز لهذه المباراة إلى (${pts} نقاط)؟`,
+      confirmText: 'تأكيد التعديل',
+      onConfirm: async () => {
+        setIsSavingPoints(true);
+        try {
+          const res = await fetch(`/api/admin/predictions/${editingPointsMatch.id}/points`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ pointsPerMatch: pts }),
+          });
 
-      const data = await res.json();
-      if (!res.ok) {
-        onShowMessage('error', data.error || 'فشل في تحديث نقاط المباراة');
-      } else {
-        onShowMessage('success', `تم تحديث نقاط المباراة إلى (${pts} نقاط) بنجاح`);
-        setEditingPointsMatch(null);
-        await fetchPredictionMatches();
-      }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
-    } finally {
-      setIsSavingPoints(false);
-    }
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في تحديث نقاط المباراة');
+          } else {
+            onShowMessage('success', `تم تحديث نقاط المباراة إلى (${pts} نقاط) بنجاح`);
+            setEditingPointsMatch(null);
+            await fetchPredictionMatches();
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsSavingPoints(false);
+        }
+      },
+    });
   };
 
   // Toggle active state / archive toggle
   const handleToggleActive = async (predictionMatchId: number, currentActive: boolean) => {
-    try {
-      const res = await fetch(`/api/admin/predictions/${predictionMatchId}/toggle`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ isActive: !currentActive }),
-      });
+    requestConfirmation({
+      title: currentActive ? 'تعطيل استقبال التوقعات' : 'تفعيل استقبال التوقعات',
+      message: `هل أنت متأكد من ${currentActive ? 'إيقاف' : 'إتاحة'} استقبال توقعات المتسابقين لهذه المباراة؟`,
+      confirmText: currentActive ? 'تأكيد الإيقاف' : 'تأكيد التفعيل',
+      variant: currentActive ? 'warning' : 'info',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/admin/predictions/${predictionMatchId}/toggle`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ isActive: !currentActive }),
+          });
 
-      if (res.ok) {
-        onShowMessage('success', !currentActive ? 'تم فتح التوقع للمباراة' : 'تم إغلاق/أرشفة التوقع للمباراة');
-        await fetchPredictionMatches();
-      } else {
-        const data = await res.json();
-        onShowMessage('error', data.error || 'فشل في تعديل حالة التوقع');
-      }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
-    }
+          if (res.ok) {
+            onShowMessage('success', !currentActive ? 'تم فتح التوقع للمباراة' : 'تم إغلاق/أرشفة التوقع للمباراة');
+            await fetchPredictionMatches();
+          } else {
+            const data = await res.json();
+            onShowMessage('error', data.error || 'فشل في تعديل حالة التوقع');
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        }
+      },
+    });
   };
 
   // Delete prediction match (Blocked if already calculated, user gets explanation)
   const handleDeletePrediction = async (item: PredictionMatchItem) => {
-    if (item.isCalculated || item.isConfirmedByAdmin) {
-      onShowMessage('error', 'لا يمكن حذف مباراة تم اعتماد نتيجتها وتوزيع نقاطها؛ تم أرشفتها لحفظ سجل المتسابقين.');
-      setDeleteModalItem(null);
-      return;
-    }
+    const homeName = item.match?.homeTeam?.name || (item as any).customHomeName || 'الفريق الأول';
+    const awayName = item.match?.awayTeam?.name || (item as any).customAwayName || 'الفريق الثاني';
 
-    setIsActionLoading(true);
-    try {
-      const res = await fetch(`/api/admin/predictions/${item.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    requestConfirmation({
+      title: 'حذف مباراة التوقع',
+      message: `هل أنت متأكد من حذف مباراة (${homeName} ضد ${awayName})؟ سيتم حذف جميع التوقعات المسجلة عليها وإلغاء أي نقاط كانت محتسبة لها وتحديث الترتيب العام فوراً دون أي تكرار.`,
+      confirmText: 'تأكيد الحذف',
+      variant: 'danger',
+      onConfirm: async () => {
+        setIsActionLoading(true);
+        try {
+          const res = await fetch(`/api/admin/predictions/${item.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
 
-      if (res.ok) {
-        onShowMessage('success', 'تم حذف المباراة من مسابقة التوقعات بنجاح');
-        setDeleteModalItem(null);
-        await Promise.all([fetchPredictionMatches(), fetchAvailableMatches('all')]);
-      } else {
-        const data = await res.json();
-        onShowMessage('error', data.error || 'فشل في حذف المباراة');
-      }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ');
-    } finally {
-      setIsActionLoading(false);
-    }
+          if (res.ok) {
+            onShowMessage('success', 'تم حذف المباراة من مسابقة التوقعات بنجاح وتحديث الترتيب العام');
+            setDeleteModalItem(null);
+            await Promise.all([fetchPredictionMatches(), fetchAvailableMatches('all')]);
+          } else {
+            const data = await res.json();
+            onShowMessage('error', data.error || 'فشل في حذف المباراة');
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
-  // Manual Result Confirmation & Safe Recalculation
+  // Manual Result Confirmation & Safe Recalculation (Zero duplicates)
   const handleConfirmResultAndEvaluate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!confirmingMatch) return;
 
-    const targetPoints = confirmingMatch.pointsPerMatch || 2;
-    setIsConfirmingScore(true);
-    try {
-      const res = await fetch(`/api/admin/predictions/${confirmingMatch.id}/confirm-result`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          homeScore: manualHomeScore,
-          awayScore: manualAwayScore,
-        }),
-      });
+    requestConfirmation({
+      title: 'تأكيد نتيجة المباراة واحتساب النقاط',
+      message: `هل أنت متأكد من حفظ وتأكيد نتيجة المباراة (${manualHomeScore} - ${manualAwayScore})؟ سيتم احتساب نقاط التوقعات للمتسابقين وتحديث الترتيب العام فوراً دون تكرار النقاط.`,
+      confirmText: 'اعتماد النتيجة واحتساب النقاط',
+      variant: 'warning',
+      onConfirm: async () => {
+        setIsConfirmingScore(true);
+        try {
+          const res = await fetch(`/api/admin/predictions/${confirmingMatch.id}/result`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              homeScore: manualHomeScore,
+              awayScore: manualAwayScore,
+              status: confirmingMatchStatus,
+            }),
+          });
 
-      const data = await res.json();
-      if (!res.ok) {
-        onShowMessage('error', data.error || 'فشل في اعتماد النتيجة واحتساب النقاط');
-      } else {
-        const correctCount = data.data?.correctPredictorsCount ?? data.correctPredictorsCount ?? 0;
-        onShowMessage(
-          'success',
-          `تم اعتماد النتيجة (${manualHomeScore} - ${manualAwayScore}) واحتساب النقاط بنجاح لـ ${correctCount} متسابق (+${targetPoints} نقطة)!`
-        );
-        setConfirmingMatch(null);
-        await fetchPredictionMatches();
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في حفظ وتعديل النتيجة واحتساب النقاط');
+          } else {
+            onShowMessage(
+              'success',
+              `تم حفظ وتعديل نتيجة المباراة (${manualHomeScore} - ${manualAwayScore}) بنجاح وإعادة احتساب النقاط بدقة!`
+            );
+            setConfirmingMatch(null);
+            await fetchPredictionMatches();
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsConfirmingScore(false);
+        }
+      },
+    });
+  };
+
+  // Open Edit Prediction Match Modal
+  const openEditMatchModal = (item: PredictionMatchItem) => {
+    setEditingMatch(item);
+    const m = item.match;
+    let formattedDate = '';
+    const dateSrc = m?.matchDate || item.createdAt;
+    try {
+      const d = new Date(dateSrc);
+      if (!isNaN(d.getTime())) {
+        formattedDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
       }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
-    } finally {
-      setIsConfirmingScore(false);
+    } catch {
+      formattedDate = new Date().toISOString().slice(0, 16);
     }
+
+    setEditingMatchForm({
+      homeTeamName: m?.homeTeam?.name || '',
+      homeTeamLogo: m?.homeTeam?.logo || '',
+      awayTeamName: m?.awayTeam?.name || '',
+      awayTeamLogo: m?.awayTeam?.logo || '',
+      leagueName: m?.leagueName || '',
+      leagueLogo: m?.leagueLogo || '',
+      matchDate: formattedDate,
+      pointsPerMatch: item.pointsPerMatch || 2,
+      homeScore: m?.homeScore !== null && m?.homeScore !== undefined ? m.homeScore : '',
+      awayScore: m?.awayScore !== null && m?.awayScore !== undefined ? m.awayScore : '',
+      status: m?.status || 'SCHEDULED',
+      isActive: item.isActive,
+    });
+  };
+
+  // Save Edit Prediction Match
+  const handleSaveMatchEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMatch) return;
+
+    if (!editingMatchForm.homeTeamName.trim() || !editingMatchForm.awayTeamName.trim()) {
+      onShowMessage('error', 'يرجى إدخال أسماء الفريقين بشكل صحيح');
+      return;
+    }
+    if (!editingMatchForm.leagueName.trim()) {
+      onShowMessage('error', 'يرجى إدخال اسم البطولة / الدوري');
+      return;
+    }
+    if (!editingMatchForm.matchDate) {
+      onShowMessage('error', 'يرجى تحديد موعد وتاريخ انطلاق المباراة');
+      return;
+    }
+
+    const pts = Number(editingMatchForm.pointsPerMatch) || 2;
+    if (pts < 1 || pts > 20) {
+      onShowMessage('error', 'النقاط المحددة للمباراة يجب أن تكون بين 1 و 20 نقطة');
+      return;
+    }
+
+    requestConfirmation({
+      title: 'تعديل تفاصيل التوقع والمباراة',
+      message: 'هل أنت متأكد من حفظ التعديلات على بيانات وتفاصيل المباراة في قاعدة البيانات؟',
+      confirmText: 'حفظ التعديلات',
+      onConfirm: async () => {
+        setIsSavingMatchEdit(true);
+        try {
+          const payload: {
+            homeTeamName: string;
+            homeTeamLogo?: string | null;
+            awayTeamName: string;
+            awayTeamLogo?: string | null;
+            leagueName: string;
+            leagueLogo?: string | null;
+            matchDate: string;
+            pointsPerMatch: number;
+            homeScore: number | null;
+            awayScore: number | null;
+            status: string;
+            isActive: boolean;
+          } = {
+            homeTeamName: editingMatchForm.homeTeamName.trim(),
+            homeTeamLogo: editingMatchForm.homeTeamLogo.trim() || null,
+            awayTeamName: editingMatchForm.awayTeamName.trim(),
+            awayTeamLogo: editingMatchForm.awayTeamLogo.trim() || null,
+            leagueName: editingMatchForm.leagueName.trim(),
+            leagueLogo: editingMatchForm.leagueLogo.trim() || null,
+            matchDate: editingMatchForm.matchDate,
+            pointsPerMatch: pts,
+            homeScore: editingMatchForm.homeScore !== '' && editingMatchForm.homeScore !== null ? Number(editingMatchForm.homeScore) : null,
+            awayScore: editingMatchForm.awayScore !== '' && editingMatchForm.awayScore !== null ? Number(editingMatchForm.awayScore) : null,
+            status: editingMatchForm.status,
+            isActive: editingMatchForm.isActive,
+          };
+
+          const res = await fetch(`/api/admin/predictions/${editingMatch.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في حفظ تعديلات التوقع والمباراة');
+          } else {
+            onShowMessage('success', 'تم تعديل وحفظ بيانات التوقع والمباراة في قاعدة البيانات بنجاح!');
+            setEditingMatch(null);
+            await Promise.all([fetchPredictionMatches(), fetchExistingTeamsAndLeagues()]);
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ أثناء الاتصال بالخادم');
+        } finally {
+          setIsSavingMatchEdit(false);
+        }
+      },
+    });
   };
 
   // Participant status update (Approve, Reject, Block)
-  const handleUpdateParticipantStatus = async (
+  const handleUpdateParticipantStatus = (
     participantId: number,
-    newStatus: 'pending' | 'approved' | 'rejected' | 'blocked'
+    newStatus: 'pending' | 'approved' | 'rejected' | 'blocked',
+    userName?: string
   ) => {
-    try {
-      const res = await fetch(`/api/admin/predictions/participants/${participantId}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
+    const actionLabel =
+      newStatus === 'approved' ? 'قبول' : newStatus === 'rejected' ? 'رفض' : newStatus === 'blocked' ? 'حظر' : 'تحديث';
 
-      const data = await res.json();
-      if (res.ok) {
-        onShowMessage('success', data.message || 'تم تحديث حالة المتسابق بنجاح');
-        await fetchParticipants();
-      } else {
-        onShowMessage('error', data.error || 'فشل في تحديث حالة المتسابق');
-      }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+    requestConfirmation({
+      title: `${actionLabel} المشارك`,
+      message: `هل أنت متأكد من ${actionLabel} المتسابق (${userName || 'المحدد'}) في المسابقة؟`,
+      confirmText: `تأكيد ${actionLabel}`,
+      variant: newStatus === 'blocked' ? 'danger' : 'warning',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/admin/predictions/participants/${participantId}/status`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ status: newStatus }),
+          });
+
+          const data = await res.json();
+          if (res.ok) {
+            onShowMessage('success', data.message || 'تم تحديث حالة المتسابق بنجاح');
+            await fetchParticipants();
+          } else {
+            onShowMessage('error', data.error || 'فشل في تحديث حالة المتسابق');
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        }
+      },
+    });
+  };
+
+  // Delete participant from contest
+  const handleDeleteParticipant = (participantId: number, userName?: string) => {
+    requestConfirmation({
+      title: 'حذف المشارك من المسابقة',
+      message: `هل أنت متأكد من حذف المتسابق (${userName || 'المحدد'}) نهائياً من مسابقة التوقعات؟`,
+      confirmText: 'تأكيد الحذف',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/admin/predictions/participants/${participantId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          const data = await res.json();
+          if (res.ok) {
+            onShowMessage('success', data.message || 'تم حذف المتسابق من المسابقة بنجاح');
+            await fetchParticipants();
+          } else {
+            onShowMessage('error', data.error || 'فشل في حذف المتسابق');
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        }
+      },
+    });
+  };
+
+  // Add League explicit handler
+  const handleCreateLeague = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLeagueName.trim()) {
+      onShowMessage('error', 'يرجى إدخال اسم البطولة أو الدوري');
+      return;
     }
+
+    requestConfirmation({
+      title: 'إضافة دوري / بطولة جديدة',
+      message: `هل أنت متأكد من إضافة "${newLeagueName.trim()}" إلى قائمة الدوريات والبطولات؟`,
+      confirmText: 'تأكيد الإضافة',
+      onConfirm: async () => {
+        setIsCreatingLeague(true);
+        try {
+          const res = await fetch('/api/admin/predictions/leagues', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              name: newLeagueName.trim(),
+              logo: newLeagueLogo.trim() || undefined,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في إضافة البطولة');
+          } else {
+            onShowMessage('success', `تمت إضافة بطولة "${newLeagueName.trim()}" بنجاح!`);
+            setCustomMatch((prev) => ({
+              ...prev,
+              leagueName: newLeagueName.trim(),
+              leagueLogo: newLeagueLogo.trim() || prev.leagueLogo,
+            }));
+            setNewLeagueName('');
+            setNewLeagueLogo('');
+            setIsCreateLeagueModalOpen(false);
+            await fetchExistingTeamsAndLeagues();
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsCreatingLeague(false);
+        }
+      },
+    });
+  };
+
+  // Add Team explicit handler
+  const handleCreateTeam = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTeamName.trim()) {
+      onShowMessage('error', 'يرجى إدخال اسم الفريق أو المنتخب');
+      return;
+    }
+
+    requestConfirmation({
+      title: 'إضافة فريق أو منتخب جديد',
+      message: `هل أنت متأكد من إضافة "${newTeamName.trim()}" إلى قاعدة بيانات الفرق والمنتخبات؟`,
+      confirmText: 'تأكيد الإضافة',
+      onConfirm: async () => {
+        setIsCreatingTeam(true);
+        try {
+          const res = await fetch('/api/admin/predictions/teams', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              name: newTeamName.trim(),
+              logo: newTeamLogo.trim() || undefined,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في إضافة الفريق');
+          } else {
+            onShowMessage('success', `تمت إضافة الفريق أو المنتخب "${newTeamName.trim()}" بنجاح!`);
+            if (!customMatch.homeTeamName) {
+              setCustomMatch((prev) => ({
+                ...prev,
+                homeTeamName: newTeamName.trim(),
+                homeTeamLogo: newTeamLogo.trim() || prev.homeTeamLogo,
+              }));
+            } else if (!customMatch.awayTeamName) {
+              setCustomMatch((prev) => ({
+                ...prev,
+                awayTeamName: newTeamName.trim(),
+                awayTeamLogo: newTeamLogo.trim() || prev.awayTeamLogo,
+              }));
+            }
+            setNewTeamName('');
+            setNewTeamLogo('');
+            setIsCreateTeamModalOpen(false);
+            await fetchExistingTeamsAndLeagues();
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsCreatingTeam(false);
+        }
+      },
+    });
+  };
+
+  // Admin Save Participant Prediction
+  const handleAdminSaveUserPrediction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!viewingPredictionsForMatch) return;
+    const uid = Number(newPredUserId);
+    const hScore = Number(newPredHomeScore);
+    const aScore = Number(newPredAwayScore);
+
+    if (!uid) {
+      onShowMessage('error', 'يرجى اختيار المتسابق من القائمة');
+      return;
+    }
+    if (isNaN(hScore) || isNaN(aScore) || hScore < 0 || aScore < 0 || hScore > 30 || aScore > 30) {
+      onShowMessage('error', 'يرجى إدخال أرقام صحيحة للأهداف بين 0 و 30');
+      return;
+    }
+
+    const participantName = participants.find((p) => p.userId === uid)?.userName || 'المتسابق المختار';
+
+    requestConfirmation({
+      title: 'إضافة توقع يدوي لمشارك',
+      message: `هل أنت متأكد من حفظ التوقع (${hScore} - ${aScore}) للمتسابق "${participantName}"؟ سيتم احتساب النقاط وتحديث الترتيب العام فوراً في حال كانت نتيجة المباراة معتمدة.`,
+      confirmText: 'تأكيد الحفظ',
+      onConfirm: async () => {
+        setIsSavingUserPred(true);
+        try {
+          const res = await fetch('/api/admin/predictions/user-prediction', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              userId: uid,
+              predictionMatchId: viewingPredictionsForMatch.id,
+              homeScore: hScore,
+              awayScore: aScore,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في حفظ التوقع');
+          } else {
+            onShowMessage('success', data.message || 'تم حفظ التوقع بنجاح واحتساب النقاط!');
+            setIsAddUserPredModalOpen(false);
+            setNewPredUserId('');
+            setNewPredHomeScore('');
+            setNewPredAwayScore('');
+            await fetchPredictionMatches();
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsSavingUserPred(false);
+        }
+      },
+    });
+  };
+
+  // Admin Update Participant Prediction
+  const handleAdminUpdateUserPrediction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUserPred) return;
+    const hScore = Number(editPredHomeScore);
+    const aScore = Number(editPredAwayScore);
+
+    if (isNaN(hScore) || isNaN(aScore) || hScore < 0 || aScore < 0 || hScore > 30 || aScore > 30) {
+      onShowMessage('error', 'يرجى إدخال أرقام صحيحة للأهداف بين 0 و 30');
+      return;
+    }
+
+    requestConfirmation({
+      title: 'تعديل توقع المشارك',
+      message: `هل أنت متأكد من تعديل توقع المتسابق "${editingUserPred.userName}" إلى (${hScore} - ${aScore})؟ سيتم إعادة تقييم النقاط وتحديث الترتيب العام فوراً في حال كانت نتيجة المباراة معتمدة.`,
+      confirmText: 'حفظ التعديل',
+      onConfirm: async () => {
+        setIsUpdatingUserPred(true);
+        try {
+          const res = await fetch(`/api/admin/predictions/user-prediction/${editingUserPred.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              homeScore: hScore,
+              awayScore: aScore,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في تعديل التوقع');
+          } else {
+            onShowMessage('success', data.message || 'تم تعديل التوقع بنجاح وتحديث النقاط والترتيب!');
+            setEditingUserPred(null);
+            await fetchPredictionMatches();
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsUpdatingUserPred(false);
+        }
+      },
+    });
+  };
+
+  // Admin Delete Participant Prediction
+  const handleAdminDeleteUserPrediction = (predId: number, userName?: string) => {
+    requestConfirmation({
+      title: 'حذف توقع المشارك',
+      message: `هل أنت متأكد من حذف توقع المتسابق (${userName || 'المحدد'})؟ سيتم حذف التوقع وإلغاء أي نقاط كانت محتسبة له وتحديث الترتيب العام فوراً دون أي تكرار.`,
+      confirmText: 'تأكيد الحذف',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/admin/predictions/user-prediction/${predId}`, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            onShowMessage('error', data.error || 'فشل في حذف التوقع');
+          } else {
+            onShowMessage('success', data.message || 'تم حذف التوقع وتحديث الترتيب بنجاح');
+            await fetchPredictionMatches();
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        }
+      },
+    });
   };
 
   // Save contest settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsActionLoading(true);
-    try {
-      const res = await fetch('/api/admin/predictions/contest/settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(contestSettings),
-      });
+    requestConfirmation({
+      title: 'حفظ إعدادات المسابقة',
+      message: 'هل أنت متأكد من حفظ وتطبيق إعدادات ونقاط مسابقة التوقعات؟',
+      confirmText: 'حفظ الإعدادات',
+      onConfirm: async () => {
+        setIsActionLoading(true);
+        try {
+          const res = await fetch('/api/admin/predictions/contest/settings', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(contestSettings),
+          });
 
-      const data = await res.json();
-      if (res.ok) {
-        onShowMessage('success', 'تم حفظ إعدادات المسابقة بنجاح');
-        await fetchContestSettings();
-      } else {
-        onShowMessage('error', data.error || 'فشل في حفظ إعدادات المسابقة');
-      }
-    } catch (e: any) {
-      onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
-    } finally {
-      setIsActionLoading(false);
-    }
+          const data = await res.json();
+          if (res.ok) {
+            onShowMessage('success', 'تم حفظ إعدادات المسابقة بنجاح');
+            await fetchContestSettings();
+          } else {
+            onShowMessage('error', data.error || 'فشل في حفظ إعدادات المسابقة');
+          }
+        } catch (e: any) {
+          onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
   // Date strings for comparison in UTC format
@@ -904,6 +1480,7 @@ export default function AdminPredictionsManager({
                                   setConfirmingMatch(pm);
                                   setManualHomeScore(m.homeScore ?? 0);
                                   setManualAwayScore(m.awayScore ?? 0);
+                                  setConfirmingMatchStatus(m.status || 'FINISHED');
                                 }}
                                 className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 mx-auto cursor-pointer ${
                                   isEvaluated
@@ -912,13 +1489,23 @@ export default function AdminPredictionsManager({
                                 }`}
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>{isEvaluated ? 'إعادة احتساب' : `تأكيد (+${points})`}</span>
+                                <span>{isEvaluated ? 'تعديل النتيجة' : `تأكيد (+${points})`}</span>
                               </button>
                             </td>
 
                             {/* Actions & Archive */}
                             <td className="p-3 sm:p-4 text-center">
                               <div className="flex items-center justify-center gap-1.5">
+                                {/* Edit Prediction Match Details */}
+                                <button
+                                  type="button"
+                                  onClick={() => openEditMatchModal(pm)}
+                                  className="p-2 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-400 transition-colors cursor-pointer"
+                                  title="تعديل بيانات التوقع والمباراة (الفرق، الموعد، البطولة، النتيجة)"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+
                                 {/* Open/Close toggle */}
                                 <button
                                   type="button"
@@ -947,7 +1534,7 @@ export default function AdminPredictionsManager({
                                 ) : (
                                   <button
                                     type="button"
-                                    onClick={() => setDeleteModalItem(pm)}
+                                    onClick={() => handleDeletePrediction(pm)}
                                     className="p-2 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/50 transition-colors cursor-pointer"
                                     title="حذف من مسابقة التوقعات"
                                   >
@@ -1035,7 +1622,7 @@ export default function AdminPredictionsManager({
                           )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div className="grid grid-cols-4 gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                           <button
                             type="button"
                             onClick={() => {
@@ -1043,10 +1630,10 @@ export default function AdminPredictionsManager({
                               setPredictionModalSearch('');
                               setPredictionModalFilter('all');
                             }}
-                            className="flex items-center justify-center gap-1.5 p-2 rounded-lg bg-white hover:bg-brand/10 hover:text-brand dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-black text-xs transition-colors border border-gray-200 dark:border-gray-700"
+                            className="flex items-center justify-center gap-1 p-2 rounded-lg bg-white hover:bg-brand/10 hover:text-brand dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-black text-xs transition-colors border border-gray-200 dark:border-gray-700"
                           >
                             <Users className="w-3.5 h-3.5" />
-                            <span>{pm.participantsCount || pm.predictions?.length || 0} مشارك</span>
+                            <span>{pm.participantsCount || pm.predictions?.length || 0}</span>
                           </button>
 
                           <button
@@ -1055,16 +1642,43 @@ export default function AdminPredictionsManager({
                               setConfirmingMatch(pm);
                               setManualHomeScore(m.homeScore ?? 0);
                               setManualAwayScore(m.awayScore ?? 0);
+                              setConfirmingMatchStatus(m.status || 'FINISHED');
                             }}
-                            className={`flex items-center justify-center gap-1.5 p-2 rounded-lg font-black text-xs transition-all ${
+                            className={`flex items-center justify-center gap-1 p-2 rounded-lg font-black text-xs transition-all ${
                               isEvaluated
                                 ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                                 : 'bg-amber-500 text-white'
                             }`}
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{isEvaluated ? 'إعادة احتساب' : 'تأكيد النتيجة'}</span>
+                            <span>{isEvaluated ? 'النتيجة' : 'تأكيد'}</span>
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => openEditMatchModal(pm)}
+                            className="flex items-center justify-center gap-1 p-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 font-black text-xs transition-colors border border-blue-200 dark:border-blue-900"
+                            title="تعديل بيانات التوقع"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>تعديل</span>
+                          </button>
+
+                          {!isEvaluated ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePrediction(pm)}
+                              className="flex items-center justify-center gap-1 p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400 font-black text-xs transition-colors border border-red-200 dark:border-red-900"
+                              title="حذف المباراة من التوقعات"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>حذف</span>
+                            </button>
+                          ) : (
+                            <div className="flex items-center justify-center p-2 text-emerald-600 dark:text-emerald-400 font-bold text-[10px]">
+                              <Archive className="w-3.5 h-3.5" />
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1156,15 +1770,40 @@ export default function AdminPredictionsManager({
               <form onSubmit={handleAddCustomMatch} className="space-y-4 max-w-2xl">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                      اسم الدوري / البطولة *
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                        اسم الدوري / البطولة *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewLeagueName('');
+                          setNewLeagueLogo('');
+                          setIsCreateLeagueModalOpen(true);
+                        }}
+                        className="text-[11px] font-black text-brand hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>+ إضافة دوري جديد</span>
+                      </button>
+                    </div>
                     <input
                       type="text"
                       required
-                      placeholder="مثال: الدوري العراقي الممتاز"
+                      list="existing-leagues-list"
+                      placeholder="مثال: الدوري العراقي الممتاز، دوري روشن السعودي..."
                       value={customMatch.leagueName}
-                      onChange={(e) => setCustomMatch({ ...customMatch, leagueName: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const matchLeague = existingData.leagues.find(
+                          (l) => l.name.toLowerCase() === val.trim().toLowerCase()
+                        );
+                        setCustomMatch({
+                          ...customMatch,
+                          leagueName: val,
+                          leagueLogo: matchLeague?.logo || customMatch.leagueLogo,
+                        });
+                      }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                     />
                   </div>
@@ -1184,15 +1823,40 @@ export default function AdminPredictionsManager({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                      الفريق المضيف (صاحب الأرض) *
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                        الفريق المضيف (صاحب الأرض) *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewTeamName('');
+                          setNewTeamLogo('');
+                          setIsCreateTeamModalOpen(true);
+                        }}
+                        className="text-[11px] font-black text-brand hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>+ إضافة فريق / منتخب</span>
+                      </button>
+                    </div>
                     <input
                       type="text"
                       required
-                      placeholder="مثال: القوة الجوية"
+                      list="existing-teams-list"
+                      placeholder="مثال: القوة الجوية، منتخب السعودية، الهلال..."
                       value={customMatch.homeTeamName}
-                      onChange={(e) => setCustomMatch({ ...customMatch, homeTeamName: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const matchTeam = existingData.teams.find(
+                          (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                        );
+                        setCustomMatch({
+                          ...customMatch,
+                          homeTeamName: val,
+                          homeTeamLogo: matchTeam?.logo || customMatch.homeTeamLogo,
+                        });
+                      }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                     />
                   </div>
@@ -1212,15 +1876,40 @@ export default function AdminPredictionsManager({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                      الفريق الضيف *
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                        الفريق الضيف *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewTeamName('');
+                          setNewTeamLogo('');
+                          setIsCreateTeamModalOpen(true);
+                        }}
+                        className="text-[11px] font-black text-brand hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>+ إضافة فريق / منتخب</span>
+                      </button>
+                    </div>
                     <input
                       type="text"
                       required
-                      placeholder="مثال: الزوراء"
+                      list="existing-teams-list"
+                      placeholder="مثال: الزوراء، منتخب العراق، النصر..."
                       value={customMatch.awayTeamName}
-                      onChange={(e) => setCustomMatch({ ...customMatch, awayTeamName: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const matchTeam = existingData.teams.find(
+                          (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                        );
+                        setCustomMatch({
+                          ...customMatch,
+                          awayTeamName: val,
+                          awayTeamLogo: matchTeam?.logo || customMatch.awayTeamLogo,
+                        });
+                      }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                     />
                   </div>
@@ -1606,6 +2295,15 @@ export default function AdminPredictionsManager({
                                     إلغاء الحظر
                                   </button>
                                 )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteParticipant(part.id, u?.name || 'مستخدم')}
+                                  className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                  title="حذف المشارك"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1705,6 +2403,15 @@ export default function AdminPredictionsManager({
                                 إلغاء الحظر
                               </button>
                             )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteParticipant(part.id, u?.name || 'مستخدم')}
+                              className="p-2 rounded text-gray-400 hover:text-red-600 bg-gray-100 dark:bg-gray-800"
+                              title="حذف المشارك"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1865,6 +2572,19 @@ export default function AdminPredictionsManager({
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between gap-2 p-2.5 bg-white dark:bg-gray-700/60 rounded-xl border border-gray-200 dark:border-gray-600 text-xs">
+                  <span className="font-bold text-gray-700 dark:text-gray-300">حالة المباراة:</span>
+                  <select
+                    value={confirmingMatchStatus}
+                    onChange={(e) => setConfirmingMatchStatus(e.target.value)}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                  >
+                    <option value="FINISHED">منتهية (FINISHED) - اعتماد النتيجة واحتساب النقاط</option>
+                    <option value="LIVE">مباشرة الآن (LIVE)</option>
+                    <option value="SCHEDULED">قادمة / مجدولة (SCHEDULED)</option>
+                  </select>
+                </div>
+
                 <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mt-2 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl text-right">
                   <div>
                     ⚡ سيتم احتساب <strong>+{confirmingMatch.pointsPerMatch || 2} نقاط</strong> فوراً لكل متسابق توقع هذه النتيجة بدقة.
@@ -1900,14 +2620,14 @@ export default function AdminPredictionsManager({
                   {isConfirmingScore ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>جاري الاعتماد واحتساب النقاط...</span>
+                      <span>جاري الحفظ واحتساب النقاط...</span>
                     </>
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
                       <span>
                         {confirmingMatch.isCalculated || confirmingMatch.isConfirmedByAdmin
-                          ? `إعادة الاحتساب (${manualHomeScore}-${manualAwayScore})`
+                          ? `حفظ النتيجة وتحديث النقاط (${manualHomeScore}-${manualAwayScore})`
                           : `تأكيد واحتساب (+${confirmingMatch.pointsPerMatch || 2})`}
                       </span>
                     </>
@@ -1981,7 +2701,7 @@ export default function AdminPredictionsManager({
 
             {/* Filter & Search inside modal */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-3">
-              <div className="flex items-center bg-gray-100 dark:bg-gray-800 p-1 rounded-xl text-xs font-bold">
+              <div className="flex items-center bg-gray-100 dark:bg-gray-800 p-1 rounded-xl text-xs font-bold overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setPredictionModalFilter('all')}
@@ -2020,15 +2740,31 @@ export default function AdminPredictionsManager({
                 </button>
               </div>
 
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="بحث باسم المتسابق أو البريد..."
-                  value={predictionModalSearch}
-                  onChange={(e) => setPredictionModalSearch(e.target.value)}
-                  className="w-full sm:w-56 pr-8 pl-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold focus:outline-none"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 sm:w-56">
+                  <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="بحث باسم المتسابق أو البريد..."
+                    value={predictionModalSearch}
+                    onChange={(e) => setPredictionModalSearch(e.target.value)}
+                    className="w-full pr-8 pl-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewPredUserId('');
+                    setNewPredHomeScore('');
+                    setNewPredAwayScore('');
+                    setIsAddUserPredModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-brand hover:bg-emerald-600 text-white text-xs font-black transition-all flex items-center gap-1 shadow-xs cursor-pointer shrink-0"
+                  title="إضافة توقع يدوي لمشارك"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">إضافة توقع</span>
+                </button>
               </div>
             </div>
 
@@ -2132,6 +2868,30 @@ export default function AdminPredictionsManager({
                             </span>
                           )}
                         </div>
+
+                        {/* Admin Edit & Delete Actions for Individual Prediction */}
+                        <div className="flex items-center gap-1 border-r border-gray-200 dark:border-gray-700 pr-2">
+                          <button
+                            type="button"
+                            title="تعديل توقع المشارك"
+                            onClick={() => {
+                              setEditingUserPred(p);
+                              setEditPredHomeScore(String(p.homeScore));
+                              setEditPredAwayScore(String(p.awayScore));
+                            }}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="حذف توقع المشارك"
+                            onClick={() => handleAdminDeleteUserPrediction(p.id, p.userName)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -2225,39 +2985,718 @@ export default function AdminPredictionsManager({
         </div>
       )}
 
-      {/* 9. MODAL: Delete Prediction Match */}
-      {deleteModalItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-6 max-w-sm w-full shadow-2xl space-y-4 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-600 flex items-center justify-center mx-auto">
-              <Trash2 className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-black text-gray-900 dark:text-white">
-              حذف المباراة من التوقعات؟
-            </h3>
-            <p className="text-xs text-gray-400 font-bold">
-              هل أنت متأكد من حذف مباراة ({deleteModalItem.match?.homeTeam?.name} vs {deleteModalItem.match?.awayTeam?.name})؟ سيتم حذف جميع التوقعات المسجلة عليها.
-            </p>
-            <div className="flex items-center justify-center gap-3 pt-2">
+      {/* 10. MODAL: Edit Prediction Match & Details (Full Admin Control) */}
+      {editingMatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 max-w-xl w-full shadow-2xl space-y-4 my-8">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 dark:text-white">
+                    تعديل توقع المباراة
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold">
+                    تعديل الفريقين، التوقيت، البطولة، النتيجة، النقاط، وحالة المباراة
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => setDeleteModalItem(null)}
-                className="px-4 py-2 rounded-xl font-bold text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 cursor-pointer"
+                onClick={() => setEditingMatch(null)}
+                className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                disabled={isActionLoading}
-                onClick={() => handleDeletePrediction(deleteModalItem)}
-                className="px-5 py-2 rounded-xl bg-red-600 text-white font-black text-xs hover:bg-red-700 shadow-xs cursor-pointer"
-              >
-                {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'تأكيد الحذف'}
+                <XCircle className="w-5 h-5" />
               </button>
             </div>
+
+            <form onSubmit={handleSaveMatchEdit} className="space-y-4">
+              {/* League / Tournament */}
+              <div className="bg-gray-50 dark:bg-gray-800/60 p-3.5 rounded-2xl space-y-3">
+                <div className="flex items-center gap-2 text-xs font-black text-gray-700 dark:text-gray-300">
+                  <Globe className="w-4 h-4 text-brand" />
+                  <span>البطولة / الدوري</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">
+                      اسم البطولة أو الدوري *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      list="existing-leagues-list"
+                      value={editingMatchForm.leagueName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const matchLeague = existingData.leagues.find(
+                          (l) => l.name.toLowerCase() === val.trim().toLowerCase()
+                        );
+                        setEditingMatchForm({
+                          ...editingMatchForm,
+                          leagueName: val,
+                          leagueLogo: matchLeague?.logo || editingMatchForm.leagueLogo,
+                        });
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                      placeholder="اختر أو اكتب اسم البطولة..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1">
+                      رابط شعار البطولة (اختياري)
+                    </label>
+                    <input
+                      type="url"
+                      value={editingMatchForm.leagueLogo}
+                      onChange={(e) => setEditingMatchForm({ ...editingMatchForm, leagueLogo: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                      placeholder="https://..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Teams Section */}
+              <div className="bg-gray-50 dark:bg-gray-800/60 p-3.5 rounded-2xl space-y-3">
+                <div className="flex items-center gap-2 text-xs font-black text-gray-700 dark:text-gray-300">
+                  <ShieldCheck className="w-4 h-4 text-brand" />
+                  <span>الفريقان المتباريان</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Home Team */}
+                  <div className="space-y-2 border-b sm:border-b-0 sm:border-l border-gray-200 dark:border-gray-700 pb-3 sm:pb-0 sm:pl-3">
+                    <span className="text-[11px] font-black text-brand">الفريق الأول (صاحب الأرض) *</span>
+                    <div>
+                      <input
+                        type="text"
+                        required
+                        list="existing-teams-list"
+                        value={editingMatchForm.homeTeamName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const matchTeam = existingData.teams.find(
+                            (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                          );
+                          setEditingMatchForm({
+                            ...editingMatchForm,
+                            homeTeamName: val,
+                            homeTeamLogo: matchTeam?.logo || editingMatchForm.homeTeamLogo,
+                          });
+                        }}
+                        className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                        placeholder="اسم الفريق الأول..."
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="url"
+                        value={editingMatchForm.homeTeamLogo}
+                        onChange={(e) => setEditingMatchForm({ ...editingMatchForm, homeTeamLogo: e.target.value })}
+                        className="w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[11px] font-bold text-gray-900 dark:text-white"
+                        placeholder="شعار الفريق الأول (URL)..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* Away Team */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-black text-indigo-500">الفريق الثاني (الضيف) *</span>
+                    <div>
+                      <input
+                        type="text"
+                        required
+                        list="existing-teams-list"
+                        value={editingMatchForm.awayTeamName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const matchTeam = existingData.teams.find(
+                            (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                          );
+                          setEditingMatchForm({
+                            ...editingMatchForm,
+                            awayTeamName: val,
+                            awayTeamLogo: matchTeam?.logo || editingMatchForm.awayTeamLogo,
+                          });
+                        }}
+                        className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                        placeholder="اسم الفريق الثاني..."
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="url"
+                        value={editingMatchForm.awayTeamLogo}
+                        onChange={(e) => setEditingMatchForm({ ...editingMatchForm, awayTeamLogo: e.target.value })}
+                        className="w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[11px] font-bold text-gray-900 dark:text-white"
+                        placeholder="شعار الفريق الثاني (URL)..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Date, Time & Points */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="bg-gray-50 dark:bg-gray-800/60 p-3 rounded-2xl space-y-1">
+                  <label className="block text-[11px] font-black text-gray-700 dark:text-gray-300">
+                    موعد وتاريخ انطلاق المباراة *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={editingMatchForm.matchDate}
+                    onChange={(e) => setEditingMatchForm({ ...editingMatchForm, matchDate: e.target.value })}
+                    className="w-full p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="bg-gray-50 dark:bg-gray-800/60 p-3 rounded-2xl space-y-1">
+                  <label className="block text-[11px] font-black text-gray-700 dark:text-gray-300">
+                    نقاط التوقع الصحيح للمباراة *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      required
+                      value={editingMatchForm.pointsPerMatch}
+                      onChange={(e) => setEditingMatchForm({ ...editingMatchForm, pointsPerMatch: parseInt(e.target.value, 10) || 2 })}
+                      className="w-16 p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-black text-center text-gray-900 dark:text-white"
+                    />
+                    <div className="flex items-center gap-1">
+                      {[2, 3, 5, 10].map((pts) => (
+                        <button
+                          key={pts}
+                          type="button"
+                          onClick={() => setEditingMatchForm({ ...editingMatchForm, pointsPerMatch: pts })}
+                          className={`px-2 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                            editingMatchForm.pointsPerMatch === pts
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          +{pts}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Match Status & Scores */}
+              <div className="bg-gray-50 dark:bg-gray-800/60 p-3.5 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-black text-gray-700 dark:text-gray-300">
+                    حالة المباراة والنتيجة:
+                  </label>
+                  <select
+                    value={editingMatchForm.status}
+                    onChange={(e) => setEditingMatchForm({ ...editingMatchForm, status: e.target.value })}
+                    className="p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                  >
+                    <option value="SCHEDULED">قادمة / مجدولة (SCHEDULED)</option>
+                    <option value="LIVE">جارية الآن (LIVE)</option>
+                    <option value="FINISHED">منتهية (FINISHED) - اعتماد النتيجة واحتساب النقاط</option>
+                    <option value="CANCELLED">ملغاة (CANCELLED)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-center gap-4 dir-ltr pt-1">
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1 max-w-[90px] truncate">
+                      {editingMatchForm.homeTeamName || 'الفريق الأول'}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      placeholder="-"
+                      value={editingMatchForm.homeScore}
+                      onChange={(e) => setEditingMatchForm({ ...editingMatchForm, homeScore: e.target.value })}
+                      className="w-16 h-11 text-center text-xl font-black rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <span className="text-xl font-black text-gray-400 self-end pb-2">:</span>
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1 max-w-[90px] truncate">
+                      {editingMatchForm.awayTeamName || 'الفريق الثاني'}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      placeholder="-"
+                      value={editingMatchForm.awayScore}
+                      onChange={(e) => setEditingMatchForm({ ...editingMatchForm, awayScore: e.target.value })}
+                      className="w-16 h-11 text-center text-xl font-black rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {editingMatchForm.status === 'FINISHED' && (
+                  <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl text-right">
+                    ⚡ عند الحفظ، ستتم إعادة احتساب نقاط جميع المتسابقين تلقائياً وبشكل آمن وفوري دون أي تكرار.
+                  </div>
+                )}
+              </div>
+
+              {/* Active Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/60">
+                <div>
+                  <span className="block text-xs font-black text-gray-900 dark:text-white">
+                    فتح إمكانية التوقع للجمهور
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-bold">
+                    {editingMatchForm.isActive ? 'المباراة متاحة حالياً للتوقع' : 'التوقع مغلق لهذه المباراة'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingMatchForm({ ...editingMatchForm, isActive: !editingMatchForm.isActive })}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                    editingMatchForm.isActive
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  {editingMatchForm.isActive ? 'مفتوح للتوقع' : 'مغلق'}
+                </button>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingMatch(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingMatchEdit}
+                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-2 shadow-xs cursor-pointer"
+                >
+                  {isSavingMatchEdit ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>جاري حفظ التعديلات...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>حفظ التعديلات في قاعدة البيانات</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
+
+      {/* 11. MODAL: Quick Create League */}
+      {isCreateLeagueModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center font-bold">
+                  <Trophy className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 dark:text-white">
+                    إضافة بطولة أو دوري جديد
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold">
+                    حفظ الدوري في قاعدة البيانات لسهولة اختياره دائماً
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateLeagueModalOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateLeague} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  اسم البطولة / الدوري <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: دوري روشن السعودي"
+                  value={newLeagueName}
+                  onChange={(e) => setNewLeagueName(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  رابط شعار البطولة (Logo URL)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={newLeagueLogo}
+                  onChange={(e) => setNewLeagueLogo(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-mono text-gray-900 dark:text-white dir-ltr text-right"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateLeagueModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingLeague}
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isCreatingLeague ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>حفظ البطولة</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 12. MODAL: Quick Create Team / National Team */}
+      {isCreateTeamModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 dark:text-white">
+                    إضافة فريق أو منتخب وطني
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold">
+                    حفظ الفريق في قاعدة البيانات مع دعم المنتخبات
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateTeamModalOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTeam} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  اسم الفريق أو المنتخب <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: منتخب السعودية، الهلال، النصر"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  رابط الشعار أو العلم (Logo URL)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={newTeamLogo}
+                  onChange={(e) => setNewTeamLogo(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-mono text-gray-900 dark:text-white dir-ltr text-right"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateTeamModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingTeam}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isCreatingTeam ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>حفظ الفريق</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 13. MODAL: Add Manual Prediction for User */}
+      {isAddUserPredModalOpen && viewingPredictionsForMatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-brand/10 text-brand flex items-center justify-center font-bold">
+                  <PlusCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 dark:text-white">
+                    إضافة توقع يدوي لمستخدم
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold">
+                    تسجيل توقع نيابة عن مستخدم بواسطة الأدمن
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddUserPredModalOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Match info banner */}
+            <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-2xl flex items-center justify-between text-xs font-bold text-gray-800 dark:text-gray-200">
+              <span className="truncate max-w-[120px]">{viewingPredictionsForMatch.match?.homeTeam?.name}</span>
+              <span className="text-gray-400 font-mono text-[11px]">vs</span>
+              <span className="truncate max-w-[120px] text-left">{viewingPredictionsForMatch.match?.awayTeam?.name}</span>
+            </div>
+
+            <form onSubmit={handleAdminSaveUserPrediction} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  المتسابق أو المستخدم <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={newPredUserId}
+                  onChange={(e) => setNewPredUserId(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
+                >
+                  <option value="">-- اختر المتسابق من القائمة --</option>
+                  {participants.map((p) => (
+                    <option key={p.id || p.userId} value={p.userId}>
+                      {p.userName || p.name || `مستخدم #${p.userId}`} ({p.userEmail || p.email || ''})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Home & Away Scores */}
+              <div className="bg-gray-50 dark:bg-gray-800/60 p-3 rounded-2xl">
+                <label className="block text-xs font-black text-gray-700 dark:text-gray-300 text-center mb-2">
+                  توقع النتيجة (أهداف الفريقين)
+                </label>
+                <div className="flex items-center justify-center gap-4 dir-ltr">
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-gray-500 mb-1 max-w-[90px] truncate">
+                      {viewingPredictionsForMatch.match?.homeTeam?.name}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      required
+                      value={newPredHomeScore}
+                      onChange={(e) => setNewPredHomeScore(e.target.value)}
+                      className="w-16 h-11 text-center text-xl font-black rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <span className="text-xl font-black text-gray-400 self-end pb-2">:</span>
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-gray-500 mb-1 max-w-[90px] truncate">
+                      {viewingPredictionsForMatch.match?.awayTeam?.name}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      required
+                      value={newPredAwayScore}
+                      onChange={(e) => setNewPredAwayScore(e.target.value)}
+                      className="w-16 h-11 text-center text-xl font-black rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setIsAddUserPredModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingUserPred}
+                  className="px-5 py-2 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isSavingUserPred ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>حفظ التوقع</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 14. MODAL: Edit Specific User Prediction */}
+      {editingUserPred && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900 dark:text-white">
+                    تعديل توقع المستخدم
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold">
+                    تعديل أهداف التوقع للمتسابق
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingUserPred(null)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* User display */}
+            <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-2xl flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-brand/10 text-brand flex items-center justify-center font-black text-xs shrink-0">
+                {editingUserPred.userAvatar ? (
+                  <img src={editingUserPred.userAvatar} alt="" className="w-full h-full object-cover rounded-full" />
+                ) : (
+                  editingUserPred.userName?.charAt(0) || 'U'
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-black text-gray-900 dark:text-white">
+                  {editingUserPred.userName || 'مستخدم'}
+                </div>
+                <div className="text-[10px] text-gray-400 font-mono">
+                  {editingUserPred.userEmail || 'لا يوجد بريد'}
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleAdminUpdateUserPrediction} className="space-y-4">
+              {/* Home & Away Scores */}
+              <div className="bg-gray-50 dark:bg-gray-800/60 p-3.5 rounded-2xl">
+                <label className="block text-xs font-black text-gray-700 dark:text-gray-300 text-center mb-2">
+                  تعديل أهداف التوقع
+                </label>
+                <div className="flex items-center justify-center gap-4 dir-ltr">
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-gray-500 mb-1 max-w-[90px] truncate">
+                      {viewingPredictionsForMatch?.match?.homeTeam?.name || 'الفريق الأول'}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      required
+                      value={editPredHomeScore}
+                      onChange={(e) => setEditPredHomeScore(e.target.value)}
+                      className="w-16 h-11 text-center text-xl font-black rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <span className="text-xl font-black text-gray-400 self-end pb-2">:</span>
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-gray-500 mb-1 max-w-[90px] truncate">
+                      {viewingPredictionsForMatch?.match?.awayTeam?.name || 'الفريق الثاني'}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      required
+                      value={editPredAwayScore}
+                      onChange={(e) => setEditPredAwayScore(e.target.value)}
+                      className="w-16 h-11 text-center text-xl font-black rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingUserPred(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingUserPred}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isUpdatingUserPred ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>حفظ التعديل</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 15. CONFIRM MODAL (Unified confirmation for sensitive/destructive actions) */}
+      <ConfirmModal
+        isOpen={confirmModalConfig.isOpen}
+        title={confirmModalConfig.title}
+        message={confirmModalConfig.message}
+        confirmText={confirmModalConfig.confirmText}
+        cancelText={confirmModalConfig.cancelText}
+        variant={confirmModalConfig.variant}
+        isLoading={confirmModalConfig.isLoading}
+        onConfirm={confirmModalConfig.onConfirm}
+        onClose={() => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }))}
+      />
+      <datalist id="existing-leagues-list">
+        {existingData.leagues.map((l) => (
+          <option key={l.id} value={l.name} />
+        ))}
+      </datalist>
+      <datalist id="existing-teams-list">
+        {existingData.teams.map((t) => (
+          <option key={t.id} value={t.name} />
+        ))}
+      </datalist>
     </div>
   );
 }

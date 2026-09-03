@@ -67,7 +67,16 @@ import {
   getAdminAvailableMatchesForSelection,
   confirmAndEvaluatePredictionMatch,
   getAdminPredictionStats,
+  getExistingTeamsAndLeagues,
+  updatePredictionMatchDetails,
+  updatePredictionMatchResult,
+  createAdminLeague,
+  createAdminTeam,
+  adminSaveUserPrediction,
+  adminUpdateUserPrediction,
+  adminDeleteUserPrediction,
 } from './src/services/predictionService.ts';
+import { seedSaudiAndNationalTeams } from './src/services/seedSaudiAndNationalTeams.ts';
 import {
   validateScore,
   validatePointsPerMatch,
@@ -889,9 +898,26 @@ async function startServer() {
       const user = req.dbUser;
       if (!user) return res.status(403).json({ error: 'المستخدم غير متزامن' });
 
-      const { title, content, image, isFeatured, isBreaking, status } = req.body;
+      const { title, content, image, isFeatured, isBreaking, status, categoryId } = req.body;
       if (!title || !content) {
         return res.status(400).json({ error: 'عنوان ومحتوى الخبر مطلوبان' });
+      }
+
+      let parsedCategoryId: number | null = null;
+      if (categoryId !== undefined && categoryId !== null && categoryId !== '') {
+        const parsed = parseInt(String(categoryId), 10);
+        if (isNaN(parsed) || parsed <= 0) {
+          return res.status(400).json({ error: 'معرف التصنيف غير صحيح' });
+        }
+        const catExists = await withDbRetry(() =>
+          db.select().from(categories).where(eq(categories.id, parsed)).limit(1)
+        );
+        if (catExists.length === 0) {
+          return res.status(400).json({ error: 'التصنيف المختار غير موجود' });
+        }
+        parsedCategoryId = parsed;
+      } else {
+        return res.status(400).json({ error: 'يرجى اختيار تصنيف الخبر' });
       }
 
       const cleanTitle = escapeHtml(String(title).trim());
@@ -906,7 +932,7 @@ async function startServer() {
             excerpt: null,
             content: cleanContent,
             image: cleanImage,
-            categoryId: null,
+            categoryId: parsedCategoryId,
             authorId: user.id,
             isFeatured: !!isFeatured,
             isBreaking: !!isBreaking,
@@ -915,8 +941,21 @@ async function startServer() {
           .returning()
       );
 
+      let categoryObj: { id: number; name: string; slug: string } | null = null;
+      if (parsedCategoryId) {
+        const catRow = await withDbRetry(() =>
+          db.select().from(categories).where(eq(categories.id, parsedCategoryId!)).limit(1)
+        );
+        if (catRow.length > 0) {
+          categoryObj = { id: catRow[0].id, name: catRow[0].name, slug: catRow[0].slug };
+        }
+      }
+
       await logActivity(user.id, 'CREATE', 'NEWS', String(result[0].id), { title: cleanTitle });
-      return res.status(201).json(result[0]);
+      return res.status(201).json({
+        ...result[0],
+        category: categoryObj,
+      });
     } catch (error: any) {
       console.error('Failed to create news:', error);
       return res.status(500).json({ error: 'فشل في إضافة الخبر' });
@@ -928,10 +967,29 @@ async function startServer() {
       const id = parseInt(req.params.id as string, 10);
       if (isNaN(id)) return res.status(400).json({ error: 'معرف غير صحيح' });
 
-      const { title, content, image, isFeatured, isBreaking, status } = req.body;
+      const { title, content, image, isFeatured, isBreaking, status, categoryId } = req.body;
       const cleanTitle = title ? escapeHtml(String(title).trim()) : undefined;
       const cleanContent = content ? sanitizeContent(String(content).trim()) : undefined;
       const cleanImage = image !== undefined ? (image && typeof image === 'string' && image.trim() !== '' ? image.trim() : null) : undefined;
+
+      let categoryIdToUpdate: number | null | undefined = undefined;
+      if (categoryId !== undefined) {
+        if (categoryId !== null && categoryId !== '') {
+          const parsed = parseInt(String(categoryId), 10);
+          if (isNaN(parsed) || parsed <= 0) {
+            return res.status(400).json({ error: 'معرف التصنيف غير صحيح' });
+          }
+          const catExists = await withDbRetry(() =>
+            db.select().from(categories).where(eq(categories.id, parsed)).limit(1)
+          );
+          if (catExists.length === 0) {
+            return res.status(400).json({ error: 'التصنيف المختار غير موجود' });
+          }
+          categoryIdToUpdate = parsed;
+        } else {
+          categoryIdToUpdate = null;
+        }
+      }
 
       const result = await withDbRetry(() =>
         db
@@ -940,6 +998,7 @@ async function startServer() {
             ...(cleanTitle ? { title: cleanTitle } : {}),
             ...(cleanContent ? { content: cleanContent } : {}),
             ...(cleanImage !== undefined ? { image: cleanImage } : {}),
+            ...(categoryIdToUpdate !== undefined ? { categoryId: categoryIdToUpdate } : {}),
             isFeatured: !!isFeatured,
             isBreaking: !!isBreaking,
             status: status === 'draft' ? 'draft' : 'published',
@@ -950,8 +1009,22 @@ async function startServer() {
       );
 
       if (result.length === 0) return res.status(404).json({ error: 'الخبر غير موجود' });
+
+      let categoryObj: { id: number; name: string; slug: string } | null = null;
+      if (result[0].categoryId) {
+        const catRow = await withDbRetry(() =>
+          db.select().from(categories).where(eq(categories.id, result[0].categoryId!)).limit(1)
+        );
+        if (catRow.length > 0) {
+          categoryObj = { id: catRow[0].id, name: catRow[0].name, slug: catRow[0].slug };
+        }
+      }
+
       await logActivity(req.dbUser.id, 'UPDATE', 'NEWS', String(id), { title: result[0].title });
-      return res.json(result[0]);
+      return res.json({
+        ...result[0],
+        category: categoryObj,
+      });
     } catch (error: any) {
       console.error('Failed to update news:', error);
       return res.status(500).json({ error: 'فشل في تعديل الخبر' });
@@ -1368,23 +1441,10 @@ async function startServer() {
 
   /**
    * DELETE /api/predictions/:id
-   * User: Delete own prediction by ID within allowed 1-minute window.
+   * User: Regular users cannot delete predictions per contest rules.
    */
   app.delete('/api/predictions/:id', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول أولاً' });
-
-      const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
-      if (!idCheck.valid || idCheck.value === undefined) {
-        return res.status(400).json({ error: idCheck.error || 'معرف التوقع غير صالح' });
-      }
-
-      const result = await deleteUserPredictionById(req.dbUser.id, idCheck.value);
-      return res.json(result);
-    } catch (error: any) {
-      console.error('Error deleting prediction:', error);
-      return res.status(400).json({ error: error.message || 'فشل في حذف التوقع' });
-    }
+    return res.status(403).json({ error: 'المستخدم العادي لا يستطيع حذف التوقعات' });
   });
 
   /**
@@ -1449,6 +1509,20 @@ async function startServer() {
     } catch (error: any) {
       console.error('Error fetching available matches for predictions:', error);
       return res.status(500).json({ error: 'فشل في جلب المباريات المتاحة' });
+    }
+  });
+
+  /**
+   * GET /api/admin/predictions/teams-and-leagues
+   * Admin: Fetch all existing teams and leagues in the system for autocomplete / reuse.
+   */
+  app.get('/api/admin/predictions/teams-and-leagues', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const data = await getExistingTeamsAndLeagues();
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error fetching existing teams and leagues:', error);
+      return res.status(500).json({ error: 'فشل في جلب قائمة الفرق والبطولات' });
     }
   });
 
@@ -1611,6 +1685,115 @@ async function startServer() {
   });
 
   /**
+   * PUT /api/admin/predictions/:id/result
+   * Admin: Edit match result (homeScore, awayScore, status) and safely recalculate points without duplicates.
+   */
+  app.put('/api/admin/predictions/:id/result', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
+
+      const { homeScore, awayScore, status } = req.body;
+      const hCheck = validateScore(homeScore, 'أهداف الفريق الأول');
+      if (!hCheck.valid || hCheck.value === undefined) {
+        return res.status(400).json({ error: hCheck.error || 'أهداف الفريق الأول غير صحيحة' });
+      }
+      const aCheck = validateScore(awayScore, 'أهداف الفريق الثاني');
+      if (!aCheck.valid || aCheck.value === undefined) {
+        return res.status(400).json({ error: aCheck.error || 'أهداف الفريق الثاني غير صحيحة' });
+      }
+
+      const result = await updatePredictionMatchResult(idCheck.value, req.dbUser.id, {
+        homeScore: hCheck.value,
+        awayScore: aCheck.value,
+        status: status || 'FINISHED',
+      });
+
+      await logActivity(req.dbUser.id, 'UPDATE_RESULT', 'PREDICTION_MATCH', String(idCheck.value), {
+        homeScore: hCheck.value,
+        awayScore: aCheck.value,
+        status: status || 'FINISHED',
+      });
+
+      return res.json({
+        success: true,
+        message: 'تم تحديث نتيجة المباراة وإعادة احتساب النقاط بنجاح دون أي تكرار',
+        data: result,
+      });
+    } catch (error: any) {
+      console.error('Error updating prediction match result:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تعديل نتيجة المباراة' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/predictions/:id
+   * Admin: Edit match details (teams, time, league, points, status, score, isActive).
+   */
+  app.put('/api/admin/predictions/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+      }
+
+      const {
+        homeTeamName,
+        homeTeamLogo,
+        awayTeamName,
+        awayTeamLogo,
+        leagueName,
+        leagueLogo,
+        matchDate,
+        pointsPerMatch,
+        homeScore,
+        awayScore,
+        status,
+        isActive,
+      } = req.body;
+
+      if (pointsPerMatch !== undefined && pointsPerMatch !== null) {
+        const ptsCheck = validatePointsPerMatch(pointsPerMatch, 'نقاط المباراة');
+        if (!ptsCheck.valid) {
+          return res.status(400).json({ error: ptsCheck.error || 'قيمة النقاط غير صحيحة' });
+        }
+      }
+
+      const result = await updatePredictionMatchDetails(idCheck.value, req.dbUser.id, {
+        homeTeamName,
+        homeTeamLogo,
+        awayTeamName,
+        awayTeamLogo,
+        leagueName,
+        leagueLogo,
+        matchDate,
+        pointsPerMatch,
+        homeScore,
+        awayScore,
+        status,
+        isActive,
+      });
+
+      await logActivity(req.dbUser.id, 'UPDATE_MATCH_DETAILS', 'PREDICTION_MATCH', String(idCheck.value), {
+        homeTeamName,
+        awayTeamName,
+        leagueName,
+        pointsPerMatch,
+        status,
+        homeScore,
+        awayScore,
+      });
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error updating prediction match details:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تعديل بيانات التوقع' });
+    }
+  });
+
+  /**
    * PUT /api/admin/predictions/:id/toggle
    * Toggle activation status of a prediction match.
    */
@@ -1648,6 +1831,154 @@ async function startServer() {
     } catch (error: any) {
       console.error('Error removing prediction match:', error);
       return res.status(500).json({ error: 'فشل في حذف المباراة من التوقعات' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/leagues
+   * Admin: Add a new league or tournament explicitly.
+   */
+  app.post('/api/admin/predictions/leagues', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const { name, logo } = req.body;
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'اسم الدوري أو البطولة مطلوب' });
+      }
+      const newLeague = await createAdminLeague(name.trim(), logo?.trim() || null);
+      await logActivity(req.dbUser.id, 'CREATE', 'LEAGUE', newLeague.id, { name: newLeague.name });
+      return res.json({ success: true, league: newLeague });
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message || 'فشل في إضافة الدوري' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/teams
+   * Admin: Add a new team or national team explicitly.
+   */
+  app.post('/api/admin/predictions/teams', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const { name, logo } = req.body;
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'اسم الفريق أو المنتخب مطلوب' });
+      }
+      const newTeam = await createAdminTeam(name.trim(), logo?.trim() || null);
+      await logActivity(req.dbUser.id, 'CREATE', 'TEAM', newTeam.id, { name: newTeam.name });
+      return res.json({ success: true, team: newTeam });
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message || 'فشل في إضافة الفريق' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/user-prediction
+   * Admin: Add or save a prediction for a participant on a match.
+   */
+  app.post('/api/admin/predictions/user-prediction', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const { userId, predictionMatchId, homeScore, awayScore } = req.body;
+
+      const uidCheck = validatePositiveId(userId, 'معرف المستخدم');
+      if (!uidCheck.valid || uidCheck.value === undefined) {
+        return res.status(400).json({ error: uidCheck.error || 'معرف المستخدم غير صالح' });
+      }
+
+      const pmidCheck = validatePositiveId(predictionMatchId, 'معرف مباراة التوقع');
+      if (!pmidCheck.valid || pmidCheck.value === undefined) {
+        return res.status(400).json({ error: pmidCheck.error || 'معرف مباراة التوقع غير صالح' });
+      }
+
+      const hScoreVal = validateScore(homeScore, 'أهداف الفريق المضيف');
+      if (!hScoreVal.valid || hScoreVal.value === undefined) {
+        return res.status(400).json({ error: hScoreVal.error });
+      }
+
+      const aScoreVal = validateScore(awayScore, 'أهداف الفريق الضيف');
+      if (!aScoreVal.valid || aScoreVal.value === undefined) {
+        return res.status(400).json({ error: aScoreVal.error });
+      }
+
+      const result = await adminSaveUserPrediction(
+        req.dbUser.id,
+        uidCheck.value,
+        pmidCheck.value,
+        hScoreVal.value,
+        aScoreVal.value
+      );
+
+      await logActivity(req.dbUser.id, 'ADMIN_SAVE', 'PREDICTION', String(pmidCheck.value), {
+        userId: uidCheck.value,
+        homeScore: hScoreVal.value,
+        awayScore: aScoreVal.value,
+      });
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error in admin save user prediction:', error);
+      return res.status(400).json({ error: error.message || 'فشل في حفظ توقع المشارك' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/predictions/user-prediction/:id
+   * Admin: Edit an existing prediction score directly.
+   */
+  app.put('/api/admin/predictions/user-prediction/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف التوقع غير صالح' });
+      }
+
+      const { homeScore, awayScore } = req.body;
+      const hScoreVal = validateScore(homeScore, 'أهداف الفريق المضيف');
+      if (!hScoreVal.valid || hScoreVal.value === undefined) {
+        return res.status(400).json({ error: hScoreVal.error });
+      }
+
+      const aScoreVal = validateScore(awayScore, 'أهداف الفريق الضيف');
+      if (!aScoreVal.valid || aScoreVal.value === undefined) {
+        return res.status(400).json({ error: aScoreVal.error });
+      }
+
+      const result = await adminUpdateUserPrediction(
+        req.dbUser.id,
+        idCheck.value,
+        hScoreVal.value,
+        aScoreVal.value
+      );
+
+      await logActivity(req.dbUser.id, 'ADMIN_UPDATE', 'PREDICTION', String(idCheck.value), {
+        homeScore: hScoreVal.value,
+        awayScore: aScoreVal.value,
+      });
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error in admin update user prediction:', error);
+      return res.status(400).json({ error: error.message || 'فشل في تعديل التوقع' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/predictions/user-prediction/:id
+   * Admin: Delete any user prediction with complete points cleanup.
+   */
+  app.delete('/api/admin/predictions/user-prediction/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف التوقع غير صالح' });
+      }
+
+      const result = await adminDeleteUserPrediction(req.dbUser.id, idCheck.value);
+
+      await logActivity(req.dbUser.id, 'ADMIN_DELETE', 'PREDICTION', String(idCheck.value));
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error in admin delete user prediction:', error);
+      return res.status(400).json({ error: error.message || 'فشل في حذف التوقع' });
     }
   });
 
@@ -1850,6 +2181,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[KoraNews Server] Running smoothly on http://0.0.0.0:${PORT}`);
+    seedSaudiAndNationalTeams().catch((err) => console.error('Error seeding Saudi & National teams:', err));
   });
 }
 

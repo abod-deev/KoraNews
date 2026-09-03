@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Loader2, RefreshCw, XCircle, Sparkles, Filter, Newspaper } from 'lucide-react';
 import NewsCard from '../components/news/NewsCard';
@@ -19,14 +20,23 @@ const STATIC_CATEGORIES = [
 export default function News() {
   useSEO('أخبار الرياضة | KoraNews', 'أحدث وأهم أخبار كرة القدم العالمية والمحلية، انتقالات اللاعبين ونتائج المباريات الحصرية.');
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const categoryParam = searchParams.get('category');
+
   const [allNews, setAllNews] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>(STATIC_CATEGORIES);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>(categoryParam || 'all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [visibleCount, setVisibleCount] = useState(9);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (categoryParam) {
+      setSelectedCategory(categoryParam);
+    }
+  }, [categoryParam]);
 
   const loadData = async () => {
     try {
@@ -72,12 +82,32 @@ export default function News() {
       let matchesCat = true;
       if (selectedCategory !== 'all') {
         const catObj = categories.find((c) => c.id === selectedCategory);
-        const catName = catObj ? catObj.name.toLowerCase() : selectedCategory.toLowerCase();
-        const articleCat = (article.category || '').toLowerCase();
+        const catName = (catObj ? catObj.name : selectedCategory).toLowerCase();
+        
+        const articleCatName = (
+          typeof article.category === 'object' && article.category !== null
+            ? (article.category.name || '')
+            : (article.category || article.categoryName || '')
+        ).toLowerCase();
+
+        const articleCatSlug = (
+          typeof article.category === 'object' && article.category !== null
+            ? (article.category.slug || '')
+            : ''
+        ).toLowerCase();
+
+        const articleCatId = String(
+          article.categoryId ||
+          (typeof article.category === 'object' && article.category !== null ? article.category.id : '') ||
+          ''
+        );
+
         matchesCat =
-          articleCat.includes(catName) ||
-          catName.includes(articleCat) ||
-          (article.tags && article.tags.some((t: string) => t.toLowerCase().includes(catName)));
+          selectedCategory === articleCatId ||
+          selectedCategory === articleCatSlug ||
+          articleCatName.includes(catName) ||
+          catName.includes(articleCatName) ||
+          (article.tags && Array.isArray(article.tags) && article.tags.some((t: string) => String(t).toLowerCase().includes(catName)));
       }
 
       // Search match
@@ -86,7 +116,12 @@ export default function News() {
         const query = searchQuery.trim().toLowerCase();
         const titleMatch = (article.title || '').toLowerCase().includes(query);
         const summaryMatch = (article.summary || article.content || '').toLowerCase().includes(query);
-        const authorMatch = (article.author?.name || '').toLowerCase().includes(query);
+        const authorName = (
+          typeof article.author === 'object' && article.author !== null
+            ? (article.author.name || '')
+            : (typeof article.author === 'string' ? article.author : (article.authorName || ''))
+        ).toLowerCase();
+        const authorMatch = authorName.includes(query);
         matchesSearch = titleMatch || summaryMatch || authorMatch;
       }
 
@@ -114,6 +149,7 @@ export default function News() {
     setSelectedCategory('all');
     setSearchQuery('');
     setVisibleCount(9);
+    setSearchParams({});
   };
 
   return (

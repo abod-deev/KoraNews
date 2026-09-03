@@ -34,7 +34,8 @@ export default function NewsDetail() {
       setArticle(data);
 
       if (data?.title) {
-        trackNewsRead(id, data.title, data.category);
+        const catName = typeof data.category === 'object' && data.category !== null ? data.category.name : data.category;
+        trackNewsRead(id, data.title, catName);
       }
 
       // Fetch related news
@@ -42,7 +43,13 @@ export default function NewsDetail() {
       if (Array.isArray(allNews)) {
         const others = allNews.filter((n: any) => String(n.id) !== String(id));
         // Prefer same category
-        const sameCategory = others.filter((n: any) => n.category === data.category);
+        const dataCatId = data.categoryId || (typeof data.category === 'object' && data.category !== null ? data.category.id : null);
+        const dataCatName = typeof data.category === 'object' && data.category !== null ? data.category.name : data.category;
+        const sameCategory = others.filter((n: any) => {
+          const nCatId = n.categoryId || (typeof n.category === 'object' && n.category !== null ? n.category.id : null);
+          const nCatName = typeof n.category === 'object' && n.category !== null ? n.category.name : n.category;
+          return (dataCatId && nCatId === dataCatId) || (dataCatName && nCatName && nCatName === dataCatName);
+        });
         const related = sameCategory.length >= 3 ? sameCategory : others;
         setRelatedNews(related.slice(0, 3));
       }
@@ -111,9 +118,15 @@ export default function NewsDetail() {
   }
 
   const defaultImage = 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=1200';
-  const categoryName = article.category || 'أخبار الرياضة';
-  const authorName = article.author?.name || 'محرر الرياضة';
-  const authorAvatar = article.author?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100';
+  const categoryName = typeof article?.category === 'object' && article?.category !== null
+    ? (article.category.name || 'أخبار الرياضة')
+    : (article?.category || article?.categoryName || 'أخبار الرياضة');
+  const authorName = typeof article?.author === 'object' && article?.author !== null
+    ? (article.author.name || 'محرر الرياضة')
+    : (typeof article?.author === 'string' ? article.author : (article?.authorName || 'محرر الرياضة'));
+  const authorAvatar = (typeof article?.author === 'object' && article?.author !== null && article.author.avatar)
+    ? article.author.avatar
+    : (typeof article?.authorAvatar === 'string' ? article.authorAvatar : 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=100');
 
   // Format content paragraphs
   const contentParagraphs = typeof article.content === 'string'

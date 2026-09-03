@@ -50,6 +50,9 @@ export default function Predictions() {
     pendingPredictions: number;
     successRate: number;
     userRank: number;
+    goldenPredictions?: number;
+    goldenPoints?: number;
+    goldenRank?: number;
   } | null>(null);
 
   const [contestSettings, setContestSettings] = useState<any>(null);

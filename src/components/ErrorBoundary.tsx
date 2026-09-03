@@ -17,10 +17,30 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: Error): State {
+    const msg = String(error?.message || error || '').toLowerCase();
+    if (
+      msg.includes('database is closing') ||
+      msg.includes('closing/hidden') ||
+      msg.includes('backing store') ||
+      msg.includes('indexeddb')
+    ) {
+      // Benign background storage teardown in iframes/hidden tabs
+      return { hasError: false, error: null };
+    }
     return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    const msg = String(error?.message || error || '').toLowerCase();
+    if (
+      msg.includes('database is closing') ||
+      msg.includes('closing/hidden') ||
+      msg.includes('backing store') ||
+      msg.includes('indexeddb')
+    ) {
+      console.warn('[ErrorBoundary] Ignored benign background storage teardown:', msg);
+      return;
+    }
     console.error('Uncaught error:', error, errorInfo);
   }
 
