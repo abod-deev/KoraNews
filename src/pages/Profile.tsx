@@ -131,12 +131,12 @@ export default function Profile() {
             newsCount: data.newsCount || 0,
             createdAt: data.createdAt,
           });
-          if (data.name && !displayName) {
+          if (data.name) {
             setDisplayName(data.name);
             setTempName(data.name);
           }
-          if (data.avatar) {
-            setAvatarUrl(data.avatar);
+          if (data.avatar !== undefined) {
+            setAvatarUrl(data.avatar || DEFAULT_AVATAR);
           }
         }
 

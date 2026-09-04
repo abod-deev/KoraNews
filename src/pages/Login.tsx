@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Navigate, Link } from 'react-router-dom';
+import { Navigate, Link, useLocation } from 'react-router-dom';
 import {
   Loader2,
   Mail,
@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export default function Login() {
   useSEO('تسجيل الدخول والتسجيل', 'تسجيل الدخول أو إنشاء حساب جديد للمشاركة في مسابقة التوقعات والأخبار');
+  const location = useLocation();
   const {
     user,
     signInWithGoogle,
@@ -62,6 +63,30 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+
+  // Helper to completely reset all input fields and alerts
+  const resetAllFields = (targetMode?: 'login' | 'register' | 'forgot') => {
+    if (targetMode) setMode(targetMode);
+    setStep('form');
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setName('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setFocusedInput(null);
+    setOtp(['', '', '', '', '', '']);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setSubmitting(false);
+    setResending(false);
+    setForgotSent(false);
+  };
+
+  // Reset inputs upon entering/navigating to the login page
+  useEffect(() => {
+    resetAllFields();
+  }, [location.pathname, location.key]);
 
   // Timer countdown for resend OTP
   useEffect(() => {
@@ -372,11 +397,7 @@ export default function Login() {
             <div className="p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60">
               <button
                 type="button"
-                onClick={() => {
-                  setMode('login');
-                  setErrorMsg(null);
-                  setSuccessMsg(null);
-                }}
+                onClick={() => resetAllFields('login')}
                 className={`flex-1 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
                   mode === 'login'
                     ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
@@ -387,11 +408,7 @@ export default function Login() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setMode('register');
-                  setErrorMsg(null);
-                  setSuccessMsg(null);
-                }}
+                onClick={() => resetAllFields('register')}
                 className={`flex-1 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
                   mode === 'register'
                     ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
@@ -504,6 +521,7 @@ export default function Login() {
                   setStep('form');
                   setErrorMsg(null);
                   setSuccessMsg(null);
+                  setOtp(['', '', '', '', '', '']);
                 }}
                 className="flex items-center gap-1 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
               >
@@ -548,12 +566,7 @@ export default function Login() {
             <div className="text-center pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setMode('login');
-                  setErrorMsg(null);
-                  setSuccessMsg(null);
-                  setForgotSent(false);
-                }}
+                onClick={() => resetAllFields('login')}
                 className="text-xs font-black text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
               >
                 العودة إلى تسجيل الدخول
@@ -609,11 +622,7 @@ export default function Login() {
                 {mode === 'login' && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setMode('forgot');
-                      setErrorMsg(null);
-                      setSuccessMsg(null);
-                    }}
+                    onClick={() => resetAllFields('forgot')}
                     className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
                   >
                     نسيت كلمة المرور؟

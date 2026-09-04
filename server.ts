@@ -127,11 +127,12 @@ async function startServer() {
     console.warn('[Server Startup] Database initialization warning:', dbErr?.message || dbErr);
   }
 
-  // Security Headers via Helmet (configured to allow iframe & images)
+  // Security Headers via Helmet (configured to allow iframe & images & OAuth popups)
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
       frameguard: false, // Allows embedding in AI Studio live preview
     })
@@ -484,11 +485,15 @@ async function startServer() {
   app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
     try {
       const decodedToken = req.user!;
+      const body = req.body || {};
+      const candidateName = (typeof body.name === 'string' && body.name.trim()) ? body.name.trim() : (decodedToken.name || 'مستخدم');
+      const candidatePicture = (typeof body.picture === 'string' && body.picture.trim()) ? body.picture.trim() : decodedToken.picture;
+
       const user = await getOrCreateUser(
         decodedToken.uid,
         decodedToken.email || '',
-        decodedToken.name || 'مستخدم',
-        decodedToken.picture
+        candidateName,
+        candidatePicture
       );
 
       const sessionToken = createServerSessionToken({

@@ -29,15 +29,19 @@ export async function getOrCreateUser(
     // 1. Try finding user by UID
     const existingByUid = await db.select().from(users).where(eq(users.uid, uid));
     if (existingByUid.length > 0) {
+      const existing = existingByUid[0];
+      const preservedName = existing.name || userName;
+      const preservedAvatar = existing.avatar || avatar || '/default-avatar.svg';
+
       const updated = await db.update(users)
         .set({
           email: cleanEmail,
-          name: userName || existingByUid[0].name,
-          avatar: avatar || existingByUid[0].avatar,
+          name: preservedName,
+          avatar: preservedAvatar,
           ...(passwordHash ? { passwordHash, password: null } : {}),
           ...(isSuperAdmin ? { role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions } : {})
         })
-        .where(eq(users.id, existingByUid[0].id))
+        .where(eq(users.id, existing.id))
         .returning();
       return updated[0];
     }
@@ -45,15 +49,19 @@ export async function getOrCreateUser(
     // 2. Try finding user by email
     const existingByEmail = await db.select().from(users).where(eq(users.email, cleanEmail));
     if (existingByEmail.length > 0) {
+      const existing = existingByEmail[0];
+      const preservedName = existing.name || userName;
+      const preservedAvatar = existing.avatar || avatar || '/default-avatar.svg';
+
       const updated = await db.update(users)
         .set({
           uid, // associate with new/given uid
-          name: userName || existingByEmail[0].name,
-          avatar: avatar || existingByEmail[0].avatar,
+          name: preservedName,
+          avatar: preservedAvatar,
           ...(passwordHash ? { passwordHash, password: null } : {}),
           ...(isSuperAdmin ? { role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions } : {})
         })
-        .where(eq(users.id, existingByEmail[0].id))
+        .where(eq(users.id, existing.id))
         .returning();
       return updated[0];
     }

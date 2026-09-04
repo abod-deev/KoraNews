@@ -177,30 +177,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      const result = await signInWithPopup(auth, provider);
       if (result?.user) {
         const idToken = await result.user.getIdToken();
         const syncRes = await fetch('/api/auth/sync', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${idToken}`
-          }
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            uid: result.user.uid,
+            email: result.user.email,
+            name: result.user.displayName,
+            picture: result.user.photoURL,
+          }),
         });
-        if (syncRes.ok) {
-          const syncData = await syncRes.json();
-          if (syncData.sessionToken && syncData.user) {
-            saveSession(syncData.sessionToken, syncData.user);
-          }
+
+        const text = await syncRes.text();
+        let syncData: any = {};
+        try {
+          syncData = JSON.parse(text);
+        } catch {
+          syncData = { error: text || 'حدث خطأ في مزامنة بيانات حساب جوجل' };
+        }
+
+        if (!syncRes.ok) {
+          throw new Error(extractErrorMessage(syncData, 'فشل في مزامنة بيانات حساب جوجل مع الخادم'));
+        }
+
+        if (syncData.sessionToken && syncData.user) {
+          saveSession(syncData.sessionToken, syncData.user);
         }
       }
     } catch (error: any) {
       console.error('Error signing in with Google:', error);
       if (error?.code === 'auth/popup-blocked') {
-        throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة والمحاولة مرة أخرى.');
+        throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة (Popups) وإعادة المحاولة.');
       } else if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-        throw new Error('تم إغلاق نافذة تسجيل الدخول من قبل المستخدم.');
+        throw new Error('تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية.');
+      } else if (error?.code === 'auth/unauthorized-domain') {
+        throw new Error('النطاق الحالي غير مدرج في النطاقات المصرح بها (Authorized Domains) في إعدادات Firebase Authentication.');
+      } else if (error?.code === 'auth/network-request-failed') {
+        throw new Error('تعذر الاتصال بخدمة المصادقة، يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.');
       }
-      throw new Error(error.message || 'حدث خطأ في تسجيل الدخول بواسطة جوجل');
+      throw new Error(error?.message || 'حدث خطأ في تسجيل الدخول بواسطة جوجل');
     }
   };
 
