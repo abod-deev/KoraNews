@@ -176,12 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithGoogle = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      provider.addScope('email');
-      provider.addScope('profile');
-      provider.addScope('openid');
-      provider.setCustomParameters({
-        prompt: 'consent select_account',
-      });
+      provider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, provider);
       if (result?.user) {
         const idToken = await result.user.getIdToken();
@@ -414,13 +409,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'فشل حذف الحساب');
-    }
-    try {
-      if (auth && auth.currentUser) {
-        await auth.currentUser.delete();
-      }
-    } catch (fbDelErr) {
-      console.warn('Firebase user deletion notice:', fbDelErr);
     }
     await logout();
   };
