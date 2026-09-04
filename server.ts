@@ -59,6 +59,11 @@ import {
   removePredictionMatch,
   getContestSettings,
   updateContestSettings,
+  getActiveContest,
+  getContestById,
+  getAllContests,
+  createContest,
+  completeContest,
   getUserParticipationStatus,
   requestContestParticipation,
   getAdminContestParticipants,
@@ -1204,13 +1209,65 @@ async function startServer() {
    * GET /api/predictions/contest/settings
    * Fetch contest configuration and public rules.
    */
-  app.get('/api/predictions/contest/settings', optionalAuth, async (_req, res) => {
+  app.get('/api/predictions/contest/settings', optionalAuth, async (req, res) => {
     try {
-      const settings = await getContestSettings();
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const settings = contestId && !isNaN(contestId)
+        ? await getContestById(contestId)
+        : await getContestSettings();
       return res.json(settings);
     } catch (error: any) {
       console.error('Error fetching contest settings:', error);
       return res.status(500).json({ error: 'فشل في جلب إعدادات المسابقة' });
+    }
+  });
+
+  /**
+   * GET /api/admin/predictions/contests
+   * Admin: List all contests (historical & active).
+   */
+  app.get('/api/admin/predictions/contests', requirePermission('matches_manage'), async (_req, res) => {
+    try {
+      const list = await getAllContests();
+      return res.json(list);
+    } catch (error: any) {
+      console.error('Error fetching contests:', error);
+      return res.status(500).json({ error: 'فشل في جلب قائمة المسابقات' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/contests
+   * Admin: Create a new contest manually.
+   */
+  app.post('/api/admin/predictions/contests', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const contest = await createContest(req.body);
+      await logActivity(req.dbUser.id, 'CREATE', 'CONTEST_SETTINGS', String(contest.id), req.body);
+      return res.status(201).json({ success: true, contest });
+    } catch (error: any) {
+      console.error('Error creating contest:', error);
+      return res.status(400).json({ error: error.message || 'فشل في إنشاء المسابقة' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/contests/:id/complete
+   * Admin: Mark a contest as completed.
+   */
+  app.post('/api/admin/predictions/contests/:id/complete', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const idCheck = validatePositiveId(req.params.id, 'معرف المسابقة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف المسابقة غير صالح' });
+      }
+
+      const completed = await completeContest(idCheck.value);
+      await logActivity(req.dbUser.id, 'COMPLETE', 'CONTEST_SETTINGS', String(completed.id));
+      return res.json({ success: true, contest: completed });
+    } catch (error: any) {
+      console.error('Error completing contest:', error);
+      return res.status(400).json({ error: error.message || 'فشل في إنهاء المسابقة' });
     }
   });
 
@@ -1236,7 +1293,8 @@ async function startServer() {
   app.get('/api/predictions/contest/my-status', requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول' });
-      const status = await getUserParticipationStatus(req.dbUser.id);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const status = await getUserParticipationStatus(req.dbUser.id, isNaN(contestId as number) ? undefined : contestId);
       return res.json(status);
     } catch (error: any) {
       console.error('Error fetching participation status:', error);
@@ -1251,9 +1309,14 @@ async function startServer() {
   app.post('/api/predictions/contest/apply', requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول أولاً' });
-      const { notes } = req.body;
-      const result = await requestContestParticipation(req.dbUser.id, notes);
-      await logActivity(req.dbUser.id, 'APPLY', 'CONTEST_PARTICIPANT', String(req.dbUser.id));
+      const { notes, contestId } = req.body;
+      const parsedContestId = contestId ? parseInt(String(contestId), 10) : undefined;
+      const result = await requestContestParticipation(
+        req.dbUser.id,
+        notes,
+        parsedContestId && !isNaN(parsedContestId) ? parsedContestId : undefined
+      );
+      await logActivity(req.dbUser.id, 'APPLY', 'CONTEST_PARTICIPANT', String(req.dbUser.id), { contestId: parsedContestId });
       return res.json(result);
     } catch (error: any) {
       console.error('Error requesting contest participation:', error);
@@ -1269,7 +1332,12 @@ async function startServer() {
     try {
       const statusFilter = (req.query.status as string) || undefined;
       const search = (req.query.search as string) || undefined;
-      const list = await getAdminContestParticipants(statusFilter, search);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const list = await getAdminContestParticipants(
+        statusFilter,
+        search,
+        isNaN(contestId as number) ? undefined : contestId
+      );
       return res.json(list);
     } catch (error: any) {
       console.error('Error fetching admin contest participants:', error);
@@ -1329,7 +1397,8 @@ async function startServer() {
   app.get('/api/predictions', optionalAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.dbUser ? req.dbUser.id : null;
-      const list = await getPredictionMatches(userId);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const list = await getPredictionMatches(userId, isNaN(contestId as number) ? undefined : contestId);
       return res.json(list);
     } catch (error: any) {
       console.error('Error fetching prediction matches:', error);
@@ -1344,7 +1413,8 @@ async function startServer() {
   app.get('/api/predictions/my', requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول' });
-      const history = await getUserPredictionsHistory(req.dbUser.id);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const history = await getUserPredictionsHistory(req.dbUser.id, isNaN(contestId as number) ? undefined : contestId);
       return res.json(history);
     } catch (error: any) {
       console.error('Error fetching user prediction history:', error);
@@ -1359,7 +1429,8 @@ async function startServer() {
   app.get('/api/predictions/stats', requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.dbUser) return res.status(401).json({ error: 'يرجى تسجيل الدخول' });
-      const stats = await getUserPredictionStats(req.dbUser.id);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const stats = await getUserPredictionStats(req.dbUser.id, isNaN(contestId as number) ? undefined : contestId);
       return res.json(stats);
     } catch (error: any) {
       console.error('Error fetching user prediction stats:', error);
@@ -1482,7 +1553,8 @@ async function startServer() {
    */
   app.get('/api/admin/predictions/stats', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const stats = await getAdminPredictionStats();
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const stats = await getAdminPredictionStats(isNaN(contestId as number) ? undefined : contestId);
       return res.json(stats);
     } catch (error: any) {
       console.error('Error fetching admin prediction stats:', error);
@@ -1525,7 +1597,8 @@ async function startServer() {
    */
   app.get('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const data = await getAdminPredictionMatches();
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const data = await getAdminPredictionMatches(isNaN(contestId as number) ? undefined : contestId);
       return res.json(data);
     } catch (error: any) {
       console.error('Error fetching admin prediction matches:', error);
@@ -1539,7 +1612,7 @@ async function startServer() {
    */
   app.post('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const { matchId, pointsPerMatch } = req.body;
+      const { matchId, pointsPerMatch, contestId } = req.body;
       if (!matchId || typeof matchId !== 'string' || !matchId.trim()) {
         return res.status(400).json({ error: 'معرف المباراة مطلوب' });
       }
@@ -1553,8 +1626,17 @@ async function startServer() {
         pts = ptsCheck.value;
       }
 
-      const result = await addMatchToPredictions(matchId.trim(), pts);
-      await logActivity(req.dbUser.id, 'CREATE', 'PREDICTION_MATCH', matchId, { matchId, pointsPerMatch: pts });
+      const parsedContestId = contestId ? parseInt(String(contestId), 10) : undefined;
+      const result = await addMatchToPredictions(
+        matchId.trim(),
+        pts,
+        parsedContestId && !isNaN(parsedContestId) ? parsedContestId : undefined
+      );
+      await logActivity(req.dbUser.id, 'CREATE', 'PREDICTION_MATCH', matchId, {
+        matchId,
+        pointsPerMatch: pts,
+        contestId: parsedContestId,
+      });
       return res.status(201).json(result);
     } catch (error: any) {
       console.error('Error adding match to predictions:', error);
@@ -1568,7 +1650,17 @@ async function startServer() {
    */
   app.post('/api/admin/predictions/custom-match', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const { leagueName, leagueLogo, homeTeamName, homeTeamLogo, awayTeamName, awayTeamLogo, matchDate, pointsPerMatch } = req.body;
+      const {
+        leagueName,
+        leagueLogo,
+        homeTeamName,
+        homeTeamLogo,
+        awayTeamName,
+        awayTeamLogo,
+        matchDate,
+        pointsPerMatch,
+        contestId,
+      } = req.body;
 
       let pts = 2;
       if (pointsPerMatch !== undefined && pointsPerMatch !== null) {
@@ -1579,6 +1671,7 @@ async function startServer() {
         pts = ptsCheck.value;
       }
 
+      const parsedContestId = contestId ? parseInt(String(contestId), 10) : undefined;
       const result = await addCustomExternalMatchToPredictions({
         leagueName,
         leagueLogo,
@@ -1588,12 +1681,14 @@ async function startServer() {
         awayTeamLogo,
         matchDate,
         pointsPerMatch: pts,
+        contestId: parsedContestId && !isNaN(parsedContestId) ? parsedContestId : undefined,
       });
       await logActivity(req.dbUser.id, 'CREATE_CUSTOM', 'PREDICTION_MATCH', String(result.id), {
         leagueName,
         homeTeamName,
         awayTeamName,
         pointsPerMatch: pts,
+        contestId: parsedContestId,
       });
       return res.status(201).json(result);
     } catch (error: any) {

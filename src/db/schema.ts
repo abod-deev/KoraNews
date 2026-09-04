@@ -209,10 +209,21 @@ export const matchesRelations = relations(matches, ({ one, many }) => ({
   }),
 }));
 
+export const contestSettingsRelations = relations(contestSettings, ({ many }) => ({
+  participants: many(contestParticipants),
+  predictionMatches: many(predictionMatches),
+  predictions: many(predictions),
+  predictionPoints: many(predictionPoints),
+}));
+
 export const predictionMatchesRelations = relations(predictionMatches, ({ one, many }) => ({
   match: one(matches, {
     fields: [predictionMatches.matchId],
     references: [matches.id],
+  }),
+  contest: one(contestSettings, {
+    fields: [predictionMatches.contestId],
+    references: [contestSettings.id],
   }),
   predictions: many(predictions),
   predictionPoints: many(predictionPoints),
@@ -226,6 +237,10 @@ export const predictionsRelations = relations(predictions, ({ one }) => ({
   predictionMatch: one(predictionMatches, {
     fields: [predictions.predictionMatchId],
     references: [predictionMatches.id],
+  }),
+  contest: one(contestSettings, {
+    fields: [predictions.contestId],
+    references: [contestSettings.id],
   }),
   pointRecord: one(predictionPoints, {
     fields: [predictions.id],
@@ -245,6 +260,10 @@ export const predictionPointsRelations = relations(predictionPoints, ({ one }) =
   predictionMatch: one(predictionMatches, {
     fields: [predictionPoints.predictionMatchId],
     references: [predictionMatches.id],
+  }),
+  contest: one(contestSettings, {
+    fields: [predictionPoints.contestId],
+    references: [contestSettings.id],
   }),
 }));
 
@@ -266,6 +285,10 @@ export const contestParticipantsRelations = relations(contestParticipants, ({ on
   reviewer: one(users, {
     fields: [contestParticipants.reviewedBy],
     references: [users.id],
+  }),
+  contest: one(contestSettings, {
+    fields: [contestParticipants.contestId],
+    references: [contestSettings.id],
   }),
 }));
 

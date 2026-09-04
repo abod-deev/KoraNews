@@ -333,6 +333,7 @@ export async function initializeDatabaseSchema() {
         CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(match_date);
         CREATE INDEX IF NOT EXISTS idx_email_verifications_email ON email_verifications(LOWER(email));
 
+        CREATE INDEX IF NOT EXISTS idx_contest_settings_status ON contest_settings(status);
         CREATE INDEX IF NOT EXISTS idx_contest_participants_user_id ON contest_participants(user_id);
         CREATE INDEX IF NOT EXISTS idx_contest_participants_contest_id ON contest_participants(contest_id);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_contest_participants_contest_user ON contest_participants(contest_id, user_id);
@@ -348,6 +349,17 @@ export async function initializeDatabaseSchema() {
         CREATE INDEX IF NOT EXISTS idx_prediction_points_user_id ON prediction_points(user_id);
         CREATE INDEX IF NOT EXISTS idx_prediction_points_match_id ON prediction_points(prediction_match_id);
         CREATE INDEX IF NOT EXISTS idx_prediction_points_contest_id ON prediction_points(contest_id);
+
+        -- Safe backward compatibility backfill for legacy rows created before contest_id was introduced
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM contest_settings WHERE id = 1) THEN
+            UPDATE contest_participants SET contest_id = 1 WHERE contest_id IS NULL;
+            UPDATE prediction_matches SET contest_id = 1 WHERE contest_id IS NULL;
+            UPDATE predictions SET contest_id = 1 WHERE contest_id IS NULL;
+            UPDATE prediction_points SET contest_id = 1 WHERE contest_id IS NULL;
+          END IF;
+        END $$;
       `);
     } catch (ddlErr: any) {
       console.warn('[DB Migration Warning] DDL schema initialization encountered an issue:', ddlErr?.message || ddlErr);
