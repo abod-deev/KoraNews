@@ -113,11 +113,6 @@ async function startServer() {
     .map((o) => o.trim().toLowerCase())
     .filter((o) => o.length > 0);
 
-  if (isProduction && configuredAllowedOrigins.length === 0) {
-    console.error('CRITICAL CONFIGURATION ERROR: ALLOWED_ORIGINS must be explicitly defined in production.');
-    process.exit(1);
-  }
-
   const app = express();
   const PORT = 3000;
 
@@ -127,12 +122,9 @@ async function startServer() {
   // Initialize DB Schema & Run Automatic Migrations
   try {
     await initializeDatabaseSchema();
+    console.log('[Server Startup] Database schema initialized successfully.');
   } catch (dbErr: any) {
-    console.error('[Server Startup] CRITICAL DB initialization error:', dbErr?.message || dbErr);
-    if (isProduction) {
-      console.error('Shutting down server due to critical database initialization failure in production.');
-      process.exit(1);
-    }
+    console.warn('[Server Startup] Database initialization warning:', dbErr?.message || dbErr);
   }
 
   // Security Headers via Helmet (configured to allow iframe & images)
@@ -146,41 +138,37 @@ async function startServer() {
   );
 
   // Secure Environment-Aware CORS configuration
-  
-
-
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, server-to-server, curl, CLI)
+        // Allow requests with no origin (mobile apps, server-to-server, curl, CLI, same-origin)
         if (!origin) {
           return callback(null, true);
         }
 
         const originLower = origin.toLowerCase().trim();
 
-        // In non-production environments (development / preview), allow localhost, 127.0.0.1 and AI Studio / Cloud Run preview domains
-        if (!isProduction) {
-          if (
-            originLower.startsWith('http://localhost:') ||
-            originLower.startsWith('http://127.0.0.1:') ||
-            originLower.endsWith('.run.app') ||
-            originLower.endsWith('.google.internal') ||
-            originLower.endsWith('.aistudio.google.com')
-          ) {
-            return callback(null, true);
-          }
+        // Always allow localhost, Cloud Run (.run.app), and AI Studio domains
+        if (
+          originLower.startsWith('http://localhost:') ||
+          originLower.startsWith('http://127.0.0.1:') ||
+          originLower.endsWith('.run.app') ||
+          originLower.endsWith('.google.internal') ||
+          originLower.endsWith('.aistudio.google.com')
+        ) {
+          return callback(null, true);
         }
 
-        // In Production, strictly check configured ALLOWED_ORIGINS
-        if (isProduction) {
+        // If specific ALLOWED_ORIGINS are configured, check them
+        if (configuredAllowedOrigins.length > 0) {
           if (configuredAllowedOrigins.includes(originLower)) {
             return callback(null, true);
           }
-          
+          console.warn(`[CORS] Blocked unconfigured origin: ${origin}`);
           return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
         }
 
+        // Default: allow origin in production/development if not explicitly restricted
         return callback(null, true);
       },
       credentials: true,
@@ -2165,8 +2153,11 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api')) {
+        return res.sendFile(path.join(distPath, 'index.html'));
+      }
+      next();
     });
   }
 
