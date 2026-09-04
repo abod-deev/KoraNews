@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Navigate, Link, useLocation } from 'react-router-dom';
+import { Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Loader2,
   Mail,
@@ -28,6 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export default function Login() {
   useSEO('تسجيل الدخول والتسجيل', 'تسجيل الدخول أو إنشاء حساب جديد للمشاركة في مسابقة التوقعات والأخبار');
   const location = useLocation();
+  const navigate = useNavigate();
   const {
     user,
     signInWithGoogle,
@@ -98,6 +99,13 @@ export default function Login() {
     }
     return () => clearInterval(interval);
   }, [step, resendTimer]);
+
+  // Redirect to home page immediately once user is authenticated
+  useEffect(() => {
+    if (user && !loading) {
+      navigate('/', { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
@@ -177,6 +185,7 @@ export default function Login() {
       } else {
         await signInWithEmail(cleanEmail, password);
         trackAuthEvent('login', 'email');
+        navigate('/', { replace: true });
       }
     } catch (err: any) {
       console.error('Authentication error:', err);
@@ -231,6 +240,7 @@ export default function Login() {
     try {
       await verifyCodeAndSignUp(email.trim(), fullCode);
       trackAuthEvent('signup', 'email_otp');
+      navigate('/', { replace: true });
     } catch (err: any) {
       console.error('Verification error:', err);
       const errMsg = err.message || '';
@@ -330,6 +340,7 @@ export default function Login() {
     try {
       await signInWithGoogle();
       trackAuthEvent('login', 'google');
+      navigate('/', { replace: true });
     } catch (err: any) {
       console.error('Google Sign In Error:', err);
       setErrorMsg(err.message || 'فشل تسجيل الدخول بواسطة جوجل، يرجى المحاولة لاحقاً');
