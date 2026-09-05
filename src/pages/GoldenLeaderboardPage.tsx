@@ -12,9 +12,11 @@ import {
   Crown,
   Trophy,
   Sparkles,
-  Loader2,
   X,
   Info,
+  Medal,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 export interface GoldenLeaderboardUser {
@@ -34,7 +36,7 @@ export interface GoldenLeaderboardUser {
 
 export default function GoldenLeaderboardPage() {
   useSEO(
-    'لائحة التوقعات الذهبية',
+    'الترتيب الذهبي',
     'ترتيب المتسابقين الحاصلين على التوقعات الذهبية في مسابقة KoraNews'
   );
   const { token } = useAuth();
@@ -45,10 +47,12 @@ export default function GoldenLeaderboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedShare, setCopiedShare] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchGoldenLeaderboard = async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
     else setIsLoading(true);
+    setError(null);
 
     try {
       const headers: Record<string, string> = {};
@@ -58,9 +62,12 @@ export default function GoldenLeaderboardPage() {
         const data = await res.json();
         setLeaderboard(data.leaderboard || []);
         setCurrentUserRank(data.currentUserRank || null);
+      } else {
+        setError('تعذر تحميل بيانات الترتيب الذهبي حالياً. يرجى المحاولة مرة أخرى.');
       }
     } catch (e) {
       console.error('Failed to fetch golden leaderboard:', e);
+      setError('حدث خطأ في الاتصال بالخادم. يرجى التحقق من اتصالك وإعادة المحاولة.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -91,7 +98,7 @@ export default function GoldenLeaderboardPage() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'لائحة التوقعات الذهبية - KoraNews',
+          title: 'الترتيب الذهبي - KoraNews',
           text,
           url: `${window.location.origin}/predictions/golden`,
         });
@@ -118,117 +125,199 @@ export default function GoldenLeaderboardPage() {
   const top2 = filteredLeaderboard.find((u) => u.rank === 2);
   const top3 = filteredLeaderboard.find((u) => u.rank === 3);
 
+  // Available Golden Stats calculated from existing data
+  const totalGoldenPredictions = leaderboard.reduce((acc, u) => acc + (u.goldenPredictions || 0), 0);
+  const totalGoldenMembers = leaderboard.length;
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 space-y-6">
-      {/* 1. Header & Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
-            <Link
-              to="/predictions"
-              className="hover:text-brand transition-colors inline-flex items-center gap-1"
-            >
-              <span>مسابقة التوقعات</span>
-              <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
-            </Link>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+      {/* 1. Header with Breadcrumb & Actions */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-7 shadow-xs relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="space-y-2">
+            {/* Breadcrumb */}
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs font-bold text-slate-400 dark:text-slate-500">
+              <Link
+                to="/predictions"
+                className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors inline-flex items-center gap-1"
+              >
+                <span>مسابقة التوقعات</span>
+                <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
+              </Link>
+              <Link
+                to="/predictions/leaderboard"
+                className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors inline-flex items-center gap-1"
+              >
+                <span>ترتيب التوقعات</span>
+                <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
+              </Link>
+              <span className="text-amber-600 dark:text-amber-400 font-extrabold">
+                الترتيب الذهبي
+              </span>
+            </nav>
+
+            {/* Clear Title */}
+            <div className="flex items-center gap-3 pt-1">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20 shrink-0 shadow-2xs">
+                <Crown className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                  <span>الترتيب الذهبي</span>
+                  <Sparkles className="w-4 h-4 text-amber-500 inline" />
+                </h1>
+                <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                  سجل الشرف الخاص بالمتسابقين الذين انفردوا دون غيرهم بالتوقع الصحيح لنتائج المباريات.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Secondary Actions (Share, Refresh) & Navigation */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {/* العودة للترتيب العام */}
             <Link
               to="/predictions/leaderboard"
-              className="hover:text-brand transition-colors inline-flex items-center gap-1"
+              className="min-h-[44px] px-3.5 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
             >
+              <Trophy className="w-4 h-4 text-slate-500" />
               <span>الترتيب العام</span>
-              <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
             </Link>
-            <span className="text-amber-600 dark:text-amber-400 font-extrabold">
-              الترتيب الذهبي
-            </span>
-          </nav>
 
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20 shrink-0">
-              <Crown className="w-5 h-5" />
+            {/* Share / مشاركة (Secondary Action أنيق) */}
+            <button
+              type="button"
+              onClick={handleShare}
+              className="min-h-[44px] min-w-[44px] p-2.5 sm:px-3 sm:py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+              title="مشاركة الترتيب الذهبي"
+              aria-label="مشاركة الترتيب الذهبي"
+            >
+              {copiedShare ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-500" />
+                  <span className="hidden sm:inline text-emerald-600 dark:text-emerald-400 font-extrabold">تم النسخ</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 text-slate-500" />
+                  <span className="hidden sm:inline">مشاركة</span>
+                </>
+              )}
+            </button>
+
+            {/* Refresh / تحديث (Secondary Action أنيق) */}
+            <button
+              type="button"
+              onClick={() => fetchGoldenLeaderboard(true)}
+              disabled={isRefreshing || isLoading}
+              className="min-h-[44px] min-w-[44px] p-2.5 sm:px-3 sm:py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+              title="تحديث الترتيب الذهبي"
+              aria-label="تحديث الترتيب الذهبي"
+            >
+              <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-amber-500' : 'text-slate-500'}`} />
+              <span className="hidden sm:inline">تحديث</span>
+            </button>
+
+            {/* التوقع الآن */}
+            <Link
+              to="/predictions"
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+            >
+              <Target className="w-4 h-4" />
+              <span>توقع الآن</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Golden Hero (Crown, Title, Description, and Existing Golden Stats Only) */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs relative overflow-hidden">
+        {/* Subtle accent border at top instead of full yellow background */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600" />
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20 shadow-2xs">
+              <Crown className="w-6 h-6" />
             </div>
-            <span>لوحة التوقعات الذهبية</span>
-          </h1>
-          <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-1 max-w-xl leading-relaxed">
-            سجل الشرف الخاص بالمتسابقين الذين انفردوا دون غيرهم بالتوقع الصحيح لنتائج المباريات.
-          </p>
-        </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                  معيار التوقع الذهبي الرياضي
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 text-[11px] font-black border border-amber-200/80 dark:border-amber-800/60">
+                  انفراد بالنتيجة الدقيقة
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
+                يُمنح وسام التوقع الذهبي ونقاطه الإضافية عندما تكون المتسابق الوحيد بين جميع المشاركين الذي توقع النتيجة الدقيقة للمباراة.
+              </p>
+            </div>
+          </div>
 
-        {/* Header Actions */}
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <button
-            type="button"
-            onClick={handleShare}
-            className="p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-            title="مشاركة الترتيب الذهبي"
-            aria-label="مشاركة الترتيب الذهبي"
-          >
-            {copiedShare ? (
-              <>
-                <Check className="w-4 h-4 text-emerald-500" />
-                <span className="hidden sm:inline text-emerald-600">تم النسخ</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="w-4 h-4" />
-                <span className="hidden sm:inline">مشاركة</span>
-              </>
-            )}
-          </button>
+          {/* Existing Golden Stats Display */}
+          <div className="flex items-center gap-3 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800">
+            <div className="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 text-center">
+              <span className="text-[10px] text-slate-400 font-bold block">إجمالي الانفرادات</span>
+              <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono flex items-center justify-center gap-1">
+                <Crown className="w-3.5 h-3.5 text-amber-500" />
+                {totalGoldenPredictions}
+              </span>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => fetchGoldenLeaderboard(true)}
-            disabled={isRefreshing || isLoading}
-            className="p-2 sm:px-3 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-            title="تحديث الترتيب"
-            aria-label="تحديث الترتيب الذهبي"
-          >
-            <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-amber-500' : ''}`} />
-            <span className="hidden sm:inline">تحديث</span>
-          </button>
-
-          <Link
-            to="/predictions"
-            className="px-4 py-2 rounded-xl bg-brand hover:bg-emerald-600 text-white text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-          >
-            <Target className="w-4 h-4" />
-            <span>توقع الآن</span>
-          </Link>
+            <div className="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 text-center">
+              <span className="text-[10px] text-slate-400 font-bold block">أبطال السجل</span>
+              <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono">
+                {totalGoldenMembers} <span className="text-[10px] text-slate-400 font-medium">متسابق</span>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 2. Informational Callout Card */}
-      <div className="rounded-2xl bg-amber-500/5 border border-amber-500/20 p-4 sm:p-5 flex items-start gap-3">
-        <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-          <Info className="w-4 h-4" />
+      {/* Error State */}
+      {error && (
+        <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-800/60 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-rose-900 dark:text-rose-200">
+                تعذر تحميل الترتيب الذهبي
+              </h4>
+              <p className="text-xs text-rose-800/80 dark:text-rose-300/80 font-medium mt-0.5">
+                {error}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchGoldenLeaderboard(false)}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>إعادة المحاولة</span>
+          </button>
         </div>
-        <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed space-y-1">
-          <p className="font-extrabold text-slate-900 dark:text-white">
-            كيف تكسب توقعاً ذهبياً؟
-          </p>
-          <p className="text-slate-600 dark:text-slate-400 text-xs">
-            يُمنح وسام التوقع الذهبي ونقاطه الإضافية عندما تكون المتسابق الوحيد بين جميع المشاركين الذي توقع النتيجة الدقيقة للمباراة.
-          </p>
-        </div>
-      </div>
+      )}
 
-      {/* 3. Search & Current User Gold Rank */}
+      {/* 4. Toolbar: Integrated Search & Current User Golden Rank */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
         <div className="relative max-w-sm w-full">
           <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="ابحث عن متسابق..."
+            placeholder="ابحث عن متسابق في السجل الذهبي..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-10 py-2.5 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl text-xs sm:text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 shadow-xs transition-all placeholder:text-slate-400"
+            className="w-full pl-9 pr-10 py-2.5 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl text-xs sm:text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-xs transition-all placeholder:text-slate-400"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
               aria-label="مسح البحث"
             >
               <X className="w-3.5 h-3.5" />
@@ -236,28 +325,57 @@ export default function GoldenLeaderboardPage() {
           )}
         </div>
 
+        {/* Current User Golden Status */}
         {currentUserRank && currentUserRank.rank > 0 && !searchQuery && (
-          <div className="flex items-center gap-2.5 bg-white dark:bg-slate-900 px-4 py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs text-xs font-bold text-slate-700 dark:text-slate-300">
-            <span className="text-slate-500 dark:text-slate-400">ترتيبك الذهبي:</span>
-            <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2.5 py-0.5 rounded-md font-black text-xs border border-amber-500/20">
+          <div className="flex items-center gap-2.5 bg-white dark:bg-slate-900 px-4 py-2 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs text-xs font-bold text-slate-700 dark:text-slate-300 shrink-0">
+            <span className="text-slate-400 font-medium">ترتيبك الذهبي:</span>
+            <span className="bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2.5 py-0.5 rounded-lg font-black text-xs border border-amber-200/70 dark:border-amber-800/40">
               #{currentUserRank.rank}
             </span>
-            <span className="text-slate-300 dark:text-slate-600">•</span>
-            <span className="font-extrabold text-slate-900 dark:text-white flex items-center gap-1">
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="font-black text-slate-900 dark:text-white flex items-center gap-1 font-mono">
               <Crown className="w-3.5 h-3.5 text-amber-500" />
-              {currentUserRank.goldenPredictions} <span className="text-[10px] text-slate-400">ذهبية</span>
+              {currentUserRank.goldenPredictions} <span className="text-[10px] text-slate-400 font-normal font-sans">ذهبية</span>
             </span>
           </div>
         )}
       </div>
 
-      {/* 4. Leaderboard Content */}
+      {/* 5. Loading State */}
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-          <Loader2 className="w-7 h-7 text-amber-500 animate-spin" />
-          <p className="mt-3 text-xs font-bold text-slate-500">جاري تحميل لوحة الشرف الذهبية...</p>
+        <div className="space-y-4 animate-pulse">
+          {/* Top 3 Skeletons */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 space-y-3 flex flex-col items-center"
+              >
+                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800" />
+                <div className="h-4 w-28 bg-slate-100 dark:bg-slate-800 rounded" />
+                <div className="h-6 w-20 bg-slate-100 dark:bg-slate-800 rounded-full" />
+              </div>
+            ))}
+          </div>
+
+          {/* Table Skeletons */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 p-2">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="p-3.5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800" />
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-28 bg-slate-100 dark:bg-slate-800 rounded" />
+                    <div className="h-2.5 w-16 bg-slate-100 dark:bg-slate-800 rounded" />
+                  </div>
+                </div>
+                <div className="h-5 w-14 bg-slate-100 dark:bg-slate-800 rounded" />
+              </div>
+            ))}
+          </div>
         </div>
       ) : filteredLeaderboard.length === 0 ? (
+        /* 6. Empty State */
         <div className="text-center py-16 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
           <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-3 border border-amber-500/20">
             <Crown className="w-7 h-7" />
@@ -267,124 +385,169 @@ export default function GoldenLeaderboardPage() {
           </h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
             {searchQuery
-              ? 'تأكد من كتابة الاسم بصورة صحيحة.'
+              ? 'تأكد من كتابة الاسم بصورة صحيحة أو قم بمسح البحث لعرض السجل كاملاً.'
               : 'كن أول متسابق ينفرد بتوقع صحيح لإحدى المباريات القادمة لتتصدر السجل الذهبي!'}
           </p>
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Top 3 Golden Podium */}
+          {/* 7. Top 3: Formal Corporate Sports Golden Podium */}
           {!searchQuery && filteredLeaderboard.length >= 3 && top1 && top2 && top3 && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs">
-              <div className="text-center mb-6">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                  <Crown className="w-3.5 h-3.5 text-amber-500" />
-                  <span>رواد التوقعات الذهبية</span>
-                </span>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 items-stretch">
+              
+              {/* المركز الثاني (Silver) */}
+              <div className="order-2 sm:order-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 shadow-xs flex flex-col items-center justify-between text-center relative overflow-hidden transition-all hover:border-slate-300 dark:hover:border-slate-700">
+                <div className="w-full flex items-center justify-between mb-3 text-xs">
+                  <span className="inline-flex items-center gap-1 font-bold text-slate-500 dark:text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                    المركز الثاني
+                  </span>
+                  <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono font-black text-xs flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                    2
+                  </span>
+                </div>
 
-              <div className="grid grid-cols-3 gap-2 sm:gap-6 items-end max-w-lg mx-auto">
-                {/* 2nd Place */}
-                <div className="flex flex-col items-center text-center">
-                  <div className="relative mb-2.5">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-100 dark:bg-slate-800 p-1 border-2 border-slate-300 dark:border-slate-600 overflow-hidden shadow-xs">
-                      {top2.avatar ? (
-                        <img
-                          src={top2.avatar}
-                          alt={top2.name}
-                          className="w-full h-full rounded-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-black text-slate-500 text-lg">
-                          {top2.name.charAt(0)}
-                        </div>
-                      )}
-                    </div>
-                    <span className="absolute -bottom-2 -right-1 w-6 h-6 rounded-full bg-slate-400 text-white font-black text-xs flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-xs">
-                      2
-                    </span>
+                <div className="my-2 flex flex-col items-center">
+                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full bg-slate-100 dark:bg-slate-800 p-0.5 border-2 border-slate-300 dark:border-slate-600 overflow-hidden shadow-2xs mb-2.5">
+                    {top2.avatar ? (
+                      <img
+                        src={top2.avatar}
+                        alt={top2.name}
+                        className="w-full h-full rounded-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-black text-slate-600 dark:text-slate-300 text-lg">
+                        {top2.name.charAt(0)}
+                      </div>
+                    )}
                   </div>
-                  <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[90px] sm:max-w-[130px]">
+                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate max-w-[170px]">
                     {top2.name}
                   </h4>
-                  <span className="font-black text-amber-600 dark:text-amber-400 text-xs sm:text-sm mt-0.5 inline-flex items-center gap-1">
-                    <Crown className="w-3 h-3" />
-                    {top2.goldenPredictions}
-                  </span>
+                  {top2.isCurrentUser && (
+                    <span className="mt-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      أنت
+                    </span>
+                  )}
                 </div>
 
-                {/* 1st Place */}
-                <div className="flex flex-col items-center text-center -translate-y-3">
-                  <div className="relative mb-2.5">
-                    <Crown className="w-6 h-6 text-amber-500 absolute -top-6 left-1/2 -translate-x-1/2 drop-shadow-xs animate-bounce" />
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-amber-50 dark:bg-amber-950/40 p-1 border-2 border-amber-400 dark:border-amber-500 overflow-hidden shadow-sm">
-                      {top1.avatar ? (
-                        <img
-                          src={top1.avatar}
-                          alt={top1.name}
-                          className="w-full h-full rounded-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center font-black text-amber-600 text-2xl">
-                          {top1.name.charAt(0)}
-                        </div>
-                      )}
-                    </div>
-                    <span className="absolute -bottom-2 -right-1 w-7 h-7 rounded-full bg-amber-500 text-white font-black text-xs sm:text-sm flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-xs">
-                      1
-                    </span>
-                  </div>
-                  <h4 className="font-black text-sm sm:text-base text-slate-900 dark:text-white truncate max-w-[100px] sm:max-w-[150px]">
-                    {top1.name}
-                  </h4>
-                  <span className="font-black text-amber-600 dark:text-amber-400 text-sm sm:text-base mt-0.5 inline-flex items-center gap-1">
-                    <Crown className="w-4 h-4" />
-                    {top1.goldenPredictions}{' '}
-                    <span className="text-[10px] sm:text-xs text-slate-400 font-normal">ذهبية</span>
+                <div className="w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs px-1">
+                  <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <Crown className="w-3.5 h-3.5 text-amber-500" />
+                    <strong className="text-slate-900 dark:text-white font-mono">{top2.goldenPredictions}</strong> ذهبية
                   </span>
-                </div>
-
-                {/* 3rd Place */}
-                <div className="flex flex-col items-center text-center">
-                  <div className="relative mb-2.5">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-900/10 dark:bg-amber-950/30 p-1 border-2 border-amber-700/50 dark:border-amber-700/60 overflow-hidden shadow-xs">
-                      {top3.avatar ? (
-                        <img
-                          src={top3.avatar}
-                          alt={top3.name}
-                          className="w-full h-full rounded-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full rounded-full bg-amber-100/50 dark:bg-amber-900/20 flex items-center justify-center font-black text-amber-800 dark:text-amber-600 text-lg">
-                          {top3.name.charAt(0)}
-                        </div>
-                      )}
-                    </div>
-                    <span className="absolute -bottom-2 -right-1 w-6 h-6 rounded-full bg-amber-700 text-white font-black text-xs flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-xs">
-                      3
-                    </span>
-                  </div>
-                  <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[90px] sm:max-w-[130px]">
-                    {top3.name}
-                  </h4>
-                  <span className="font-black text-amber-600 dark:text-amber-400 text-xs sm:text-sm mt-0.5 inline-flex items-center gap-1">
-                    <Crown className="w-3 h-3" />
-                    {top3.goldenPredictions}
+                  <span className="font-black text-amber-600 dark:text-amber-400 font-mono">
+                    +{top2.goldenPoints} نقطة
                   </span>
                 </div>
               </div>
+
+              {/* المركز الأول (Gold Champion - أكثر بروزاً باعتدال) */}
+              <div className="order-1 sm:order-2 rounded-2xl bg-gradient-to-b from-amber-500/5 to-transparent dark:from-amber-500/10 dark:to-transparent bg-white dark:bg-slate-900 border-2 border-amber-400/80 dark:border-amber-500/80 p-5 sm:p-6 shadow-sm flex flex-col items-center justify-between text-center relative overflow-hidden transition-all">
+                <div className="w-full flex items-center justify-between mb-3 text-xs">
+                  <span className="inline-flex items-center gap-1 font-black text-amber-700 dark:text-amber-400">
+                    <Crown className="w-3.5 h-3.5 text-amber-500" />
+                    المتصدر الذهبي
+                  </span>
+                  <span className="w-6 h-6 rounded-full bg-amber-500 text-white font-mono font-black text-xs flex items-center justify-center shadow-xs">
+                    1
+                  </span>
+                </div>
+
+                <div className="my-2 flex flex-col items-center">
+                  <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-amber-50 dark:bg-amber-950/40 p-1 border-2 border-amber-400 dark:border-amber-500 overflow-hidden shadow-sm mb-2.5">
+                    {top1.avatar ? (
+                      <img
+                        src={top1.avatar}
+                        alt={top1.name}
+                        className="w-full h-full rounded-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center font-black text-amber-700 dark:text-amber-300 text-2xl">
+                        {top1.name.charAt(0)}
+                      </div>
+                    )}
+                  </div>
+                  <h4 className="font-black text-base text-slate-900 dark:text-white truncate max-w-[190px]">
+                    {top1.name}
+                  </h4>
+                  {top1.isCurrentUser && (
+                    <span className="mt-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      أنت
+                    </span>
+                  )}
+                </div>
+
+                <div className="w-full mt-3 pt-3 border-t border-amber-200/60 dark:border-amber-800/60 flex items-center justify-between text-xs px-1">
+                  <span className="font-black text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                    <Crown className="w-4 h-4 text-amber-500" />
+                    <strong className="font-mono text-sm">{top1.goldenPredictions}</strong> توقع ذهبي
+                  </span>
+                  <span className="font-black text-amber-700 dark:text-amber-300 font-mono text-sm">
+                    +{top1.goldenPoints} نقطة
+                  </span>
+                </div>
+              </div>
+
+              {/* المركز الثالث (Bronze) */}
+              <div className="order-3 sm:order-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 shadow-xs flex flex-col items-center justify-between text-center relative overflow-hidden transition-all hover:border-slate-300 dark:hover:border-slate-700">
+                <div className="w-full flex items-center justify-between mb-3 text-xs">
+                  <span className="inline-flex items-center gap-1 font-bold text-amber-800 dark:text-amber-500">
+                    <span className="w-2 h-2 rounded-full bg-amber-700" />
+                    المركز الثالث
+                  </span>
+                  <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-amber-800 dark:text-amber-400 font-mono font-black text-xs flex items-center justify-center border border-amber-800/30">
+                    3
+                  </span>
+                </div>
+
+                <div className="my-2 flex flex-col items-center">
+                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full bg-amber-900/10 dark:bg-amber-950/30 p-0.5 border-2 border-amber-700/60 dark:border-amber-700/60 overflow-hidden shadow-2xs mb-2.5">
+                    {top3.avatar ? (
+                      <img
+                        src={top3.avatar}
+                        alt={top3.name}
+                        className="w-full h-full rounded-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-amber-100/50 dark:bg-amber-900/20 flex items-center justify-center font-black text-amber-800 dark:text-amber-500 text-lg">
+                        {top3.name.charAt(0)}
+                      </div>
+                    )}
+                  </div>
+                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate max-w-[170px]">
+                    {top3.name}
+                  </h4>
+                  {top3.isCurrentUser && (
+                    <span className="mt-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      أنت
+                    </span>
+                  )}
+                </div>
+
+                <div className="w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs px-1">
+                  <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <Crown className="w-3.5 h-3.5 text-amber-500" />
+                    <strong className="text-slate-900 dark:text-white font-mono">{top3.goldenPredictions}</strong> ذهبية
+                  </span>
+                  <span className="font-black text-amber-600 dark:text-amber-400 font-mono">
+                    +{top3.goldenPoints} نقطة
+                  </span>
+                </div>
+              </div>
+
             </div>
           )}
 
-          {/* List Table / Cards */}
+          {/* 8. Leaderboard Table / Rows (Unified with PredictionsLeaderboard) */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-100 dark:border-slate-800">
+                <thead className="bg-slate-50/80 dark:bg-slate-800/50 text-slate-400 font-black text-[11px] uppercase border-b border-slate-200/80 dark:border-slate-800">
                   <tr>
                     <th className="py-3.5 px-5 w-20 text-center">المركز</th>
                     <th className="py-3.5 px-5">المتسابق</th>
@@ -393,31 +556,37 @@ export default function GoldenLeaderboardPage() {
                     <th className="py-3.5 px-5 text-left">إجمالي النقاط</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredLeaderboard.map((item) => (
                     <tr
                       key={item.id}
                       className={`transition-colors ${
                         item.isCurrentUser
-                          ? 'bg-amber-50/50 dark:bg-amber-950/20'
-                          : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'
+                          ? 'bg-amber-50/40 dark:bg-amber-950/20 border-r-4 border-r-amber-500'
+                          : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/40'
                       }`}
                     >
-                      <td className="py-3 px-5 text-center font-black">
+                      <td className="py-3.5 px-5 text-center font-black">
                         {item.rank === 1 ? (
-                          <span className="text-base" title="المركز الأول">🥇</span>
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-500 text-white font-mono text-xs shadow-2xs font-bold">
+                            1
+                          </span>
                         ) : item.rank === 2 ? (
-                          <span className="text-base" title="المركز الثاني">🥈</span>
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-400 text-white font-mono text-xs shadow-2xs font-bold">
+                            2
+                          </span>
                         ) : item.rank === 3 ? (
-                          <span className="text-base" title="المركز الثالث">🥉</span>
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-700 text-white font-mono text-xs shadow-2xs font-bold">
+                            3
+                          </span>
                         ) : (
-                          <span className="text-slate-500 dark:text-slate-400 text-xs">
+                          <span className="text-slate-500 dark:text-slate-400 text-xs font-mono font-bold">
                             #{item.rank}
                           </span>
                         )}
                       </td>
 
-                      <td className="py-3 px-5">
+                      <td className="py-3.5 px-5">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700">
                             {item.avatar ? (
@@ -450,20 +619,20 @@ export default function GoldenLeaderboardPage() {
                         </div>
                       </td>
 
-                      <td className="py-3 px-5 text-center">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 font-black">
+                      <td className="py-3.5 px-5 text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 font-black border border-amber-200/60 dark:border-amber-800/40 font-mono">
                           <Crown className="w-3.5 h-3.5 text-amber-500" />
                           <span>{item.goldenPredictions}</span>
                         </span>
                       </td>
 
-                      <td className="py-3 px-5 text-center font-bold text-slate-700 dark:text-slate-300">
+                      <td className="py-3.5 px-5 text-center font-bold text-amber-600 dark:text-amber-400 font-mono">
                         +{item.goldenPoints}
                       </td>
 
-                      <td className="py-3 px-5 text-left font-black text-sm text-slate-900 dark:text-white">
+                      <td className="py-3.5 px-5 text-left font-black text-sm text-slate-900 dark:text-white font-mono">
                         {item.totalPoints}{' '}
-                        <span className="text-[10px] text-slate-400 font-normal">نقطة</span>
+                        <span className="text-[10px] text-slate-400 font-normal font-sans">نقطة</span>
                       </td>
                     </tr>
                   ))}
@@ -471,22 +640,31 @@ export default function GoldenLeaderboardPage() {
               </table>
             </div>
 
-            {/* Mobile Cards List */}
-            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+            {/* Mobile Row List View (Zero Horizontal Overflow, Mobile-First) */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
               {filteredLeaderboard.map((item) => (
                 <div
                   key={item.id}
                   className={`p-3.5 flex items-center justify-between gap-3 transition-colors ${
                     item.isCurrentUser
-                      ? 'bg-amber-50/40 dark:bg-amber-950/20'
+                      ? 'bg-amber-50/40 dark:bg-amber-950/20 border-r-3 border-r-amber-500'
                       : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="font-black text-xs text-slate-400 w-5 shrink-0 text-center">
-                      {item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : item.rank}
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span className="font-black text-xs font-mono w-5 shrink-0 text-center">
+                      {item.rank === 1 ? (
+                        <span className="text-amber-500 font-black">1</span>
+                      ) : item.rank === 2 ? (
+                        <span className="text-slate-400 font-black">2</span>
+                      ) : item.rank === 3 ? (
+                        <span className="text-amber-700 font-black">3</span>
+                      ) : (
+                        <span className="text-slate-400 font-medium">#{item.rank}</span>
+                      )}
                     </span>
-                    <div className="w-9 h-9 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700">
+
+                    <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700">
                       {item.avatar ? (
                         <img
                           src={item.avatar}
@@ -500,10 +678,11 @@ export default function GoldenLeaderboardPage() {
                         </span>
                       )}
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span
-                          className={`font-extrabold text-xs sm:text-sm truncate ${
+                          className={`font-extrabold text-xs truncate max-w-[140px] ${
                             item.isCurrentUser
                               ? 'text-amber-600 dark:text-amber-400'
                               : 'text-slate-900 dark:text-white'
@@ -517,14 +696,14 @@ export default function GoldenLeaderboardPage() {
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                        إجمالي النقاط: {item.totalPoints}
+                      <span className="text-[10px] font-medium text-slate-400">
+                        النقاط: <strong className="font-mono text-slate-600 dark:text-slate-300">{item.totalPoints}</strong> (+{item.goldenPoints} ذهبية)
                       </span>
                     </div>
                   </div>
 
                   <div className="shrink-0 text-left">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 font-black text-xs border border-amber-500/20">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-black text-xs border border-amber-200/60 dark:border-amber-800/40 font-mono">
                       <Crown className="w-3.5 h-3.5 text-amber-500" />
                       <span>{item.goldenPredictions}</span>
                     </span>

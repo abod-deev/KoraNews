@@ -265,14 +265,14 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
             <button
               onClick={() => fetchAllData(true)}
               disabled={isRefreshing}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-bold transition-all border border-slate-200/60 dark:border-slate-700/60 disabled:opacity-50"
+              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-bold transition-all border border-slate-200/60 dark:border-slate-700/60 disabled:opacity-50 cursor-pointer shadow-2xs"
             >
               <RefreshCw className={`w-4 h-4 text-emerald-600 dark:text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span>تحديث المؤشرات</span>
             </button>
             <Link
               to="/"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs"
+              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs"
             >
               <span>معاينة الموقع</span>
               <ArrowUpRight className="w-4 h-4" />
@@ -289,26 +289,26 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
       </div>
 
       {/* 2. Core Operational KPI Cards (Grid) */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         
         {/* Card 1: News Count */}
         <div 
           onClick={() => onNavigateTab?.('news')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 transition-all shadow-xs hover:shadow-sm flex flex-col justify-between"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
               المحتوى الإخباري
             </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
               <FileText className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {stats?.newsCount ?? 0}
             </div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               <span className="text-emerald-600 dark:text-emerald-400 font-bold">{stats?.publishedCount ?? 0}</span> منشور • {stats?.draftsCount ?? 0} مسودة
             </div>
           </div>
@@ -317,23 +317,23 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 2: Users Count */}
         <div 
           onClick={() => isSuperAdmin && onNavigateTab?.('users')}
-          className={`group bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-xs flex flex-col justify-between ${
-            isSuperAdmin ? 'cursor-pointer hover:border-blue-500/60 dark:hover:border-blue-500/60 hover:shadow-sm' : ''
+          className={`group bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
+            isSuperAdmin ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
           }`}
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
               المستخدمون
             </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
               <Users className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {stats?.usersCount ?? 0}
             </div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               <span className="text-blue-600 dark:text-blue-400 font-bold">{stats?.adminsCount ?? 0}</span> مسؤولين بالنظام
             </div>
           </div>
@@ -342,21 +342,21 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 3: Active Contest */}
         <div 
           onClick={() => onNavigateTab?.('predictions_contests')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-amber-500/60 dark:hover:border-amber-500/60 transition-all shadow-xs hover:shadow-sm flex flex-col justify-between"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between min-w-0 overflow-hidden"
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
               المسابقة النشطة
             </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center shrink-0 transition-colors">
               <Trophy className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate" title={activeContest?.name || 'لا توجد مسابقة'}>
+          <div className="mt-3 min-w-0">
+            <div className="text-xs sm:text-base font-black text-slate-900 dark:text-white truncate" title={activeContest?.name || 'لا توجد مسابقة'}>
               {activeContest ? activeContest.name : 'غير محددة'}
             </div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1.5 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               {activeContest ? (
                 <span className="text-amber-600 dark:text-amber-400 font-bold">{activeContest.participantsCount} مشارك مسجل</span>
               ) : (
@@ -369,21 +369,21 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 4: Prediction Matches */}
         <div 
           onClick={() => onNavigateTab?.('predictions_matches')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-purple-500/60 dark:hover:border-purple-500/60 transition-all shadow-xs hover:shadow-sm flex flex-col justify-between"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
               مباريات التوقع
             </span>
-            <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
               <Target className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {predictionStats?.totalMatches ?? activeContest?.matchesCount ?? 0}
             </div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               <span className="text-purple-600 dark:text-purple-400 font-bold">{predictionStats?.evaluatedMatches ?? 0}</span> محسوبة ومعتمدة
             </div>
           </div>
@@ -392,42 +392,42 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 5: Total Predictions */}
         <div 
           onClick={() => onNavigateTab?.('predictions_participants')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-rose-500/60 dark:hover:border-rose-500/60 transition-all shadow-xs hover:shadow-sm flex flex-col justify-between"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
               إجمالي التوقعات
             </span>
-            <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
               <Activity className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {predictionStats?.totalPredictions ?? 0}
             </div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               دقة: <span className="text-rose-600 dark:text-rose-400 font-bold">{predictionStats?.successRate ?? 0}%</span> • {predictionStats?.correctPredictions ?? 0} صحيح
             </div>
           </div>
         </div>
 
         {/* Card 6: Scheduled Matches */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
               مباريات الكرة
             </span>
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
               <Calendar className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {matches.length}
             </div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
-              <span className="text-indigo-600 dark:text-indigo-400 font-bold">{todayMatches.length}</span> مباراة مسجلة اليوم
+            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+              <span className="text-blue-600 dark:text-blue-400 font-bold">{todayMatches.length}</span> مباراة مسجلة اليوم
             </div>
           </div>
         </div>
@@ -435,11 +435,11 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
       </div>
 
       {/* 3. Quick Administrative Actions */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-2xs">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <TrendingUp className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               العمليات والإجراءات السريعة
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
@@ -450,94 +450,100 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <button
+            type="button"
             onClick={() => onNavigateTab?.('news')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:border-emerald-300 dark:hover:border-emerald-800 text-right transition-all flex flex-col justify-between group min-h-[90px]"
+            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
               <FileEdit className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                 إدارة الأخبار
               </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">إضافة وتعديل المقالات</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">إضافة وتعديل المقالات</div>
             </div>
           </button>
 
           <button
+            type="button"
             onClick={() => onNavigateTab?.('predictions_contests')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:border-amber-300 dark:hover:border-amber-800 text-right transition-all flex flex-col justify-between group min-h-[90px]"
+            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
               <Trophy className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                 إعدادات المسابقات
               </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">الجوائز ونظام النقاط</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">الجوائز ونظام النقاط</div>
             </div>
           </button>
 
           <button
+            type="button"
             onClick={() => onNavigateTab?.('predictions_matches')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-purple-50 dark:hover:bg-purple-950/30 hover:border-purple-300 dark:hover:border-purple-800 text-right transition-all flex flex-col justify-between group min-h-[90px]"
+            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
               <Target className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                 مباريات التوقع
               </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">جدولة واحتساب النتائج</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">جدولة واحتساب النتائج</div>
             </div>
           </button>
 
           <button
+            type="button"
             onClick={() => onNavigateTab?.('predictions_participants')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:border-rose-300 dark:hover:border-rose-800 text-right transition-all flex flex-col justify-between group min-h-[90px]"
+            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
               <UserCheck className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                 المشاركون بالمسابقة
               </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">مراجعة طلبات الانضمام</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">مراجعة طلبات الانضمام</div>
             </div>
           </button>
 
           {isSuperAdmin && (
             <button
+              type="button"
               onClick={() => onNavigateTab?.('users')}
-              className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:border-blue-300 dark:hover:border-blue-800 text-right transition-all flex flex-col justify-between group min-h-[90px]"
+              className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
                 <Shield className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                   إدارة المستخدمين
                 </div>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">الصلاحيات والوصول</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">الصلاحيات والوصول</div>
               </div>
             </button>
           )}
 
           <button
+            type="button"
             onClick={() => onNavigateTab?.('logs')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px]"
+            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
               <Clock className="w-4 h-4" />
             </div>
             <div>
               <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                 سجل العمليات
               </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">تتبع أحداث وتغييرات النظام</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">تتبع أحداث وتغييرات النظام</div>
             </div>
           </button>
         </div>
@@ -593,19 +599,21 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
                 )}
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap w-full sm:w-auto">
                 <button
+                  type="button"
                   onClick={() => onNavigateTab?.('predictions_matches')}
-                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5"
+                  className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                 >
                   <Target className="w-3.5 h-3.5" />
-                  جدولة المباريات
+                  <span>جدولة المباريات</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => onNavigateTab?.('predictions_contests')}
-                  className="px-3.5 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-bold transition-colors"
+                  className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center cursor-pointer shadow-2xs"
                 >
-                  إعدادات المسابقة
+                  <span>إعدادات المسابقة</span>
                 </button>
               </div>
             </div>
@@ -760,28 +768,28 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
                 matches.slice(0, 5).map((match) => (
                   <div
                     key={match.id}
-                    className="p-2.5 sm:p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 text-xs"
+                    className="p-2 sm:p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1.5 sm:gap-3 text-xs"
                   >
                     {/* Home Team */}
-                    <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-                      <span className="font-bold text-slate-800 dark:text-slate-200 truncate text-right">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0 justify-end">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 truncate text-right text-[11px] sm:text-xs">
                         {translateTeamName(match.homeTeam?.name || 'الفريق المضيف')}
                       </span>
                       {match.homeTeam?.crest ? (
-                        <img src={match.homeTeam.crest} alt="" className="w-5 h-5 object-contain shrink-0" referrerPolicy="no-referrer" />
+                        <img src={match.homeTeam.crest} alt="" className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0" referrerPolicy="no-referrer" />
                       ) : (
-                        <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0" />
+                        <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0" />
                       )}
                     </div>
 
                     {/* Score or Status */}
-                    <div className="flex flex-col items-center justify-center px-2 shrink-0 min-w-[70px]">
+                    <div className="flex flex-col items-center justify-center px-1 shrink-0 min-w-[58px] sm:min-w-[70px]">
                       {match.score?.fullTime?.home !== null && match.score?.fullTime?.home !== undefined ? (
-                        <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                        <span className="font-mono font-black text-xs sm:text-sm text-slate-900 dark:text-white">
                           {match.score.fullTime.home} - {match.score.fullTime.away}
                         </span>
                       ) : (
-                        <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                        <span className="font-mono text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400">
                           {new Date(match.utcDate).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       )}
@@ -791,13 +799,13 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
                     </div>
 
                     {/* Away Team */}
-                    <div className="flex items-center gap-2 flex-1 min-w-0 justify-start">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0 justify-start">
                       {match.awayTeam?.crest ? (
-                        <img src={match.awayTeam.crest} alt="" className="w-5 h-5 object-contain shrink-0" referrerPolicy="no-referrer" />
+                        <img src={match.awayTeam.crest} alt="" className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0" referrerPolicy="no-referrer" />
                       ) : (
-                        <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0" />
+                        <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0" />
                       )}
-                      <span className="font-bold text-slate-800 dark:text-slate-200 truncate text-left">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 truncate text-left text-[11px] sm:text-xs">
                         {translateTeamName(match.awayTeam?.name || 'الفريق الضيف')}
                       </span>
                     </div>

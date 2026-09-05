@@ -74,58 +74,64 @@ export default function Admin() {
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 lg:hidden transition-opacity"
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 lg:hidden transition-opacity cursor-pointer"
+          aria-hidden="true"
         />
       )}
 
       {/* Admin Sidebar Navigation */}
       <aside
-        className={`fixed lg:sticky top-0 lg:top-16 right-0 h-full lg:h-[calc(100vh-4rem)] w-72 bg-white dark:bg-slate-900 border-l border-slate-200/80 dark:border-slate-800 z-50 transform transition-transform duration-300 shadow-xl lg:shadow-none flex flex-col ${
+        role="dialog"
+        aria-label="القائمة الجانبية للوحة التحكم"
+        className={`fixed lg:sticky top-0 lg:top-16 right-0 h-full lg:h-[calc(100vh-4rem)] w-[84vw] sm:w-72 max-w-xs bg-white dark:bg-slate-900 border-l border-slate-200/80 dark:border-slate-800 z-50 transform transition-transform duration-300 shadow-2xl lg:shadow-none flex flex-col ${
           isSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
         }`}
       >
         {/* Sidebar Brand Header */}
-        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
               <Shield className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-slate-900 dark:text-white tracking-tight text-base">KoraNews</span>
-                <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0">
                   ADMIN
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 font-medium">لوحة الإدارة الموحدة</div>
+              <div className="text-[11px] text-slate-400 font-medium truncate">لوحة الإدارة الموحدة</div>
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden p-2 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg bg-slate-100 dark:bg-slate-800 transition-colors"
+            className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-xl bg-slate-100 dark:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            aria-label="إغلاق القائمة"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Sidebar Menu Items */}
-        <div className="p-4 flex-1 overflow-y-auto space-y-6">
+        <div className="p-3.5 flex-1 overflow-y-auto space-y-5">
           
           {/* Group 1: الرئيسية */}
           <div>
-            <div className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
-              الرئيسية
+            <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
+              الرئيسية والتحليلات
             </div>
             <div className="space-y-1">
               <button
+                type="button"
                 onClick={() => { setActiveTab('overview'); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'overview'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
                 }`}
               >
-                <LayoutDashboard className={`w-4 h-4 ${activeTab === 'overview' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+                <LayoutDashboard className={`w-4 h-4 shrink-0 ${activeTab === 'overview' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                 <span>لوحة التحكم (نظرة عامة)</span>
               </button>
             </div>
@@ -133,19 +139,20 @@ export default function Admin() {
 
           {/* Group 2: المحتوى */}
           <div>
-            <div className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
-              المحتوى الإخباري
+            <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
+              المحتوى الرياضي
             </div>
             <div className="space-y-1">
               <button
+                type="button"
                 onClick={() => { setActiveTab('news'); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'news'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
                 }`}
               >
-                <FileText className={`w-4 h-4 ${activeTab === 'news' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+                <FileText className={`w-4 h-4 shrink-0 ${activeTab === 'news' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                 <span>الأخبار والتصنيفات</span>
               </button>
             </div>
@@ -153,84 +160,89 @@ export default function Admin() {
 
           {/* Group 3: التوقعات والمسابقات */}
           <div>
-            <div className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
-              التوقعات والمسابقات
+            <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
+              مسابقة التوقعات
             </div>
             <div className="space-y-1">
               <button
+                type="button"
                 onClick={() => { setActiveTab('predictions_contests'); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'predictions_contests'
-                    ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
                 }`}
               >
-                <Trophy className={`w-4 h-4 ${activeTab === 'predictions_contests' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
+                <Trophy className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_contests' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                 <span>المسابقات والإعدادات</span>
               </button>
               <button
+                type="button"
                 onClick={() => { setActiveTab('predictions_matches'); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'predictions_matches'
-                    ? 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/40 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
                 }`}
               >
-                <Target className={`w-4 h-4 ${activeTab === 'predictions_matches' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} />
+                <Target className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_matches' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                 <span>مباريات التوقع</span>
               </button>
               <button
+                type="button"
                 onClick={() => { setActiveTab('predictions_participants'); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'predictions_participants'
-                    ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
                 }`}
               >
-                <Users className={`w-4 h-4 ${activeTab === 'predictions_participants' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`} />
+                <Users className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_participants' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                 <span>المشاركون بالمسابقة</span>
               </button>
               <Link
                 to="/predictions/leaderboard"
-                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-all"
+                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-all"
               >
                 <div className="flex items-center gap-3">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
                   <span>المتصدرون (الواجهة)</span>
                 </div>
-                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               </Link>
             </div>
           </div>
 
           {/* Group 4: النظام والمستخدمون */}
           <div>
-            <div className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
-              النظام والصلاحيات
+            <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
+              الإدارة والأمان
             </div>
             <div className="space-y-1">
               {isSuperAdmin && (
                 <button
+                  type="button"
                   onClick={() => { setActiveTab('users'); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'users'
-                      ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
                   }`}
                 >
-                  <ShieldCheck className={`w-4 h-4 ${activeTab === 'users' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
+                  <ShieldCheck className={`w-4 h-4 shrink-0 ${activeTab === 'users' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                   <span>إدارة المستخدمين</span>
                 </button>
               )}
               <button
+                type="button"
                 onClick={() => { setActiveTab('logs'); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'logs'
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
                 }`}
               >
-                <Activity className={`w-4 h-4 ${activeTab === 'logs' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+                <Activity className={`w-4 h-4 shrink-0 ${activeTab === 'logs' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                 <span>سجل العمليات</span>
               </button>
             </div>
@@ -239,16 +251,16 @@ export default function Admin() {
         </div>
 
         {/* Sidebar Footer User Card */}
-        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 font-black flex items-center justify-center text-sm shrink-0 border border-emerald-200/80 dark:border-emerald-800/60">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center text-xs shrink-0 shadow-2xs">
               {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-black text-slate-900 dark:text-white truncate">
                 {user?.name || 'مدير النظام'}
               </div>
-              <div className="text-[11px] text-slate-400 truncate">
+              <div className="text-[11px] text-slate-400 truncate font-medium">
                 {isSuperAdmin ? 'المالك العام (Superadmin)' : 'مشرف إداري'}
               </div>
             </div>
@@ -261,33 +273,35 @@ export default function Admin() {
       <main className="flex-1 w-full lg:w-[calc(100%-18rem)] overflow-x-hidden min-h-[calc(100vh-4rem)] flex flex-col">
         
         {/* Top Header Bar for Desktop & Mobile */}
-        <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-xs">
+        <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-6 py-2.5 flex items-center justify-between shadow-2xs h-14">
           
           {/* Breadcrumb & Section Name */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <button
+              type="button"
               onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer shrink-0"
               title="فتح القائمة"
+              aria-label="فتح القائمة الإدارية"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2 text-xs sm:text-sm">
-              <span className="font-bold text-slate-400 hidden sm:inline">لوحة التحكم</span>
-              <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">/</span>
-              <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-white">
-                <CurrentIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>{currentTabInfo.title}</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm min-w-0 truncate">
+              <span className="font-bold text-slate-400 hidden sm:inline shrink-0">لوحة التحكم</span>
+              <span className="text-slate-300 dark:text-slate-700 hidden sm:inline shrink-0">/</span>
+              <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-white truncate">
+                <CurrentIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span className="truncate">{currentTabInfo.title}</span>
               </div>
             </div>
           </div>
 
           {/* Right Action Icons & Profile Chip */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             
             {/* System Status Pill */}
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/40 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/40 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>النظام متصل</span>
             </div>
@@ -295,7 +309,7 @@ export default function Admin() {
             {/* View Public Site Link */}
             <Link
               to="/"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700/80 border border-slate-200/60 dark:border-slate-700/60 transition-colors"
+              className="inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[44px] px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 border border-slate-200/60 dark:border-slate-700/60 transition-colors shadow-2xs"
               title="معاينة الموقع للجمهور"
             >
               <span className="hidden sm:inline">معاينة الموقع</span>
@@ -303,11 +317,11 @@ export default function Admin() {
             </Link>
 
             {/* Mini User Avatar Chip */}
-            <div className="flex items-center gap-2 pl-1 border-r border-slate-200 dark:border-slate-800 pr-3">
-              <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center">
+            <div className="flex items-center gap-2 ps-2 border-s border-slate-200 dark:border-slate-800">
+              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
                 {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
               </div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 hidden md:inline truncate max-w-[120px]">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 hidden lg:inline truncate max-w-[120px]">
                 {user?.name}
               </span>
             </div>
@@ -316,7 +330,7 @@ export default function Admin() {
         </header>
 
         {/* Content Container */}
-        <div className="p-4 sm:p-8 max-w-7xl mx-auto w-full flex-1">
+        <div className="p-3.5 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full flex-1">
           
           {/* Toast / Notification Banner */}
           {message && (

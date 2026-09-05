@@ -95,7 +95,7 @@ export default function MyPredictionsList({
         <button
           type="button"
           onClick={onGoToActive}
-          className="mt-5 px-6 py-2.5 bg-brand hover:bg-emerald-600 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-2"
+          className="mt-5 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-black text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-2"
         >
           <span>تصفح المباريات المتاحة</span>
           <ArrowRight className="w-4 h-4 rtl:rotate-180" />
@@ -153,9 +153,9 @@ export default function MyPredictionsList({
               animate={{ opacity: 1, y: 0 }}
               className={`rounded-2xl bg-white dark:bg-slate-900 border p-4 sm:p-5 shadow-xs transition-all ${
                 isGolden
-                  ? 'border-amber-400/80 dark:border-amber-500/80 bg-gradient-to-r from-amber-50/20 via-transparent to-transparent dark:from-amber-950/10'
+                  ? 'border-amber-400/70 dark:border-amber-500/70 bg-amber-50/20 dark:bg-amber-950/15'
                   : isCorrect
-                  ? 'border-emerald-300 dark:border-emerald-800/80'
+                  ? 'border-emerald-300/80 dark:border-emerald-800/80'
                   : 'border-slate-200/80 dark:border-slate-800'
               }`}
             >
