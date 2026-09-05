@@ -87,8 +87,11 @@ export type ContestSettingsRecord = typeof contestSettings.$inferSelect;
 /**
  * Fetches contest settings.
  * - If contestId is specified, returns that contest.
- * - If contestId is omitted, returns the currently active contest (status = 'active').
- * - If no active contest exists, returns null without auto-creating anything.
+ * - If contestId is omitted:
+ *   1. Returns the currently active contest (status = 'active').
+ *   2. If no 'active' contest exists, returns the most recent ongoing contest (e.g. 'registration_open', 'paused').
+ *   3. If all contests are completed, returns the most recent completed contest for viewing history.
+ * - If no contests exist at all in the database, returns null without auto-creating anything.
  */
 export async function getContestSettings(contestId?: number): Promise<ContestSettingsRecord | null> {
   return await withDbRetry(async () => {
@@ -99,11 +102,29 @@ export async function getContestSettings(contestId?: number): Promise<ContestSet
       return found || null;
     }
 
+    // 1. Look for an active contest
     const activeContest = await db.query.contestSettings.findFirst({
       where: eq(contestSettings.status, 'active'),
       orderBy: [desc(contestSettings.createdAt)],
     });
-    return activeContest || null;
+    if (activeContest) {
+      return activeContest;
+    }
+
+    // 2. Look for an ongoing/current non-completed contest
+    const ongoingContest = await db.query.contestSettings.findFirst({
+      where: ne(contestSettings.status, 'completed'),
+      orderBy: [desc(contestSettings.createdAt)],
+    });
+    if (ongoingContest) {
+      return ongoingContest;
+    }
+
+    // 3. Fallback to the latest contest (even if completed) for display
+    const latestContest = await db.query.contestSettings.findFirst({
+      orderBy: [desc(contestSettings.createdAt)],
+    });
+    return latestContest || null;
   });
 }
 
@@ -111,7 +132,12 @@ export async function getContestSettings(contestId?: number): Promise<ContestSet
  * Returns the currently active contest, or null if none is active.
  */
 export async function getActiveContest(): Promise<ContestSettingsRecord | null> {
-  return await getContestSettings();
+  return await withDbRetry(async () => {
+    const activeContest = await db.query.contestSettings.findFirst({
+      where: eq(contestSettings.status, 'active'),
+    });
+    return activeContest || null;
+  });
 }
 
 /**
@@ -189,6 +215,73 @@ export async function completeContest(contestId: number): Promise<ContestSetting
       .returning();
 
     return updated[0];
+  });
+}
+
+/**
+ * Admin: Delete a completed contest and all associated prediction data.
+ * Rejects if contest is active.
+ * Cascades deletions atomically inside a single database transaction.
+ * Retains original records in matches, users, leagues, teams, and news tables.
+ */
+export async function deleteContest(contestId: number): Promise<{ success: boolean; message: string }> {
+  return await withDbRetry(async () => {
+    const existing = await getContestById(contestId);
+    if (!existing) {
+      throw new Error('المسابقة المحددة غير موجودة');
+    }
+
+    if (existing.status === 'active') {
+      throw new Error('لا يمكن حذف مسابقة نشطة حالياً. يرجى إنهاء المسابقة أولاً قبل حذفها');
+    }
+
+    // Perform atomic cascading delete of prediction contest data inside a transaction
+    await db.transaction(async (tx) => {
+      // 1. Fetch prediction matches IDs in this contest
+      const predMatches = await tx
+        .select({ id: predictionMatches.id })
+        .from(predictionMatches)
+        .where(eq(predictionMatches.contestId, contestId));
+      const predMatchIds = predMatches.map((m) => m.id);
+
+      // 2. Delete prediction points linked to contestId (or matching prediction match IDs)
+      if (predMatchIds.length > 0) {
+        await tx.delete(predictionPoints).where(
+          or(
+            eq(predictionPoints.contestId, contestId),
+            inArray(predictionPoints.predictionMatchId, predMatchIds)
+          )
+        );
+      } else {
+        await tx.delete(predictionPoints).where(eq(predictionPoints.contestId, contestId));
+      }
+
+      // 3. Delete predictions linked to contestId (or matching prediction match IDs)
+      if (predMatchIds.length > 0) {
+        await tx.delete(predictions).where(
+          or(
+            eq(predictions.contestId, contestId),
+            inArray(predictions.predictionMatchId, predMatchIds)
+          )
+        );
+      } else {
+        await tx.delete(predictions).where(eq(predictions.contestId, contestId));
+      }
+
+      // 4. Delete prediction matches
+      await tx.delete(predictionMatches).where(eq(predictionMatches.contestId, contestId));
+
+      // 5. Delete contest participants
+      await tx.delete(contestParticipants).where(eq(contestParticipants.contestId, contestId));
+
+      // 6. Delete contest settings row
+      await tx.delete(contestSettings).where(eq(contestSettings.id, contestId));
+    });
+
+    return {
+      success: true,
+      message: 'تم حذف المسابقة وجميع بياناتها المرتبطة بها بنجاح',
+    };
   });
 }
 
@@ -973,17 +1066,24 @@ export async function saveUserPrediction(
 
     // 3. Resolve contest associated with this prediction match
     let matchContestId = pm.contestId;
+    let matchContest: any = null;
     if (matchContestId) {
-      const matchContest = await getContestById(matchContestId);
-      if (!matchContest || matchContest.status === 'paused' || matchContest.status === 'completed') {
-        throw new Error('المسابقة متوقفة حالياً ولا يمكن استقبال توقعات جديدة');
-      }
+      matchContest = await getContestById(matchContestId);
     } else {
-      const activeContest = await getContestSettings();
-      if (!activeContest || activeContest.status === 'paused' || activeContest.status === 'completed') {
-        throw new Error('المسابقة متوقفة حالياً ولا يمكن استقبال توقعات جديدة');
-      }
-      matchContestId = activeContest.id;
+      matchContest = await getActiveContest();
+      matchContestId = matchContest?.id;
+    }
+
+    if (!matchContest) {
+      throw new Error('لا توجد مسابقة مرتبطة بهذه المباراة');
+    }
+
+    if (matchContest.status === 'completed') {
+      throw new Error('انتهت هذه المسابقة ولا يمكن إرسال توقع جديد.');
+    }
+
+    if (matchContest.status !== 'active') {
+      throw new Error('المسابقة غير نشطة حالياً ولا يمكن استقبال توقعات جديدة');
     }
 
     // 4. STRICT PARTICIPANT CHECK: Must be approved specifically in THIS contest
@@ -1147,6 +1247,18 @@ export async function updateUserPredictionById(
     const pm = pred.predictionMatch;
     if (!pm || !pm.isActive || pm.isCalculated || pm.isConfirmedByAdmin) {
       throw new Error('المباراة المحددة مغلقة أو تم اعتماد نتيجتها');
+    }
+
+    // Check contest status for this prediction / match
+    const contestId = pred.contestId || pm.contestId;
+    if (contestId) {
+      const matchContest = await getContestById(contestId);
+      if (!matchContest || matchContest.status === 'completed') {
+        throw new Error('انتهت هذه المسابقة ولا يمكن إرسال توقع جديد.');
+      }
+      if (matchContest.status !== 'active') {
+        throw new Error('المسابقة غير نشطة حالياً ولا يمكن استقبال توقعات جديدة');
+      }
     }
 
     const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
@@ -1825,8 +1937,19 @@ export async function confirmAndEvaluatePredictionMatch(
 // ADMIN MATCHES SELECTION & MANAGEMENT
 // ==========================================
 
-export async function getAdminAvailableMatchesForSelection(dateFilter: 'today' | 'tomorrow' | 'all' = 'today') {
+export async function getAdminAvailableMatchesForSelection(
+  dateFilter: 'today' | 'tomorrow' | 'all' = 'today',
+  contestId?: number
+) {
   return await withDbRetry(async () => {
+    let targetContestId = contestId;
+    if (targetContestId === undefined) {
+      const active = await getActiveContest();
+      if (active) {
+        targetContestId = active.id;
+      }
+    }
+
     // Determine dates for today and tomorrow using UTC
     const now = new Date();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
@@ -1860,8 +1983,14 @@ export async function getAdminAvailableMatchesForSelection(dateFilter: 'today' |
       orderBy: [asc(matches.matchDate)],
     });
 
-    // 2. Fetch existing prediction matchIds
+    // 2. Fetch existing prediction matchIds for THIS contest
+    const whereConditions = [];
+    if (targetContestId !== undefined) {
+      whereConditions.push(eq(predictionMatches.contestId, targetContestId));
+    }
+
     const existingPredMatches = await db.query.predictionMatches.findMany({
+      where: whereConditions.length > 0 ? and(...whereConditions) : undefined,
       columns: {
         id: true,
         matchId: true,
@@ -2049,9 +2178,12 @@ export async function getAdminPredictionMatches(contestId?: number) {
  */
 export async function addMatchToPredictions(matchId: string, pointsPerMatch: number = 2, contestId?: number) {
   return await withDbRetry(async () => {
-    let targetContest = contestId ? await getContestById(contestId) : await getContestSettings();
+    let targetContest = contestId ? await getContestById(contestId) : await getActiveContest();
     if (!targetContest) {
       throw new Error('لا توجد مسابقة نشطة حالياً لإضافة مباريات إليها');
+    }
+    if (targetContest.status === 'completed') {
+      throw new Error('لا يمكن إضافة مباريات لمسابقة منتهية');
     }
     if (targetContest.status !== 'active') {
       throw new Error('لا يمكن إضافة مباريات لمسابقة غير نشطة');
@@ -2302,9 +2434,12 @@ export async function addCustomExternalMatchToPredictions(data: {
   contestId?: number;
 }) {
   return await withDbRetry(async () => {
-    let targetContest = data.contestId ? await getContestById(data.contestId) : await getContestSettings();
+    let targetContest = data.contestId ? await getContestById(data.contestId) : await getActiveContest();
     if (!targetContest) {
       throw new Error('لا توجد مسابقة نشطة حالياً لإضافة مباريات إليها');
+    }
+    if (targetContest.status === 'completed') {
+      throw new Error('لا يمكن إضافة مباريات لمسابقة منتهية');
     }
     if (targetContest.status !== 'active') {
       throw new Error('لا يمكن إضافة مباريات لمسابقة غير نشطة');

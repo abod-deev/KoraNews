@@ -6,7 +6,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { adminAuth } from './src/lib/firebase-admin.ts';
 import { db, withDbRetry, initializeDatabaseSchema } from './src/db/index.ts';
-import { users, news, categories, comments, emailVerifications, activityLogs } from './src/db/schema.ts';
+import { users, news, categories, comments, emailVerifications, activityLogs, contestParticipants, predictionMatches } from './src/db/schema.ts';
 import { eq, desc, sql } from 'drizzle-orm';
 import {
   requireAuth,
@@ -64,6 +64,7 @@ import {
   getAllContests,
   createContest,
   completeContest,
+  deleteContest,
   getUserParticipationStatus,
   requestContestParticipation,
   getAdminContestParticipants,
@@ -1223,6 +1224,47 @@ async function startServer() {
   });
 
   /**
+   * GET /api/admin/predictions/active-contest
+   * Admin: Get current active contest with participant count and matches count.
+   */
+  app.get('/api/admin/predictions/active-contest', requirePermission('matches_manage'), async (_req, res) => {
+    try {
+      const active = await getActiveContest();
+      if (!active) {
+        return res.json({ activeContest: null });
+      }
+      const [pCountRes, mCountRes] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(contestParticipants).where(eq(contestParticipants.contestId, active.id)),
+        db.select({ count: sql<number>`count(*)` }).from(predictionMatches).where(eq(predictionMatches.contestId, active.id)),
+      ]);
+      return res.json({
+        activeContest: {
+          ...active,
+          participantsCount: Number(pCountRes[0]?.count || 0),
+          matchesCount: Number(mCountRes[0]?.count || 0),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching active contest:', error);
+      return res.status(500).json({ error: 'فشل في جلب المسابقة النشطة' });
+    }
+  });
+
+  /**
+   * GET /api/predictions/contests
+   * Public: List all contests (historical & active) for selection and archive.
+   */
+  app.get('/api/predictions/contests', optionalAuth, async (_req, res) => {
+    try {
+      const list = await getAllContests();
+      return res.json(list);
+    } catch (error: any) {
+      console.error('Error fetching contests:', error);
+      return res.status(500).json({ error: 'فشل في جلب قائمة المسابقات' });
+    }
+  });
+
+  /**
    * GET /api/admin/predictions/contests
    * Admin: List all contests (historical & active).
    */
@@ -1268,6 +1310,27 @@ async function startServer() {
     } catch (error: any) {
       console.error('Error completing contest:', error);
       return res.status(400).json({ error: error.message || 'فشل في إنهاء المسابقة' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/predictions/contests/:id
+   * Admin: Delete a completed contest and all associated prediction data.
+   * Rejects if contest is active.
+   */
+  app.delete('/api/admin/predictions/contests/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const idCheck = validatePositiveId(req.params.id, 'معرف المسابقة');
+      if (!idCheck.valid || idCheck.value === undefined) {
+        return res.status(400).json({ error: idCheck.error || 'معرف المسابقة غير صالح' });
+      }
+
+      const result = await deleteContest(idCheck.value);
+      await logActivity(req.dbUser.id, 'DELETE', 'CONTEST_SETTINGS', String(idCheck.value));
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error deleting contest:', error);
+      return res.status(400).json({ error: error.message || 'فشل في حذف المسابقة' });
     }
   });
 
@@ -1569,7 +1632,11 @@ async function startServer() {
   app.get('/api/admin/predictions/available-matches', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
       const dateFilter = (req.query.date as 'today' | 'tomorrow' | 'all') || 'today';
-      const data = await getAdminAvailableMatchesForSelection(dateFilter);
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const data = await getAdminAvailableMatchesForSelection(
+        dateFilter,
+        isNaN(contestId as number) ? undefined : contestId
+      );
       return res.json(data);
     } catch (error: any) {
       console.error('Error fetching available matches for predictions:', error);

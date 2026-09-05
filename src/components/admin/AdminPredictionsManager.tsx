@@ -179,6 +179,30 @@ export default function AdminPredictionsManager({
   const [participantFilter, setParticipantFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'blocked'>('all');
   const [participantSearch, setParticipantSearch] = useState('');
 
+  // Active Contest Management Data
+  const [activeContest, setActiveContest] = useState<{
+    id: number;
+    name: string;
+    description: string | null;
+    status: string;
+    participantsCount: number;
+    matchesCount: number;
+    createdAt?: string;
+  } | null>(null);
+  const [allContests, setAllContests] = useState<
+    Array<{
+      id: number;
+      name: string;
+      description: string | null;
+      status: string;
+      createdAt?: string;
+    }>
+  >([]);
+  const [isCreateContestModalOpen, setIsCreateContestModalOpen] = useState(false);
+  const [newContestName, setNewContestName] = useState('');
+  const [newContestDescription, setNewContestDescription] = useState('');
+  const [isCreatingContest, setIsCreatingContest] = useState(false);
+
   // Contest Settings Data
   const [contestSettings, setContestSettings] = useState({
     id: 1,
@@ -326,6 +350,32 @@ export default function AdminPredictionsManager({
     }
   };
 
+  // Fetch current active contest
+  const fetchActiveContest = async () => {
+    try {
+      const res = await fetch('/api/admin/predictions/active-contest', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveContest(data.activeContest || null);
+        if (data.activeContest) {
+          setContestSettings({
+            id: data.activeContest.id,
+            name: data.activeContest.name,
+            description: data.activeContest.description || '',
+            status: data.activeContest.status,
+            pointsPerCorrectScore: data.activeContest.pointsPerCorrectScore || 2,
+            startDate: '',
+            endDate: '',
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching active contest:', e);
+    }
+  };
+
   // Fetch contest settings
   const fetchContestSettings = async () => {
     try {
@@ -346,6 +396,24 @@ export default function AdminPredictionsManager({
       }
     } catch (e) {
       console.error('Error fetching contest settings:', e);
+    }
+  };
+
+  // Fetch all contests list (for completed contests & archive)
+  const fetchAllContests = async () => {
+    try {
+      const res = await fetch('/api/admin/predictions/contests', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          setAllContests(Array.isArray(data) ? data : []);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching all contests:', e);
     }
   };
 
@@ -370,6 +438,8 @@ export default function AdminPredictionsManager({
       fetchPredictionMatches(),
       fetchAvailableMatches('all'),
       fetchParticipants(),
+      fetchActiveContest(),
+      fetchAllContests(),
       fetchContestSettings(),
       fetchExistingTeamsAndLeagues(),
     ]);
@@ -1087,6 +1157,116 @@ export default function AdminPredictionsManager({
     });
   };
 
+  // Create Contest Handler (Admin only)
+  const handleCreateContest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newContestName.trim();
+    if (!name) {
+      onShowMessage('error', 'يرجى إدخال اسم المسابقة');
+      return;
+    }
+
+    if (activeContest && activeContest.status === 'active') {
+      onShowMessage('error', 'توجد مسابقة حالية. يجب إنهاؤها أولًا قبل إنشاء مسابقة جديدة.');
+      return;
+    }
+
+    setIsCreatingContest(true);
+    try {
+      const res = await fetch('/api/admin/predictions/contests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
+          description: newContestDescription.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'فشل في إنشاء المسابقة');
+      }
+
+      onShowMessage('success', 'تم إنشاء المسابقة بنجاح وبدء تفعيلها');
+      setIsCreateContestModalOpen(false);
+      setNewContestName('');
+      setNewContestDescription('');
+      await loadAll();
+    } catch (err: any) {
+      onShowMessage('error', err.message || 'حدث خطأ أثناء إنشاء المسابقة');
+    } finally {
+      setIsCreatingContest(false);
+    }
+  };
+
+  // Complete Contest Handler (Admin only)
+  const handleCompleteContest = () => {
+    if (!activeContest) return;
+
+    requestConfirmation({
+      title: 'إنهاء المسابقة',
+      message: 'هل أنت متأكد من إنهاء هذه المسابقة؟\nبعد الإنهاء لن يتمكن المستخدمون من إرسال توقعات جديدة لهذه المسابقة.',
+      confirmText: 'إنهاء المسابقة',
+      cancelText: 'إلغاء',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/admin/predictions/contests/${activeContest.id}/complete`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'فشل في إنهاء المسابقة');
+          }
+
+          onShowMessage('success', 'تم إنهاء المسابقة بنجاح وأرشفة بياناتها');
+          await loadAll();
+        } catch (err: any) {
+          onShowMessage('error', err.message || 'حدث خطأ أثناء إنهاء المسابقة');
+        }
+      },
+    });
+  };
+
+  // Delete Completed Contest Handler (Admin only)
+  const handleDeleteContest = (contestId: number, contestName: string) => {
+    requestConfirmation({
+      title: 'حذف المسابقة',
+      message:
+        'هل أنت متأكد من حذف هذه المسابقة؟\nسيتم حذف المسابقة وجميع بياناتها المرتبطة بها، بما في ذلك المشاركين والتوقعات والنقاط ومباريات التوقعات.\nهذا الإجراء لا يمكن التراجع عنه.',
+      confirmText: 'تأكيد الحذف',
+      cancelText: 'إلغاء',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/admin/predictions/contests/${contestId}`, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'فشل في حذف المسابقة');
+          }
+
+          onShowMessage('success', data.message || 'تم حذف المسابقة وجميع بياناتها بنجاح');
+          await loadAll();
+        } catch (err: any) {
+          onShowMessage('error', err.message || 'حدث خطأ أثناء حذف المسابقة');
+        }
+      },
+    });
+  };
+
   // Save contest settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1202,6 +1382,190 @@ export default function AdminPredictionsManager({
 
   return (
     <div className="space-y-6">
+      {/* 0. CONTEST MANAGEMENT SECTION (إدارة المسابقة) */}
+      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 mb-4 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
+              <Trophy className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-white">
+                  إدارة المسابقة
+                </h2>
+                {activeContest && activeContest.status === 'active' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    نشطة
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                    غير نشطة
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">
+                التحكم المباشر في دورة حياة مسابقات التوقعات، تتبع الإحصائيات، والإنهاء اليدوي.
+              </p>
+            </div>
+          </div>
+
+          {/* Action Button */}
+          <div className="flex items-center gap-2 self-stretch sm:self-auto">
+            {activeContest && activeContest.status === 'active' ? (
+              <button
+                type="button"
+                onClick={handleCompleteContest}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+              >
+                <Ban className="w-4 h-4" />
+                <span>إنهاء المسابقة</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsCreateContestModalOpen(true)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ إنشاء مسابقة</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ACTIVE CONTEST VIEW */}
+        {activeContest && activeContest.status === 'active' ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Contest Name & Description */}
+              <div className="md:col-span-2 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800 space-y-2">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-xs font-bold text-gray-400">اسم المسابقة:</span>
+                  <span className="text-sm font-black text-gray-900 dark:text-white">
+                    {activeContest.name}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed font-medium">
+                  <span className="text-gray-400 font-bold ml-1">الوصف:</span>
+                  {activeContest.description || 'لا يوجد وصف محدد للمسابقة'}
+                </div>
+                <div className="pt-2 flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400 border-t border-gray-200/60 dark:border-gray-700/60">
+                  <span className="flex items-center gap-1">
+                    الحالة: <strong className="text-emerald-600 dark:text-emerald-400 font-black">نشطة</strong>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    معرف المسابقة: <strong className="font-mono text-gray-700 dark:text-gray-300">#{activeContest.id}</strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Stats Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-blue-600 dark:text-blue-400">
+                    <span className="text-[11px] font-bold">عدد المشاركين</span>
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div className="text-2xl font-black text-blue-700 dark:text-blue-300 mt-2">
+                    {activeContest.participantsCount ?? participants.length}
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-purple-600 dark:text-purple-400">
+                    <span className="text-[11px] font-bold">مباريات التوقعات</span>
+                    <Trophy className="w-4 h-4" />
+                  </div>
+                  <div className="text-2xl font-black text-purple-700 dark:text-purple-300 mt-2">
+                    {activeContest.matchesCount ?? predictionMatches.length}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Prevention Notice */}
+            <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>توجد مسابقة حالية. يجب إنهاؤها أولًا قبل إنشاء مسابقة جديدة.</span>
+            </div>
+          </div>
+        ) : (
+          /* EMPTY CONTEST VIEW */
+          <div className="text-center py-8 px-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-dashed border-gray-200 dark:border-gray-800 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-400 flex items-center justify-center mx-auto">
+              <Trophy className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-gray-900 dark:text-white">لا توجد مسابقة حالية</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+                يمكنك الآن إنشاء مسابقة توقعات جديدة لبدء استقبال التوقعات من المشتركين وإضافة المباريات.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsCreateContestModalOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs shadow-xs transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ إنشاء مسابقة</span>
+            </button>
+          </div>
+        )}
+
+        {/* COMPLETED CONTESTS LIST */}
+        {allContests.filter((c) => c.status === 'completed').length > 0 && (
+          <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <Archive className="w-3.5 h-3.5 text-gray-400" />
+                المسابقات المنتهية والأرشيف ({allContests.filter((c) => c.status === 'completed').length})
+              </h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {allContests
+                .filter((c) => c.status === 'completed')
+                .map((contest) => (
+                  <div
+                    key={contest.id}
+                    className="p-3.5 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 border border-gray-200/80 dark:border-gray-700/60 flex items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-gray-900 dark:text-white truncate">
+                          {contest.name}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 shrink-0">
+                          منتهية
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 font-medium truncate">
+                        {contest.description || 'لا يوجد وصف'}
+                      </div>
+                      <div className="text-[10px] text-gray-400 font-mono">
+                        #{contest.id} {contest.createdAt ? `• ${new Date(contest.createdAt).toLocaleDateString('ar-EG')}` : ''}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteContest(contest.id, contest.name)}
+                      className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 font-black text-xs flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+                      title="حذف المسابقة المنتهية"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>حذف المسابقة</span>
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 1. Sub-Tabs Bar */}
       <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap bg-white dark:bg-gray-900 p-1.5 sm:p-2 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xs scrollbar-hide">
         {[
@@ -3668,6 +4032,80 @@ export default function AdminPredictionsManager({
                 >
                   {isUpdatingUserPred ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   <span>حفظ التعديل</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 14. MODAL: Create New Contest */}
+      {isCreateContestModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-brand/10 text-brand flex items-center justify-center font-bold">
+                  <Trophy className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-gray-900 dark:text-white">إنشاء مسابقة جديدة</h3>
+                  <p className="text-[11px] text-gray-400 font-bold">تبدأ المسابقة فور إنشائها ويتم إنهاؤها يدوياً</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateContestModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateContest} className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-gray-700 dark:text-gray-300 mb-1.5">
+                  اسم المسابقة <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: مسابقة توقعات دوري روشن 2026"
+                  value={newContestName}
+                  onChange={(e) => setNewContestName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white focus:outline-none focus:border-brand"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                  وصف المسابقة اختياري
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="اكتب وصفاً أو شروطاً خاصة بالمسابقة للمشاركين..."
+                  value={newContestDescription}
+                  onChange={(e) => setNewContestDescription(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-medium text-gray-900 dark:text-white focus:outline-none focus:border-brand resize-none"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateContestModalOpen(false)}
+                  disabled={isCreatingContest}
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingContest || !newContestName.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {isCreatingContest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  <span>إنشاء</span>
                 </button>
               </div>
             </form>
