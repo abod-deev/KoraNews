@@ -102,29 +102,13 @@ export async function getContestSettings(contestId?: number): Promise<ContestSet
       return found || null;
     }
 
-    // 1. Look for an active contest
+    // Return the currently active contest (status = 'active')
     const activeContest = await db.query.contestSettings.findFirst({
       where: eq(contestSettings.status, 'active'),
       orderBy: [desc(contestSettings.createdAt)],
     });
-    if (activeContest) {
-      return activeContest;
-    }
 
-    // 2. Look for an ongoing/current non-completed contest
-    const ongoingContest = await db.query.contestSettings.findFirst({
-      where: ne(contestSettings.status, 'completed'),
-      orderBy: [desc(contestSettings.createdAt)],
-    });
-    if (ongoingContest) {
-      return ongoingContest;
-    }
-
-    // 3. Fallback to the latest contest (even if completed) for display
-    const latestContest = await db.query.contestSettings.findFirst({
-      orderBy: [desc(contestSettings.createdAt)],
-    });
-    return latestContest || null;
+    return activeContest || null;
   });
 }
 
@@ -144,6 +128,7 @@ export async function getActiveContest(): Promise<ContestSettingsRecord | null> 
  * Returns a specific contest by its primary ID.
  */
 export async function getContestById(id: number): Promise<ContestSettingsRecord | null> {
+  if (id === undefined || id === null || isNaN(id)) return null;
   return await getContestSettings(id);
 }
 
@@ -358,8 +343,13 @@ export async function getUserParticipationStatus(userId: number, contestId?: num
 }> {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (!targetContestId) {
-      const active = await getContestSettings();
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) {
+        return { status: 'not_registered' };
+      }
+    } else {
+      const active = await getActiveContest();
       if (active) {
         targetContestId = active.id;
       }
@@ -393,14 +383,11 @@ export async function getUserParticipationStatus(userId: number, contestId?: num
 export async function requestContestParticipation(userId: number, notes?: string, contestId?: number) {
   return await withDbRetry(async () => {
     // 1. Check contest status
-    const contest = contestId ? await getContestById(contestId) : await getContestSettings();
+    const contest = contestId ? await getContestById(contestId) : await getActiveContest();
     if (!contest) {
-      throw new Error('لا توجد مسابقة حالية للتسجيل فيها');
+      throw new Error(contestId ? 'المسابقة المحددة غير موجودة' : 'لا توجد مسابقة نشطة حالياً للتسجيل فيها');
     }
-    if (contest.status === 'registration_closed') {
-      throw new Error('التسجيل في المسابقة مغلق حالياً');
-    }
-    if (contest.status === 'paused' || contest.status === 'completed') {
+    if (contest.status !== 'active') {
       throw new Error('المسابقة غير متاحة لاستقبال طلبات جديدة');
     }
 
@@ -630,8 +617,11 @@ export function isMatchOpenForPrediction(
 export async function getPredictionMatches(userId: number | null, contestId?: number): Promise<PredictionMatchInfo[]> {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
-      const active = await getContestSettings();
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) return [];
+    } else {
+      const active = await getActiveContest();
       if (active) {
         targetContestId = active.id;
       }
@@ -836,11 +826,18 @@ export async function getPredictionMatches(userId: number | null, contestId?: nu
 export async function getUserPredictionsHistory(userId: number, contestId?: number) {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
-      const active = await getContestSettings();
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) return [];
+    } else {
+      const active = await getActiveContest();
       if (active) {
         targetContestId = active.id;
       }
+    }
+
+    if (targetContestId === undefined) {
+      return [];
     }
 
     const whereConditions = [eq(predictions.userId, userId)];
@@ -956,11 +953,42 @@ export async function getUserPredictionsHistory(userId: number, contestId?: numb
 export async function getUserPredictionStats(userId: number, contestId?: number) {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
-      const active = await getContestSettings();
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) {
+        return {
+          totalPoints: 0,
+          totalPredictions: 0,
+          correctPredictions: 0,
+          wrongPredictions: 0,
+          pendingPredictions: 0,
+          goldenPredictions: 0,
+          goldenPoints: 0,
+          successRate: 0,
+          userRank: null,
+          goldenRank: null,
+        };
+      }
+    } else {
+      const active = await getActiveContest();
       if (active) {
         targetContestId = active.id;
       }
+    }
+
+    if (targetContestId === undefined) {
+      return {
+        totalPoints: 0,
+        totalPredictions: 0,
+        correctPredictions: 0,
+        wrongPredictions: 0,
+        pendingPredictions: 0,
+        goldenPredictions: 0,
+        goldenPoints: 0,
+        successRate: 0,
+        userRank: null,
+        goldenRank: null,
+      };
     }
 
     // 1. Total points from points ledger for contest
@@ -1533,10 +1561,17 @@ export async function adminDeleteUserPrediction(
 export async function getLeaderboard(currentUserId?: number, limit = 100, contestId?: number) {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
-      const activeContest = await db.query.contestSettings.findFirst({
-        where: eq(contestSettings.status, 'active'),
-      });
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) {
+        return {
+          leaderboard: [],
+          totalParticipants: 0,
+          currentUserRank: null,
+        };
+      }
+    } else {
+      const activeContest = await getActiveContest();
       if (activeContest) {
         targetContestId = activeContest.id;
       }
@@ -1634,10 +1669,17 @@ export async function getLeaderboard(currentUserId?: number, limit = 100, contes
 export async function getGoldenLeaderboard(currentUserId?: number, limit = 100, contestId?: number) {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
-      const activeContest = await db.query.contestSettings.findFirst({
-        where: eq(contestSettings.status, 'active'),
-      });
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) {
+        return {
+          leaderboard: [],
+          totalParticipants: 0,
+          currentUserRank: null,
+        };
+      }
+    } else {
+      const activeContest = await getActiveContest();
       if (activeContest) {
         targetContestId = activeContest.id;
       }
@@ -1943,10 +1985,15 @@ export async function getAdminAvailableMatchesForSelection(
 ) {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) return [];
+    } else {
       const active = await getActiveContest();
       if (active) {
         targetContestId = active.id;
+      } else {
+        return [];
       }
     }
 
@@ -2045,10 +2092,15 @@ export async function getAdminAvailableMatchesForSelection(
 export async function getAdminPredictionMatches(contestId?: number) {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
-      const active = await getContestSettings();
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) return [];
+    } else {
+      const active = await getActiveContest();
       if (active) {
         targetContestId = active.id;
+      } else {
+        return [];
       }
     }
 
@@ -2813,8 +2865,23 @@ export async function removePredictionMatch(id: number) {
 export async function getAdminPredictionStats(contestId?: number) {
   return await withDbRetry(async () => {
     let targetContestId = contestId;
-    if (targetContestId === undefined) {
-      const active = await getContestSettings();
+    if (targetContestId !== undefined) {
+      const contest = await getContestById(targetContestId);
+      if (!contest) {
+        return {
+          totalMatches: 0,
+          evaluatedMatches: 0,
+          activeMatches: 0,
+          totalPredictions: 0,
+          correctPredictions: 0,
+          goldenPredictionsCount: 0,
+          totalPointsDistributed: 0,
+          goldenPointsDistributed: 0,
+          successRate: 0,
+        };
+      }
+    } else {
+      const active = await getActiveContest();
       if (active) {
         targetContestId = active.id;
       }
