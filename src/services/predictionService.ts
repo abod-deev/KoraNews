@@ -190,6 +190,10 @@ export async function completeContest(contestId: number): Promise<ContestSetting
       throw new Error('المسابقة المحددة غير موجودة');
     }
 
+    if (existing.status !== 'active') {
+      throw new Error('لا يمكن إنهاء مسابقة غير نشطة أو منتهية بالفعل');
+    }
+
     const updated = await db
       .update(contestSettings)
       .set({
@@ -216,11 +220,18 @@ export async function deleteContest(contestId: number): Promise<{ success: boole
       throw new Error('المسابقة المحددة غير موجودة');
     }
 
-    if (existing.status === 'active') {
-      throw new Error('لا يمكن حذف مسابقة نشطة حالياً. يرجى إنهاء المسابقة أولاً قبل حذفها');
+    if (existing.status !== 'completed') {
+      throw new Error('يمكن حذف المسابقات المنتهية (COMPLETED) فقط. لا يمكن حذف مسابقة نشطة.');
     }
 
     // Perform atomic cascading delete of prediction contest data inside a transaction
+    // Order of deletion:
+    // 1. predictionPoints
+    // 2. predictions
+    // 3. predictionMatches
+    // 4. contestParticipants
+    // 5. contestSettings
+    // NOTE: System entities (matches, users, teams, leagues, news) are preserved untouched.
     await db.transaction(async (tx) => {
       // 1. Fetch prediction matches IDs in this contest
       const predMatches = await tx
@@ -387,8 +398,11 @@ export async function requestContestParticipation(userId: number, notes?: string
     if (!contest) {
       throw new Error(contestId ? 'المسابقة المحددة غير موجودة' : 'لا توجد مسابقة نشطة حالياً للتسجيل فيها');
     }
+    if (contest.status === 'completed') {
+      throw new Error('انتهت المسابقة، لم يعد بإمكانك تنفيذ هذا الإجراء.');
+    }
     if (contest.status !== 'active') {
-      throw new Error('المسابقة غير متاحة لاستقبال طلبات جديدة');
+      throw new Error('عذراً، المسابقة غير نشطة حالياً ولا يمكن استقبال طلبات جديدة');
     }
 
     // 2. Check existing record for THIS specific contest

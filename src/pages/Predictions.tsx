@@ -24,12 +24,15 @@ import {
   ExternalLink,
   ShieldCheck,
   Crown,
+  Shield,
+  Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import PredictionMatchCard from '../components/predictions/PredictionMatchCard';
 import MyPredictionsList, { MyPredictionItem } from '../components/predictions/MyPredictionsList';
 import PredictionsLeaderboard, { LeaderboardUser } from '../components/predictions/PredictionsLeaderboard';
 import { PredictionMatchInfo } from '../services/predictionService';
+import { getContestPermissions } from '../utils/contestPermissions';
 
 export default function Predictions() {
   useSEO('توقعات المباريات', 'توقع نتائج المباريات العالمية واكسب النقاط وتصدر قائمة الترتيب في KoraNews');
@@ -210,10 +213,11 @@ export default function Predictions() {
       const data = await res.json();
       if (!res.ok) {
         showToast('error', data.error || 'فشل في إرسال طلب الاشتراك');
+        await loadAllData(false);
       } else {
         showToast('success', data.message || 'تم إرسال طلب اشتراكك في المسابقة بنجاح');
         setApplyModalOpen(false);
-        fetchParticipationStatus();
+        await loadAllData(false);
       }
     } catch (err: any) {
       showToast('error', err.message || 'حدث خطأ في الاتصال');
@@ -230,6 +234,12 @@ export default function Predictions() {
   ): Promise<boolean> => {
     if (!token) {
       navigate('/login');
+      return false;
+    }
+
+    if (contestStatus !== 'active') {
+      showToast('error', 'انتهت المسابقة، لم يعد بإمكانك تنفيذ هذا الإجراء.');
+      await loadAllData(false);
       return false;
     }
 
@@ -254,7 +264,10 @@ export default function Predictions() {
 
       const data = await res.json();
       if (!res.ok) {
-        showToast('error', data.error || 'فشل في حفظ التوقع');
+        const errorMsg = data.error || 'فشل في حفظ التوقع';
+        showToast('error', errorMsg);
+        // Refresh all data if contest or match status changed on server
+        await loadAllData(false);
         return false;
       }
 
@@ -283,7 +296,8 @@ export default function Predictions() {
       ? finishedMatches
       : predictionMatches;
 
-  const isApproved = participationStatus.status === 'approved';
+  const contestPerms = getContestPermissions(contestSettings, user, participationStatus);
+  const { contestStatus, canParticipate, canPredict, isParticipant } = contestPerms;
 
   return (
     <div className="min-h-screen bg-gray-50/50 dark:bg-gray-950 py-6 sm:py-8 px-3 sm:px-6 lg:px-8 dir-rtl">
@@ -295,6 +309,9 @@ export default function Predictions() {
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-emerald-100 text-xs font-black">
                 <Trophy className="w-3.5 h-3.5 text-amber-300" />
                 <span>{contestSettings?.name || 'مسابقة توقعات KoraNews'}</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-white/20 text-white">
+                  {contestStatus === 'active' ? 'مسابقة نشطة' : contestStatus === 'completed' ? 'انتهت المسابقة' : 'لا توجد مسابقة'}
+                </span>
               </div>
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
                 توقعات نتائج المباريات
@@ -318,7 +335,7 @@ export default function Predictions() {
               <button
                 onClick={() => loadAllData(false)}
                 disabled={isRefreshing}
-                className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white border border-white/15 cursor-pointer"
+                className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white border border-white/15 cursor-pointer disabled:opacity-50"
                 title="تحديث البيانات"
                 aria-label="تحديث"
               >
@@ -327,13 +344,91 @@ export default function Predictions() {
             </div>
           </div>
 
+          {/* Quick Contest Details Strip */}
+          {contestStatus !== 'none' && (
+            <div className="relative z-10 mt-5 pt-4 border-t border-white/15 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 text-xs">
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-300 shrink-0" />
+                <div>
+                  <div className="text-[10px] text-emerald-100 font-bold">الحالة</div>
+                  <div className="font-black text-white">{contestStatus === 'active' ? 'نشطة' : 'انتهت المسابقة'}</div>
+                </div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-300 shrink-0" />
+                <div>
+                  <div className="text-[10px] text-emerald-100 font-bold">المشاركون</div>
+                  <div className="font-black text-white">{contestSettings?.participantsCount ?? leaderboard.length} متسابق</div>
+                </div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-300 shrink-0" />
+                <div>
+                  <div className="text-[10px] text-emerald-100 font-bold">مباريات التوقع</div>
+                  <div className="font-black text-white">{predictionMatches.length} مباراة</div>
+                </div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                <div>
+                  <div className="text-[10px] text-emerald-100 font-bold">النقاط</div>
+                  <div className="font-black text-white">{user && stats ? `${stats.totalPoints} نقطة` : 'حسب المباراة'}</div>
+                </div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center gap-2 col-span-2 sm:col-span-1">
+                <Medal className="w-4 h-4 text-amber-300 shrink-0" />
+                <div>
+                  <div className="text-[10px] text-emerald-100 font-bold">الترتيب</div>
+                  <div className="font-black text-white">{user && stats?.userRank ? `#${stats.userRank}` : 'جدول المتصدرين'}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Decorative background glow */}
           <div className="absolute -left-10 -bottom-10 w-60 h-60 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute right-10 -top-10 w-60 h-60 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
         </div>
 
-        {/* 2. Participation Status Banner / Action Callout */}
-        {!user ? (
+        {/* 2. Participation / Contest Status Banner */}
+        {contestStatus === 'none' ? (
+          <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 sm:p-6 border border-gray-200/80 dark:border-gray-800 shadow-2xs flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 text-right">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-gray-900 dark:text-white">
+                  لا توجد مسابقة حالية
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-bold">
+                  ستظهر المسابقة هنا عند إنشائها من الإدارة.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : contestStatus === 'completed' ? (
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-3xl p-5 sm:p-6 shadow-2xs flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 text-right">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Trophy className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-black text-amber-900 dark:text-amber-200">
+                    انتهت المسابقة
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 text-[10px] font-black">
+                    مكتملة
+                  </span>
+                </div>
+                <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5 font-bold">
+                  انتهت المسابقة - تم حساب كافة النقاط وإعلان النتائج والترتيب النهائي للمشاركين.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : !user ? (
           <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 sm:p-6 border border-gray-200/80 dark:border-gray-800 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3.5 text-right">
               <div className="w-12 h-12 rounded-2xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
@@ -356,7 +451,7 @@ export default function Predictions() {
               تسجيل الدخول / إنشاء حساب
             </Link>
           </div>
-        ) : participationStatus.status === 'not_registered' ? (
+        ) : canParticipate ? (
           <div className="bg-gradient-to-r from-amber-500/10 via-brand/10 to-teal-500/10 border-2 border-amber-400/40 dark:border-amber-500/30 rounded-3xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3.5 text-right">
               <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
@@ -446,7 +541,7 @@ export default function Predictions() {
         ) : null}
 
         {/* 3. Approved User Stats Dashboard */}
-        {user && isApproved && stats && (
+        {user && isParticipant && stats && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             {/* 1. Total Points */}
             <div className="bg-white dark:bg-gray-900 p-3.5 rounded-2xl border border-gray-200/80 dark:border-gray-800 shadow-2xs">
@@ -710,8 +805,9 @@ export default function Predictions() {
                       key={pm.id}
                       predictionMatch={pm}
                       isLoggedIn={!!user}
-                      isApprovedParticipant={isApproved}
+                      isApprovedParticipant={isParticipant}
                       userParticipationStatus={participationStatus.status}
+                      contestStatus={contestStatus}
                       onSavePrediction={handleSavePrediction}
                       onRequestLogin={() => navigate('/login')}
                       onRequestRegister={() => setApplyModalOpen(true)}

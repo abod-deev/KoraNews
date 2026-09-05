@@ -462,6 +462,12 @@ export default function AdminPredictionsManager({
 
   // Add match from system database with customized points
   const handleAddSelectedMatch = async () => {
+    if (!activeContest || activeContest.status !== 'active') {
+      onShowMessage('error', 'لا توجد مسابقة نشطة حالياً. لا يمكن إضافة مباريات إلا لمسابقة نشطة.');
+      await loadAll();
+      return;
+    }
+
     if (!selectedMatchId) {
       onShowMessage('error', 'يرجى اختيار مباراة من القائمة أولاً');
       return;
@@ -498,15 +504,17 @@ export default function AdminPredictionsManager({
           const data = await res.json();
           if (!res.ok) {
             onShowMessage('error', data.error || 'فشل في إضافة المباراة');
+            await loadAll();
           } else {
             onShowMessage('success', `تمت إضافة المباراة لمسابقات التوقع بنجاح (${pts} نقاط)!`);
             setSelectedMatchId(null);
             setSelectedMatchPoints(2);
-            await Promise.all([fetchPredictionMatches(), fetchAvailableMatches('all')]);
+            await Promise.all([fetchPredictionMatches(), fetchAvailableMatches('all'), fetchActiveContest()]);
             setSubTab('matches');
           }
         } catch (e: any) {
           onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+          await loadAll();
         } finally {
           setIsActionLoading(false);
         }
@@ -517,6 +525,12 @@ export default function AdminPredictionsManager({
   // Add external custom league match
   const handleAddCustomMatch = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeContest || activeContest.status !== 'active') {
+      onShowMessage('error', 'لا توجد مسابقة نشطة حالياً. لا يمكن إضافة مباريات إلا لمسابقة نشطة.');
+      await loadAll();
+      return;
+    }
+
     if (!customMatch.leagueName || !customMatch.homeTeamName || !customMatch.awayTeamName) {
       onShowMessage('error', 'يرجى ملء اسم البطولة واسمي الفريقين');
       return;
@@ -550,6 +564,7 @@ export default function AdminPredictionsManager({
           const data = await res.json();
           if (!res.ok) {
             onShowMessage('error', data.error || 'فشل في إضافة المباراة الخاصة');
+            await loadAll();
           } else {
             onShowMessage('success', `تمت إضافة مباراة الدوري الخاص للتوقعات بنجاح (${pts} نقاط)!`);
             setCustomMatch({
@@ -562,11 +577,12 @@ export default function AdminPredictionsManager({
               matchDate: new Date().toISOString().slice(0, 16),
               pointsPerMatch: 2,
             });
-            await fetchPredictionMatches();
+            await Promise.all([fetchPredictionMatches(), fetchActiveContest()]);
             setSubTab('matches');
           }
         } catch (e: any) {
           onShowMessage('error', e.message || 'حدث خطأ في الاتصال');
+          await loadAll();
         } finally {
           setIsActionLoading(false);
         }
@@ -1208,7 +1224,7 @@ export default function AdminPredictionsManager({
 
     requestConfirmation({
       title: 'إنهاء المسابقة',
-      message: 'هل أنت متأكد من إنهاء هذه المسابقة؟\nبعد الإنهاء لن يتمكن المستخدمون من إرسال توقعات جديدة لهذه المسابقة.',
+      message: 'هل أنت متأكد من إنهاء المسابقة؟\nبعد الإنهاء لن يتمكن المستخدمون من تنفيذ العمليات الخاصة بالمسابقة النشطة.',
       confirmText: 'إنهاء المسابقة',
       cancelText: 'إلغاء',
       variant: 'danger',
@@ -1239,8 +1255,7 @@ export default function AdminPredictionsManager({
   const handleDeleteContest = (contestId: number, contestName: string) => {
     requestConfirmation({
       title: 'حذف المسابقة',
-      message:
-        'هل أنت متأكد من حذف هذه المسابقة؟\nسيتم حذف المسابقة وجميع بياناتها المرتبطة بها، بما في ذلك المشاركين والتوقعات والنقاط ومباريات التوقعات.\nهذا الإجراء لا يمكن التراجع عنه.',
+      message: 'هل أنت متأكد من حذف هذه المسابقة؟\nسيتم حذف بيانات المشاركين والتوقعات والنقاط المرتبطة بها.',
       confirmText: 'تأكيد الحذف',
       cancelText: 'إلغاء',
       variant: 'danger',
@@ -1262,6 +1277,7 @@ export default function AdminPredictionsManager({
           await loadAll();
         } catch (err: any) {
           onShowMessage('error', err.message || 'حدث خطأ أثناء حذف المسابقة');
+          await loadAll();
         }
       },
     });
@@ -2057,6 +2073,22 @@ export default function AdminPredictionsManager({
       {/* 3. SUB-TAB 2: ADD MATCHES (Today, Tomorrow & Custom External with Points per Match) */}
       {subTab === 'add_match' && (
         <div className="space-y-6">
+          {(!activeContest || activeContest.status !== 'active') && (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-bold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>تنبيه: لا توجد مسابقة نشطة حالياً. إضافة المباريات يتطلب وجود مسابقة نشطة. يرجى إنشاء مسابقة جديدة أولاً.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateContestModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shrink-0 cursor-pointer transition-colors"
+              >
+                + إنشاء مسابقة
+              </button>
+            </div>
+          )}
+
           {/* Day selection tabs */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800">
             <div className="flex items-center gap-2 flex-wrap">

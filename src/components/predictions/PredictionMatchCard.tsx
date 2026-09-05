@@ -29,6 +29,7 @@ export interface PredictionMatchCardProps {
   isLoggedIn: boolean;
   isApprovedParticipant?: boolean;
   userParticipationStatus?: string;
+  contestStatus?: 'active' | 'completed' | 'none';
   onSavePrediction: (predictionMatchId: number, homeScore: number, awayScore: number) => Promise<boolean>;
   onRequestLogin: () => void | Promise<any>;
   onRequestRegister?: () => void;
@@ -46,6 +47,7 @@ export default function PredictionMatchCard({
   isLoggedIn,
   isApprovedParticipant = true,
   userParticipationStatus = 'approved',
+  contestStatus = 'active',
   onSavePrediction,
   onRequestLogin,
   onRequestRegister,
@@ -53,6 +55,7 @@ export default function PredictionMatchCard({
   const m = predictionMatch.match;
   const userPred = predictionMatch.userPrediction;
   const ptsPerMatch = predictionMatch.pointsPerMatch || 2;
+  const isContestActive = contestStatus === 'active';
 
   const [homeScore, setHomeScore] = useState<number>(
     userPred ? userPred.homeScore : 0
@@ -100,13 +103,13 @@ export default function PredictionMatchCard({
   const isFinished = isCalculated || m.status === 'FINISHED';
 
   // Can the user edit an existing prediction or create a new one?
-  const canEditPrediction = isOpen && (!userPred || (userPred.canEdit && remainingSeconds > 0));
+  const canEditPrediction = isContestActive && isOpen && (!userPred || (userPred.canEdit && remainingSeconds > 0));
 
   // Has the user modified the score compared to what was saved?
   const isModified = !userPred || userPred.homeScore !== homeScore || userPred.awayScore !== awayScore;
 
   const handleScoreChange = (team: 'home' | 'away', delta: number) => {
-    if (!isOpen || !isLoggedIn || !isApprovedParticipant) return;
+    if (!isContestActive || !isOpen || !isLoggedIn || !isApprovedParticipant) return;
     if (team === 'home') {
       setHomeScore((prev) => Math.max(0, Math.min(20, prev + delta)));
     } else {
@@ -115,7 +118,7 @@ export default function PredictionMatchCard({
   };
 
   const handleManualInput = (team: 'home' | 'away', val: string) => {
-    if (!isOpen || !isLoggedIn || !isApprovedParticipant) return;
+    if (!isContestActive || !isOpen || !isLoggedIn || !isApprovedParticipant) return;
     const parsed = parseInt(val, 10);
     const safe = isNaN(parsed) ? 0 : Math.max(0, Math.min(20, parsed));
     if (team === 'home') setHomeScore(safe);
@@ -124,6 +127,7 @@ export default function PredictionMatchCard({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isContestActive) return;
     if (!isLoggedIn) {
       onRequestLogin();
       return;
