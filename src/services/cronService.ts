@@ -5,7 +5,12 @@ import {
   refreshMemoryMatchesCache
 } from './footballService.ts';
 
-let syncIntervalHandle: NodeJS.Timeout | null = null;
+// Singleton guard on globalThis to prevent duplicate cron jobs across hot-reloads or re-imports
+declare global {
+  var __footballCronStarted: boolean | undefined;
+  var __footballCronInterval: NodeJS.Timeout | undefined;
+}
+
 let syncCycleStep = 0; // 0 = Matches, 1 = Standings
 
 /**
@@ -14,6 +19,17 @@ let syncCycleStep = 0; // 0 = Matches, 1 = Standings
  * Prioritizes live matches and real-time scores, with rotating league standings.
  */
 export function startCronJobs() {
+  if (globalThis.__footballCronStarted) {
+    console.log("[cronService] Cron worker already running, skipping duplicate initialization.");
+    return;
+  }
+  globalThis.__footballCronStarted = true;
+
+  if (globalThis.__footballCronInterval) {
+    clearInterval(globalThis.__footballCronInterval);
+    globalThis.__footballCronInterval = undefined;
+  }
+
   console.log("[cronService] Initializing 20-second Live Football Data Sync Worker...");
 
   // 1. Initialize tables & warm-up cache
@@ -34,14 +50,9 @@ export function startCronJobs() {
     }
   }, 2000);
 
-  // 2. Clear any existing interval to prevent duplicates
-  if (syncIntervalHandle) {
-    clearInterval(syncIntervalHandle);
-  }
-
-  // 3. Precision 20-second interval = 3 requests per minute
+  // 2. Precision 20-second interval = 3 requests per minute
   // 60,000ms / 3 = 20,000ms
-  syncIntervalHandle = setInterval(async () => {
+  globalThis.__footballCronInterval = setInterval(async () => {
     try {
       if (syncCycleStep === 0) {
         // Step 1: Sync matches and live scores across competitions

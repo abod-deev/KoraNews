@@ -377,140 +377,227 @@ export async function refreshMemoryMatchesCache() {
   }
 }
 
+export interface NormalizedMatchData {
+  id: string;
+  leagueId: string;
+  leagueName: string;
+  leagueLogo: string;
+  homeTeam: {
+    id: string;
+    name: string;
+    logo: string;
+  };
+  awayTeam: {
+    id: string;
+    name: string;
+    logo: string;
+  };
+  homeScore: number | null;
+  awayScore: number | null;
+  status: 'SCHEDULED' | 'LIVE' | 'FINISHED' | 'POSTPONED' | 'CANCELLED' | 'SUSPENDED';
+  matchTime: string;
+  matchDate: Date;
+  utcDate: string;
+}
+
+/**
+ * Normalizes raw external Football API match payload into standardized system structure.
+ * Handles missing fields, teams, leagues, status mapping, and timezone dates.
+ */
+export function normalizeApiMatchPayload(apiMatch: any): NormalizedMatchData | null {
+  if (!apiMatch || typeof apiMatch !== 'object') return null;
+  if (!apiMatch.id) return null;
+
+  const home = apiMatch.homeTeam || {};
+  const away = apiMatch.awayTeam || {};
+  const homeTeamId = home.id ? String(home.id) : '';
+  const awayTeamId = away.id ? String(away.id) : '';
+
+  if (!homeTeamId || !awayTeamId) return null;
+
+  // League normalization
+  const rawCode = apiMatch.competition?.code || '';
+  const rawId = apiMatch.competition?.id ? String(apiMatch.competition.id) : '';
+  const normalizedLeagueCode = ID_TO_CODE[rawId] || COMPETITION_CODE_MAP[rawCode] || rawCode || 'PL';
+  const arabicLeagueName = LEAGUE_AR_NAMES[normalizedLeagueCode] || LEAGUE_AR_NAMES[rawCode] || LEAGUE_AR_NAMES[rawId] || apiMatch.competition?.name || 'بطولة عالمية';
+  const leagueEmblem = apiMatch.competition?.emblem || `https://crests.football-data.org/${normalizedLeagueCode}.png`;
+
+  // Team names & crests
+  const homeTeamArName = getArabicTeamName(home.name || home.shortName || 'فريق أول');
+  const awayTeamArName = getArabicTeamName(away.name || away.shortName || 'فريق ثان');
+  const homeTeamCrest = home.crest || 'https://via.placeholder.com/60/cccccc/808080?text=?';
+  const awayTeamCrest = away.crest || 'https://via.placeholder.com/60/cccccc/808080?text=?';
+
+  // Status mapping
+  const statusRaw = String(apiMatch.status || '').toUpperCase();
+  let normalizedStatus: 'SCHEDULED' | 'LIVE' | 'FINISHED' | 'POSTPONED' | 'CANCELLED' | 'SUSPENDED' = 'SCHEDULED';
+
+  if (['IN_PLAY', 'PAUSED', 'LIVE'].includes(statusRaw)) {
+    normalizedStatus = 'LIVE';
+  } else if (statusRaw === 'FINISHED') {
+    normalizedStatus = 'FINISHED';
+  } else if (statusRaw === 'POSTPONED') {
+    normalizedStatus = 'POSTPONED';
+  } else if (statusRaw === 'CANCELLED') {
+    normalizedStatus = 'CANCELLED';
+  } else if (['SUSPENDED', 'ABANDONED'].includes(statusRaw)) {
+    normalizedStatus = 'SUSPENDED';
+  } else {
+    normalizedStatus = 'SCHEDULED';
+  }
+
+  // Date parsing
+  let matchDateObj = new Date(apiMatch.utcDate || apiMatch.matchDate || Date.now());
+  if (isNaN(matchDateObj.getTime())) {
+    matchDateObj = new Date();
+  }
+
+  let formattedTime = '00:00';
+  if (!isNaN(matchDateObj.getTime())) {
+    formattedTime = matchDateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const displayTime =
+    normalizedStatus === 'LIVE' ? "مباشر" :
+    normalizedStatus === 'FINISHED' ? 'انتهت' :
+    normalizedStatus === 'POSTPONED' ? 'مؤجلة' :
+    normalizedStatus === 'CANCELLED' ? 'ملغاة' :
+    normalizedStatus === 'SUSPENDED' ? 'معلقة' :
+    formattedTime;
+
+  const homeScore = apiMatch.score?.fullTime?.home ?? (apiMatch.score?.halfTime?.home ?? null);
+  const awayScore = apiMatch.score?.fullTime?.away ?? (apiMatch.score?.halfTime?.away ?? null);
+
+  return {
+    id: String(apiMatch.id),
+    leagueId: normalizedLeagueCode,
+    leagueName: arabicLeagueName,
+    leagueLogo: leagueEmblem,
+    homeTeam: {
+      id: homeTeamId,
+      name: homeTeamArName,
+      logo: homeTeamCrest,
+    },
+    awayTeam: {
+      id: awayTeamId,
+      name: awayTeamArName,
+      logo: awayTeamCrest,
+    },
+    homeScore,
+    awayScore,
+    status: normalizedStatus,
+    matchTime: displayTime,
+    matchDate: matchDateObj,
+    utcDate: matchDateObj.toISOString(),
+  };
+}
+
 /**
  * Processes raw matches from API and inserts/updates them into DB
  */
 async function processAndStoreMatches(apiMatches: any[]) {
+  if (!Array.isArray(apiMatches)) return;
+
   for (const apiMatch of apiMatches) {
-    if (!apiMatch || !apiMatch.id || !apiMatch.homeTeam || !apiMatch.awayTeam) continue;
-    
+    const norm = normalizeApiMatchPayload(apiMatch);
+    if (!norm) continue;
+
     // Strictly Season 2026: Ignore matches from 2025, 2024, or previous seasons
     if (apiMatch.season !== undefined && apiMatch.season !== null) {
       if (typeof apiMatch.season === 'string' || typeof apiMatch.season === 'number') {
         if (String(apiMatch.season) !== '2026') continue;
-      } else if (typeof apiMatch.season === 'object') {
-        if (apiMatch.season.startDate) {
-          const yr = new Date(apiMatch.season.startDate).getFullYear();
-          if (yr !== 2026) continue;
-        }
+      } else if (typeof apiMatch.season === 'object' && apiMatch.season.startDate) {
+        const yr = new Date(apiMatch.season.startDate).getFullYear();
+        if (yr !== 2026) continue;
       }
     }
-    if (apiMatch.league && apiMatch.league.season && String(apiMatch.league.season) !== '2026') {
-      continue;
-    }
-    const matchDateCheck = new Date(apiMatch.utcDate || new Date());
-    if (!isNaN(matchDateCheck.getTime())) {
-      const year = matchDateCheck.getUTCFullYear();
-      const month = matchDateCheck.getUTCMonth() + 1;
-      if (year < 2026) continue;
-      if (year === 2027 && month > 7) continue;
-      if (year > 2027) continue;
-    }
+    const year = norm.matchDate.getUTCFullYear();
+    const month = norm.matchDate.getUTCMonth() + 1;
+    if (year < 2026 || (year === 2027 && month > 7) || year > 2027) continue;
 
     try {
-      // 1. Determine Standard Normalized League Code
-      const rawCode = apiMatch.competition?.code || '';
-      const rawId = apiMatch.competition?.id ? String(apiMatch.competition.id) : '';
-      const normalizedLeagueCode = ID_TO_CODE[rawId] || COMPETITION_CODE_MAP[rawCode] || rawCode || 'PL';
-      const arabicLeagueName = LEAGUE_AR_NAMES[normalizedLeagueCode] || LEAGUE_AR_NAMES[rawCode] || LEAGUE_AR_NAMES[rawId] || apiMatch.competition?.name || 'بطولة عالمية';
-      const leagueEmblem = apiMatch.competition?.emblem || `https://crests.football-data.org/${normalizedLeagueCode}.png`;
-
-      // Upsert league with normalized ID
-      const existingLeague = await db.select().from(leagues).where(eq(leagues.id, normalizedLeagueCode));
+      // 1. Upsert League
+      const existingLeague = await db.select().from(leagues).where(eq(leagues.id, norm.leagueId));
       if (existingLeague.length === 0) {
         await db.insert(leagues).values({
-          id: normalizedLeagueCode,
-          name: arabicLeagueName,
-          logo: leagueEmblem,
+          id: norm.leagueId,
+          name: norm.leagueName,
+          logo: norm.leagueLogo,
         }).catch(() => null);
-      } else if (existingLeague[0].name !== arabicLeagueName) {
-        await db.update(leagues).set({ name: arabicLeagueName, logo: leagueEmblem }).where(eq(leagues.id, normalizedLeagueCode)).catch(() => null);
+      } else if (existingLeague[0].name !== norm.leagueName) {
+        await db.update(leagues).set({ name: norm.leagueName, logo: norm.leagueLogo }).where(eq(leagues.id, norm.leagueId)).catch(() => null);
       }
 
-      // Also upsert numeric rawId if different, so relational joins by numeric ID work seamlessly
-      if (rawId && rawId !== normalizedLeagueCode) {
-        const existingRawLeague = await db.select().from(leagues).where(eq(leagues.id, rawId));
-        if (existingRawLeague.length === 0) {
-          await db.insert(leagues).values({
-            id: rawId,
-            name: arabicLeagueName,
-            logo: leagueEmblem,
-          }).catch(() => null);
-        }
-      }
-
-      // 2. Ensure Home Team exists with accurate Arabic name
-      const homeTeamId = String(apiMatch.homeTeam.id);
-      const homeTeamArName = getArabicTeamName(apiMatch.homeTeam.name);
-      const homeTeamCrest = apiMatch.homeTeam.crest || 'https://via.placeholder.com/60/cccccc/808080?text=?';
-
-      const existingHome = await db.select().from(teams).where(eq(teams.id, homeTeamId));
+      // 2. Upsert Home Team
+      const existingHome = await db.select().from(teams).where(eq(teams.id, norm.homeTeam.id));
       if (existingHome.length === 0) {
         await db.insert(teams).values({
-          id: homeTeamId,
-          name: homeTeamArName,
-          logo: homeTeamCrest,
+          id: norm.homeTeam.id,
+          name: norm.homeTeam.name,
+          logo: norm.homeTeam.logo,
         }).catch(() => null);
       } else {
-        await db.update(teams).set({ name: homeTeamArName, logo: homeTeamCrest }).where(eq(teams.id, homeTeamId)).catch(() => null);
+        await db.update(teams).set({ name: norm.homeTeam.name, logo: norm.homeTeam.logo }).where(eq(teams.id, norm.homeTeam.id)).catch(() => null);
       }
 
-      // 3. Ensure Away Team exists with accurate Arabic name
-      const awayTeamId = String(apiMatch.awayTeam.id);
-      const awayTeamArName = getArabicTeamName(apiMatch.awayTeam.name);
-      const awayTeamCrest = apiMatch.awayTeam.crest || 'https://via.placeholder.com/60/cccccc/808080?text=?';
-
-      const existingAway = await db.select().from(teams).where(eq(teams.id, awayTeamId));
+      // 3. Upsert Away Team
+      const existingAway = await db.select().from(teams).where(eq(teams.id, norm.awayTeam.id));
       if (existingAway.length === 0) {
         await db.insert(teams).values({
-          id: awayTeamId,
-          name: awayTeamArName,
-          logo: awayTeamCrest,
+          id: norm.awayTeam.id,
+          name: norm.awayTeam.name,
+          logo: norm.awayTeam.logo,
         }).catch(() => null);
       } else {
-        await db.update(teams).set({ name: awayTeamArName, logo: awayTeamCrest }).where(eq(teams.id, awayTeamId)).catch(() => null);
+        await db.update(teams).set({ name: norm.awayTeam.name, logo: norm.awayTeam.logo }).where(eq(teams.id, norm.awayTeam.id)).catch(() => null);
       }
 
-      // 4. Upsert Match with normalizedLeagueCode
-      const matchId = String(apiMatch.id);
-      let normalizedStatus = 'SCHEDULED';
-      if (['IN_PLAY', 'PAUSED', 'LIVE'].includes(apiMatch.status)) {
-        normalizedStatus = 'LIVE';
-      } else if (apiMatch.status === 'FINISHED') {
-        normalizedStatus = 'FINISHED';
-      }
-
-      const matchDateObj = new Date(apiMatch.utcDate || new Date());
-      let formattedTime = '00:00';
-      if (!isNaN(matchDateObj.getTime())) {
-        formattedTime = matchDateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-      }
-
+      // 4. Upsert Match & Prevent duplicates (ID check or composite team+date check)
       const matchData = {
-        leagueId: normalizedLeagueCode,
-        homeTeamId,
-        awayTeamId,
-        homeScore: apiMatch.score?.fullTime?.home ?? (apiMatch.score?.halfTime?.home ?? null),
-        awayScore: apiMatch.score?.fullTime?.away ?? (apiMatch.score?.halfTime?.away ?? null),
-        status: normalizedStatus,
-        matchTime: normalizedStatus === 'LIVE' ? "مباشر" : (normalizedStatus === 'FINISHED' ? 'انتهت' : formattedTime),
-        matchDate: matchDateObj,
+        leagueId: norm.leagueId,
+        homeTeamId: norm.homeTeam.id,
+        awayTeamId: norm.awayTeam.id,
+        homeScore: norm.homeScore,
+        awayScore: norm.awayScore,
+        status: norm.status,
+        matchTime: norm.matchTime,
+        matchDate: norm.matchDate,
         source: 'football-data.org',
         updatedAt: new Date(),
       };
 
-      const existingMatch = await db.select().from(matches).where(eq(matches.id, matchId));
-      if (existingMatch.length === 0) {
-        await db.insert(matches).values({
-          id: matchId,
-          ...matchData,
-        }).catch(() => null);
+      const existingMatch = await db.select().from(matches).where(eq(matches.id, norm.id));
+      if (existingMatch.length > 0) {
+        await db.update(matches).set(matchData).where(eq(matches.id, norm.id)).catch(() => null);
       } else {
-        await db.update(matches).set(matchData).where(eq(matches.id, matchId)).catch(() => null);
-      }
+        // Check for composite duplicate match (same teams on same day)
+        const dayStart = new Date(norm.matchDate);
+        dayStart.setUTCHours(0, 0, 0, 0);
+        const dayEnd = new Date(norm.matchDate);
+        dayEnd.setUTCHours(23, 59, 59, 999);
 
-      // Update match record with fresh score and status
-      // (Prediction points calculation now requires manual admin confirmation per requirements)
+        const existingDupes = await db.select().from(matches).where(
+          and(
+            eq(matches.homeTeamId, norm.homeTeam.id),
+            eq(matches.awayTeamId, norm.awayTeam.id)
+          )
+        );
+
+        const dupOnSameDay = existingDupes.find(m => {
+          if (!m.matchDate) return false;
+          const d = new Date(m.matchDate);
+          return d >= dayStart && d <= dayEnd;
+        });
+
+        if (dupOnSameDay) {
+          await db.update(matches).set({ ...matchData, id: norm.id }).where(eq(matches.id, dupOnSameDay.id)).catch(() => null);
+        } else {
+          await db.insert(matches).values({
+            id: norm.id,
+            ...matchData,
+          }).catch(() => null);
+        }
+      }
     } catch (itemErr) {
       console.warn("[footballService] Match process item error:", itemErr);
     }
@@ -626,6 +713,20 @@ export async function getStoredMatches(filters: {
     });
   }
 
+  // 3.5 Deduplicate matches by ID and team composite key
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  result = result.filter(m => {
+    if (seenIds.has(String(m.id))) return false;
+    const dateStr = m.matchDate ? new Date(m.matchDate).toISOString().split('T')[0] : '';
+    const compositeKey = `${m.homeTeamId}_${m.awayTeamId}_${dateStr}`;
+    if (seenKeys.has(compositeKey)) return false;
+
+    seenIds.add(String(m.id));
+    seenKeys.add(compositeKey);
+    return true;
+  });
+
   // 4. Format & Translate names safely
   const formatted = result.map((m: any) => {
     const safeDate = m.matchDate ? new Date(m.matchDate).toISOString() : new Date().toISOString();
@@ -641,6 +742,15 @@ export async function getStoredMatches(filters: {
     const awayName = getArabicTeamName(awayRawName);
     const normalizedCode = COMPETITION_CODE_MAP[m.leagueId] || m.leagueId || 'PL';
     const leagueName = LEAGUE_AR_NAMES[normalizedCode] || LEAGUE_AR_NAMES[m.leagueId] || m.league?.name || 'بطولة عالمية';
+
+    const statusUpper = String(m.status || '').toUpperCase();
+    const displayMatchTime =
+      statusUpper === 'LIVE' || statusUpper === 'IN_PLAY' || statusUpper === 'PAUSED' ? 'مباشر' :
+      statusUpper === 'FINISHED' ? 'انتهت' :
+      statusUpper === 'POSTPONED' ? 'مؤجلة' :
+      statusUpper === 'CANCELLED' ? 'ملغاة' :
+      statusUpper === 'SUSPENDED' || statusUpper === 'ABANDONED' ? 'معلقة' :
+      formattedTime;
 
     return {
       id: String(m.id),
@@ -660,8 +770,8 @@ export async function getStoredMatches(filters: {
       homeScore: m.homeScore,
       awayScore: m.awayScore,
       status: m.status,
-      minute: m.status === 'LIVE' ? 'مباشر' : null,
-      matchTime: m.status === 'LIVE' ? 'مباشر' : (m.status === 'FINISHED' ? 'انتهت' : formattedTime),
+      minute: statusUpper === 'LIVE' ? 'مباشر' : null,
+      matchTime: displayMatchTime,
       matchDate: safeDate,
       kickoffTime: formattedTime,
       utcDate: safeDate,

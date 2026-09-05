@@ -27,6 +27,7 @@ export default function MatchesWidget() {
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     // Determine today's date strictly based on the system date
     const todayStr = getSystemTodayStr();
     
@@ -37,6 +38,7 @@ export default function MatchesWidget() {
       // Fetch exclusively today's matches for season 2026 based on system date
       getMatchesWithResult(todayStr, undefined, selectedLeague, '2026')
         .then((todayRes) => {
+          if (!isMounted) return;
           if (todayRes.error) {
             setHasError(true);
             setMatches([]);
@@ -46,12 +48,13 @@ export default function MatchesWidget() {
           }
         })
         .catch((err) => {
+          if (!isMounted) return;
           console.warn("[MatchesWidget] Error fetching matches:", err);
           setHasError(true);
           setMatches([]);
         })
         .finally(() => {
-          if (!silent) setLoading(false);
+          if (isMounted && !silent) setLoading(false);
         });
     };
 
@@ -59,10 +62,13 @@ export default function MatchesWidget() {
 
     // Auto-refresh every 20 seconds
     const interval = setInterval(() => {
-      loadMatches(true);
+      if (isMounted) loadMatches(true);
     }, 20000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [selectedLeague]);
 
   const hasLiveMatches = matches.some(m => ['LIVE', 'IN_PLAY', 'PAUSED'].includes(m.status));

@@ -426,6 +426,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    const currentToken = token || localStorage.getItem('srv_session_token');
+    if (currentToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentToken}`
+        }
+      }).catch(() => {});
+    }
+
     localStorage.removeItem('srv_session_token');
     localStorage.removeItem('srv_session_user');
     setUser(null);

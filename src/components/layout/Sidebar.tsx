@@ -37,7 +37,19 @@ export default function Sidebar() {
   };
 
   useEffect(() => {
-    fetchCats();
+    let isMounted = true;
+    setCategoriesError(false);
+    fetchCategories().then((cats) => {
+      if (isMounted && Array.isArray(cats) && cats.length > 0) {
+        setCategories(cats);
+      }
+    }).catch((err) => {
+      if (isMounted) {
+        console.error('Failed to fetch categories:', err);
+        setCategoriesError(true);
+      }
+    });
+    return () => { isMounted = false; };
   }, []);
 
   const activeCategoryParam = new URLSearchParams(location.search).get('category');

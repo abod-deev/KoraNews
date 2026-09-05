@@ -6,6 +6,13 @@ export const SESSION_DURATION_MS = 14 * 24 * 60 * 60 * 1000;
 // Dynamic in-memory fallback secret generated on process start for local dev/testing only
 let _devFallbackSecret: string | null = null;
 
+// Track explicitly revoked token IDs (jti)
+const _revokedJtis = new Set<string>();
+
+// Track user-level session invalidation timestamps (e.g. after logout, account deletion, deactivation, role change)
+// Key: uid or normalized email -> timestamp in ms (all tokens issued with iat <= this timestamp are invalidated)
+const _userInvalidationTimestamps = new Map<string, number>();
+
 export function getSessionSecret(): string {
   const secret = process.env.SESSION_SECRET?.trim();
   if (secret && secret.length >= 16) {
@@ -35,6 +42,62 @@ export interface SessionPayload {
 }
 
 /**
+ * Revokes a specific session by its unique token ID (jti).
+ */
+export function revokeSession(jti: string): void {
+  if (jti && typeof jti === 'string') {
+    _revokedJtis.add(jti);
+  }
+}
+
+/**
+ * Invalidates all active sessions for a specific user (by UID or email) issued up to current time.
+ */
+export function revokeAllUserSessions(userIdentifier: string): void {
+  if (!userIdentifier || typeof userIdentifier !== 'string') return;
+  const key = userIdentifier.trim().toLowerCase();
+  _userInvalidationTimestamps.set(key, Date.now());
+}
+
+/**
+ * Checks if a session payload has been revoked individually or at user level.
+ */
+export function isSessionRevoked(payload: SessionPayload): boolean {
+  if (!payload || !payload.jti) return true;
+
+  // 1. Check individual jti revocation
+  if (_revokedJtis.has(payload.jti)) {
+    return true;
+  }
+
+  // 2. Check user-level invalidation by UID
+  if (payload.uid) {
+    const invalidAfterByUid = _userInvalidationTimestamps.get(payload.uid.trim().toLowerCase());
+    if (invalidAfterByUid && payload.iat <= invalidAfterByUid) {
+      return true;
+    }
+  }
+
+  // 3. Check user-level invalidation by Email
+  if (payload.email) {
+    const invalidAfterByEmail = _userInvalidationTimestamps.get(payload.email.trim().toLowerCase());
+    if (invalidAfterByEmail && payload.iat <= invalidAfterByEmail) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Reset all revocation state (useful for test isolation).
+ */
+export function clearAllRevocations(): void {
+  _revokedJtis.clear();
+  _userInvalidationTimestamps.clear();
+}
+
+/**
  * Creates a cryptographically signed, expiration-backed server session token.
  */
 export function createServerSessionToken(user: { uid: string; email: string; name?: string }): string {
@@ -57,7 +120,10 @@ export function createServerSessionToken(user: { uid: string; email: string; nam
 }
 
 /**
- * Verifies a server session token cryptographically, checking HMAC signature and expiration timestamp.
+ * Verifies a server session token cryptographically:
+ * 1. Checks HMAC signature with timing-safe comparison
+ * 2. Checks expiration timestamp
+ * 3. Checks revocation status (jti and user invalidation timestamps)
  */
 export function verifyServerSessionToken(token: string): SessionPayload | null {
   if (!token || typeof token !== 'string' || !token.startsWith('srv_')) {
@@ -85,7 +151,7 @@ export function verifyServerSessionToken(token: string): SessionPayload | null {
     const payloadStr = Buffer.from(base64Data, 'base64url').toString('utf-8');
     const payload: SessionPayload = JSON.parse(payloadStr);
 
-    if (!payload || !payload.uid || !payload.email || typeof payload.exp !== 'number') {
+    if (!payload || !payload.uid || !payload.email || typeof payload.exp !== 'number' || typeof payload.iat !== 'number') {
       return null;
     }
 
@@ -94,8 +160,14 @@ export function verifyServerSessionToken(token: string): SessionPayload | null {
       return null; // Expired session
     }
 
+    // Check if session has been revoked
+    if (isSessionRevoked(payload)) {
+      return null; // Revoked session
+    }
+
     return payload;
   } catch {
     return null;
   }
 }
+

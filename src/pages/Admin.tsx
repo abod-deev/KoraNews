@@ -73,7 +73,13 @@ export default function Admin() {
       {/* Mobile Sidebar Backdrop Overlay */}
       {isSidebarOpen && (
         <div
-          onClick={() => setIsSidebarOpen(false)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsSidebarOpen(false);
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
           className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 lg:hidden transition-opacity cursor-pointer"
           aria-hidden="true"
         />

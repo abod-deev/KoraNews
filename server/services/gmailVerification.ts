@@ -11,62 +11,60 @@
  * - To: The recipient email entered by the user
  * 
  * SECURITY & CONSTRAINTS:
+ * - Single source of truth: PostgreSQL database (email_verifications table)
  * - 6-digit cryptographically secure code via `crypto.randomInt(100000, 1000000)`
- * - SHA-256 hashing with server salt before persistence
- * - Code validity: 10 minutes
+ * - HMAC-SHA256 hashing with verification secret before persistence
+ * - Fail-closed: Throws error in production if verification secret is missing
+ * - Code validity: 10 minutes (600,000 ms)
  * - Max attempts: 5 (invalidated after 5 failed attempts)
  * - Rate limiting: 20 seconds cooldown before resend
  * - Single-use: Invalidated immediately upon successful verification
- * - Resend generates a fresh code and revokes the previous code
+ * - Resend generates a fresh code and revokes previous code
  * - Zero Secrets/Codes in API responses, Frontend, or production logs
+ * - Multi-language digit normalization (Arabic, Persian, Unicode)
  */
 
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { db, withDbRetry } from '../../src/db/index.ts';
-import { emailVerifications } from '../../src/db/schema.ts';
-import { eq, lt } from 'drizzle-orm';
+import { emailVerifications, users } from '../../src/db/schema.ts';
+import { eq, lt, sql } from 'drizzle-orm';
 import { hashPassword } from '../security/passwords.ts';
 
-const VERIFICATION_CODE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
-const MAX_VERIFICATION_ATTEMPTS = 5;
-const RESEND_COOLDOWN_MS = 20 * 1000; // 20 seconds cooldown
-const MAX_HOURLY_SENDS = 10; // Max 10 verification codes sent per hour per email
-
-// Secret salt for code hashing
-const HASH_SALT = process.env.VERIFICATION_HASH_SALT || process.env.SESSION_SECRET || 'koranews_gmail_secure_salt_2026';
-
-interface StoredVerification {
-  email: string;
-  name?: string;
-  passwordHash?: string;
-  codeHash: string;
-  expiresAt: number;
-  attempts: number;
-  lastSentAt: number;
-  sendsInLastHour: number[];
-  verified: boolean;
-}
-
-// In-memory verification registry for fast lookups & instant rate limiting
-const inMemoryVerifications = new Map<string, StoredVerification>();
+export const VERIFICATION_CODE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+export const MAX_VERIFICATION_ATTEMPTS = 5;
+export const RESEND_COOLDOWN_MS = 20 * 1000; // 20 seconds cooldown
 
 // Cached Nodemailer transporter
 let cachedTransporter: nodemailer.Transporter | null = null;
 
-// Periodic cleanup of expired entries (every 15 minutes)
+// Periodic cleanup of expired entries in DB (every 30 minutes)
 setInterval(() => {
-  const now = Date.now();
-  for (const [email, record] of inMemoryVerifications.entries()) {
-    if (now > record.expiresAt + 30 * 60 * 1000) {
-      inMemoryVerifications.delete(email);
-    }
-  }
-  // Also cleanup old records in DB
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   withDbRetry(() => 
-    db.delete(emailVerifications).where(lt(emailVerifications.expiresAt, new Date(now - 24 * 60 * 60 * 1000)))
+    db.delete(emailVerifications).where(lt(emailVerifications.expiresAt, cutoff))
   ).catch(() => {});
-}, 15 * 60 * 1000);
+}, 30 * 60 * 1000);
+
+/**
+ * Retrieves the verification hashing secret.
+ * In production, this fails closed (throws an error) if no secret is configured.
+ */
+export function getVerificationSecret(): string {
+  const secret =
+    process.env.VERIFICATION_HASH_SALT ||
+    process.env.SESSION_SECRET ||
+    process.env.AUTH_SECRET;
+
+  if (!secret || secret.trim().length === 0) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('VERIFICATION_HASH_SALT or SESSION_SECRET must be configured in production environment.');
+    }
+    return 'koranews_dev_ephemeral_verification_secret_2026';
+  }
+
+  return secret.trim();
+}
 
 /**
  * Creates or retrieves the singleton Nodemailer transporter configured for Gmail SMTP (Port 465 SSL).
@@ -80,7 +78,9 @@ export function getGmailTransporter(): nodemailer.Transporter {
   const smtpPass = (process.env.GMAIL_SMTP_APP_PASSWORD || '').trim().replace(/\s+/g, '');
 
   if (!smtpUser || !smtpPass) {
-    console.warn('[Gmail SMTP] Notice: GMAIL_SMTP_USER or GMAIL_SMTP_APP_PASSWORD is not set. Emails cannot be sent without configuration.');
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[Gmail SMTP] Notice: GMAIL_SMTP_USER or GMAIL_SMTP_APP_PASSWORD is not set. Emails cannot be sent without configuration.');
+    }
   }
 
   cachedTransporter = nodemailer.createTransport({
@@ -122,12 +122,12 @@ export async function verifyGmailSmtpConnection(): Promise<{ success: boolean; e
  * and removing RTL markers, whitespace, hyphens, and invisible Unicode characters.
  */
 export function normalizeVerificationCode(input: any): string {
-  if (!input) return '';
+  if (input === null || input === undefined) return '';
   const str = String(input);
   const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
   const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 
-  let res = str.replace(/[\u200E\u200F\u202A-\u202E\uFEFF\s\-]/g, '');
+  let res = str.replace(/[\u200E\u200F\u202A-\u202E\uFEFF\s\-_]/g, '');
   for (let i = 0; i < 10; i++) {
     res = res.split(arabicDigits[i]).join(i.toString());
     res = res.split(persianDigits[i]).join(i.toString());
@@ -136,18 +136,19 @@ export function normalizeVerificationCode(input: any): string {
 }
 
 /**
- * Computes SHA-256 hash of a verification code with server salt.
+ * Computes HMAC-SHA256 hash of a verification code with server secret.
  */
 export function hashVerificationCode(code: string): string {
   const normalized = normalizeVerificationCode(code);
+  const secret = getVerificationSecret();
   return crypto
-    .createHash('sha256')
-    .update(`${normalized}:${HASH_SALT}`)
+    .createHmac('sha256', secret)
+    .update(normalized)
     .digest('hex');
 }
 
 /**
- * Generates a cryptographically random 6-digit verification code using `crypto.randomInt`.
+ * Generates a cryptographically random 6-digit verification code using `crypto.randomInt(100000, 1000000)`.
  */
 export function generateSecure6DigitCode(): string {
   return crypto.randomInt(100000, 1000000).toString();
@@ -157,16 +158,20 @@ export function generateSecure6DigitCode(): string {
  * Compares a candidate verification code with stored code hash using constant-time comparison.
  */
 export function verifyCodeHash(candidateCode: string, storedHash: string): boolean {
-  if (!storedHash) return false;
-  const candidateHash = hashVerificationCode(candidateCode.trim());
-  const a = Buffer.from(candidateHash, 'hex');
-  const b = Buffer.from(storedHash, 'hex');
+  if (!storedHash || typeof storedHash !== 'string' || !storedHash.trim()) return false;
+  try {
+    const candidateHash = hashVerificationCode(candidateCode);
+    const a = Buffer.from(candidateHash, 'hex');
+    const b = Buffer.from(storedHash, 'hex');
 
-  if (a.length !== b.length) {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(a, b);
+  } catch {
     return false;
   }
-
-  return crypto.timingSafeEqual(a, b);
 }
 
 /**
@@ -247,7 +252,7 @@ function generateVerificationHtml(code: string, userName?: string): string {
                     <p style="margin: 0 0 8px; font-size: 13px; color: #334155; line-height: 1.6;">
                       ⏳ <strong>صلاحية محدودة:</strong> ينتهي الرمز تلقائياً بعد 10 دقائق أو بمجرد إتمام التحقق.
                     </p>
-                    <p style="margin: 0; font-size: 13px; color: #64748b; line-height: 1.6;">
+                    <p style="margin: 0 0 8px; font-size: 13px; color: #64748b; line-height: 1.6;">
                       ℹ️ <strong>تنبيه:</strong> إذا لم تطلب إنشاء هذا الحساب، يمكنك تجاهل هذه الرسالة بأمان.
                     </p>
                   </td>
@@ -287,7 +292,6 @@ export async function sendGmailVerificationCode(
 
   if (!fromEmail || !process.env.GMAIL_SMTP_APP_PASSWORD) {
     const msg = 'GMAIL_SMTP_USER / GMAIL_SMTP_APP_PASSWORD not configured in environment variables.';
-    console.warn(`[Gmail SMTP Warning] ${msg}`);
     return { success: false, error: msg };
   }
 
@@ -311,7 +315,7 @@ export async function sendGmailVerificationCode(
     };
   } catch (error: any) {
     const safeError = error?.message || 'SMTP Dispatch Failed';
-    console.error(`[Gmail SMTP Error] Failed to send email:`, safeError);
+    console.error(`[Gmail SMTP Error] Failed to send email to ${cleanEmail}:`, safeError);
     return {
       success: false,
       error: safeError,
@@ -320,18 +324,18 @@ export async function sendGmailVerificationCode(
 }
 
 /**
- * Generates a fresh 6-digit code, hashes it, stores it, and dispatches via Gmail SMTP.
+ * Generates a fresh 6-digit code, hashes it, reliably persists it in PostgreSQL, and dispatches via Gmail SMTP.
  */
 export async function sendVerificationRequest(
   rawEmail: string,
   userName?: string,
   plainPassword?: string
 ): Promise<{ success: boolean; message: string; error?: string }> {
-  const email = rawEmail.trim().toLowerCase();
+  const email = (rawEmail || '').trim().toLowerCase();
 
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
+  if (!email || !emailRegex.test(email)) {
     return {
       success: false,
       message: 'يرجى إدخال بريد إلكتروني صحيح',
@@ -339,13 +343,29 @@ export async function sendVerificationRequest(
     };
   }
 
-  // Rate Limiting Check
-  const now = Date.now();
-  const existing = inMemoryVerifications.get(email);
+  // 1. Check if user is already registered in users table
+  const existingUser = await withDbRetry(() =>
+    db.select({ id: users.id }).from(users).where(sql`LOWER(${users.email}) = ${email}`).limit(1)
+  );
 
-  if (existing) {
-    // 1. Cooldown check (20 seconds)
-    const timeSinceLastSend = now - existing.lastSentAt;
+  if (existingUser.length > 0) {
+    return {
+      success: false,
+      message: 'هذا البريد الإلكتروني مسجل بالفعل، يرجى تسجيل الدخول',
+      error: 'USER_ALREADY_EXISTS',
+    };
+  }
+
+  // 2. Check existing pending verification in DB
+  const existingVerifications = await withDbRetry(() =>
+    db.select().from(emailVerifications).where(sql`LOWER(${emailVerifications.email}) = ${email}`).limit(1)
+  );
+  const existing = existingVerifications[0];
+  const now = new Date();
+
+  // 3. Cooldown check (20 seconds)
+  if (existing && existing.lastSentAt) {
+    const timeSinceLastSend = now.getTime() - new Date(existing.lastSentAt).getTime();
     if (timeSinceLastSend < RESEND_COOLDOWN_MS) {
       const waitSeconds = Math.ceil((RESEND_COOLDOWN_MS - timeSinceLastSend) / 1000);
       return {
@@ -354,85 +374,74 @@ export async function sendVerificationRequest(
         error: 'RATE_LIMIT_COOLDOWN',
       };
     }
-
-    // 2. Hourly send count check
-    const recentSends = existing.sendsInLastHour.filter((t) => now - t < 3600 * 1000);
-    if (recentSends.length >= MAX_HOURLY_SENDS) {
-      return {
-        success: false,
-        message: 'تم تجاوز الحد الأقصى لإرسال رموز التحقق في هذه الساعة. يرجى المحاولة لاحقاً.',
-        error: 'HOURLY_LIMIT_EXCEEDED',
-      };
-    }
   }
 
-  // Hash the password immediately if provided
-  let passwordHash = existing?.passwordHash;
+  // 4. Hash password if provided
+  let passwordHash = existing?.passwordHash || null;
   if (plainPassword) {
     passwordHash = await hashPassword(plainPassword);
   }
 
-  // Generate 6-digit code
+  // 5. Generate secure 6-digit code and HMAC hash
   const code = generateSecure6DigitCode();
   const codeHash = hashVerificationCode(code);
-  const expiresAt = now + VERIFICATION_CODE_EXPIRY_MS;
-  const recentSends = existing
-    ? [...existing.sendsInLastHour.filter((t) => now - t < 3600 * 1000), now]
-    : [now];
+  const expiresAt = new Date(now.getTime() + VERIFICATION_CODE_EXPIRY_MS);
+  const candidateName = userName?.trim() || existing?.name || email.split('@')[0];
 
-  const verificationRecord: StoredVerification = {
-    email,
-    name: userName?.trim() || existing?.name,
-    passwordHash,
-    codeHash,
-    expiresAt,
-    attempts: 0,
-    lastSentAt: now,
-    sendsInLastHour: recentSends,
-    verified: false,
-  };
-
-  inMemoryVerifications.set(email, verificationRecord);
-
-  // Sync to database
-  try {
+  // 6. Atomically persist/upsert into PostgreSQL database as the single source of truth
+  if (existing) {
+    await withDbRetry(() =>
+      db
+        .update(emailVerifications)
+        .set({
+          name: candidateName,
+          passwordHash: passwordHash || existing.passwordHash,
+          codeHash,
+          expiresAt,
+          attempts: 0,
+          lastSentAt: now,
+          verified: false,
+        })
+        .where(eq(emailVerifications.id, existing.id))
+    );
+  } else {
     await withDbRetry(() =>
       db.insert(emailVerifications).values({
         email,
+        name: candidateName,
+        passwordHash,
         codeHash,
-        expiresAt: new Date(expiresAt),
+        expiresAt,
         attempts: 0,
-        lastSentAt: new Date(now),
+        lastSentAt: now,
         verified: false,
       })
     );
-  } catch (dbErr) {
-    // Non-blocking
   }
 
-  // Dispatch email via Gmail SMTP
+  // 7. Dispatch email via Gmail SMTP
   const emailResult = await sendGmailVerificationCode(
     email,
     code,
-    userName || existing?.name
+    candidateName
   );
 
   return {
     success: true,
     message: emailResult.success
       ? 'تم إرسال رمز التحقق إلى بريدك الإلكتروني بنجاح'
-      : 'تم إنشاء رمز التحقق. (إذا لم يصلك البريد تأكد من إعدادات SMTP).',
+      : 'تم إنشاء رمز التحقق بنجاح. (يرجى التحقق من إعدادات SMTP في حال عدم وصول الرسالة).',
   };
 }
 
 /**
- * Validates a user-entered 6-digit verification code.
+ * Validates a user-entered 6-digit verification code strictly against the database record.
  */
 export async function verifyEmailCode(
   rawEmail: string,
   rawCode: string
-): Promise<{ success: boolean; verified: boolean; message: string; payload?: { name?: string; passwordHash?: string } }> {
-  const email = rawEmail.trim().toLowerCase();
+): Promise<{ success: boolean; verified: boolean; message: string; payload?: { name?: string | null; passwordHash?: string | null } }> {
+  const email = (rawEmail || '').trim().toLowerCase();
   const code = normalizeVerificationCode(rawCode);
 
   if (!email || !code || code.length !== 6) {
@@ -443,9 +452,13 @@ export async function verifyEmailCode(
     };
   }
 
-  const record = inMemoryVerifications.get(email);
+  // 1. Fetch verification record from PostgreSQL
+  const existingRecords = await withDbRetry(() =>
+    db.select().from(emailVerifications).where(sql`LOWER(${emailVerifications.email}) = ${email}`).limit(1)
+  );
+  const record = existingRecords[0];
 
-  if (!record) {
+  if (!record || record.verified) {
     return {
       success: false,
       verified: false,
@@ -453,30 +466,47 @@ export async function verifyEmailCode(
     };
   }
 
-  if (Date.now() > record.expiresAt) {
-    inMemoryVerifications.delete(email);
-    return {
-      success: false,
-      verified: false,
-      message: 'انتهت صلاحية رمز التحقق، يرجى طلب رمز جديد',
-    };
-  }
-
+  // 2. Max attempts check (5 attempts)
   if (record.attempts >= MAX_VERIFICATION_ATTEMPTS) {
-    inMemoryVerifications.delete(email);
     return {
       success: false,
       verified: false,
-      message: 'تم تجاوز الحد الأقصى للمحاولات. يرجى طلب رمز جديد',
+      message: 'تم تجاوز الحد الأقصى للمحاولات (5 محاولات). يرجى طلب رمز جديد',
     };
   }
 
+  if (!record.codeHash) {
+    return {
+      success: false,
+      verified: false,
+      message: 'انتهت صلاحية رمز التحقق، يرجى طلب رمز جديد',
+    };
+  }
+
+  // 3. Expiration check (10 minutes)
+  const now = new Date();
+  if (now > new Date(record.expiresAt)) {
+    // Delete expired record
+    await withDbRetry(() => db.delete(emailVerifications).where(eq(emailVerifications.id, record.id))).catch(() => {});
+    return {
+      success: false,
+      verified: false,
+      message: 'انتهت صلاحية رمز التحقق، يرجى طلب رمز جديد',
+    };
+  }
+
+  // 4. Constant-time code verification
   const isValid = verifyCodeHash(code, record.codeHash);
 
   if (!isValid) {
-    record.attempts += 1;
-    if (record.attempts >= MAX_VERIFICATION_ATTEMPTS) {
-      inMemoryVerifications.delete(email);
+    const newAttempts = record.attempts + 1;
+    if (newAttempts >= MAX_VERIFICATION_ATTEMPTS) {
+      await withDbRetry(() =>
+        db
+          .update(emailVerifications)
+          .set({ attempts: newAttempts })
+          .where(eq(emailVerifications.id, record.id))
+      );
       return {
         success: false,
         verified: false,
@@ -484,7 +514,14 @@ export async function verifyEmailCode(
       };
     }
 
-    const remaining = MAX_VERIFICATION_ATTEMPTS - record.attempts;
+    await withDbRetry(() =>
+      db
+        .update(emailVerifications)
+        .set({ attempts: newAttempts })
+        .where(eq(emailVerifications.id, record.id))
+    );
+
+    const remaining = MAX_VERIFICATION_ATTEMPTS - newAttempts;
     return {
       success: false,
       verified: false,
@@ -492,27 +529,18 @@ export async function verifyEmailCode(
     };
   }
 
-  // Success: mark verified and invalidate code hash immediately
-  record.verified = true;
+  // 5. Success: Single-use invalidation immediately in DB
   const payload = {
     name: record.name,
     passwordHash: record.passwordHash,
   };
 
-  // Invalidate code hash immediately
-  record.codeHash = '';
-  record.expiresAt = 0;
-
-  try {
-    await withDbRetry(() =>
-      db
-        .update(emailVerifications)
-        .set({ verified: true })
-        .where(eq(emailVerifications.email, email))
-    );
-  } catch (e) {
-    // Ignore DB error
-  }
+  await withDbRetry(() =>
+    db
+      .update(emailVerifications)
+      .set({ verified: true, codeHash: '' })
+      .where(eq(emailVerifications.id, record.id))
+  );
 
   return {
     success: true,
@@ -528,23 +556,23 @@ export async function verifyEmailCode(
 export async function resendVerificationRequest(
   rawEmail: string
 ): Promise<{ success: boolean; message: string; error?: string }> {
-  const email = rawEmail.trim().toLowerCase();
-  const existing = inMemoryVerifications.get(email);
+  const email = (rawEmail || '').trim().toLowerCase();
+  const existingRecords = await withDbRetry(() =>
+    db.select().from(emailVerifications).where(sql`LOWER(${emailVerifications.email}) = ${email}`).limit(1)
+  );
+  const existing = existingRecords[0];
 
-  return sendVerificationRequest(email, existing?.name);
-}
-
-/**
- * Checks whether an email has been verified.
- */
-export function isEmailVerifiedLocally(email: string): boolean {
-  const record = inMemoryVerifications.get(email.trim().toLowerCase());
-  return !!record && record.verified;
+  return sendVerificationRequest(email, existing?.name || undefined);
 }
 
 /**
  * Clears verification session after registration is completed.
  */
-export function clearVerificationSession(email: string): void {
-  inMemoryVerifications.delete(email.trim().toLowerCase());
+export async function clearVerificationSession(rawEmail: string): Promise<void> {
+  const email = (rawEmail || '').trim().toLowerCase();
+  if (!email) return;
+  await withDbRetry(() =>
+    db.delete(emailVerifications).where(sql`LOWER(${emailVerifications.email}) = ${email}`)
+  ).catch(() => {});
 }
+

@@ -576,12 +576,22 @@ export function determineMatchPredictionState(
     return 'calculated';
   }
 
-  if (matchStatus === 'FINISHED') {
+  const statusUpper = (matchStatus || '').toUpperCase();
+  if (statusUpper === 'FINISHED') {
     return isConfirmedByAdmin ? 'calculated' : 'pending_admin';
   }
 
-  if (matchStatus === 'LIVE' || matchStatus === 'IN_PLAY' || matchStatus === 'PAUSED') {
+  if (statusUpper === 'LIVE' || statusUpper === 'IN_PLAY' || statusUpper === 'PAUSED') {
     return 'live';
+  }
+
+  if (
+    statusUpper === 'CANCELLED' ||
+    statusUpper === 'POSTPONED' ||
+    statusUpper === 'SUSPENDED' ||
+    statusUpper === 'ABANDONED'
+  ) {
+    return 'upcoming';
   }
 
   if (!isActive) {
@@ -611,7 +621,17 @@ export function isMatchOpenForPrediction(
   nowMs: number = Date.now()
 ): boolean {
   if (!predictionMatchIsActive) return false;
-  if (matchStatus === 'FINISHED' || matchStatus === 'LIVE' || matchStatus === 'IN_PLAY' || matchStatus === 'PAUSED') {
+  const statusUpper = (matchStatus || '').toUpperCase();
+  if (
+    statusUpper === 'FINISHED' ||
+    statusUpper === 'LIVE' ||
+    statusUpper === 'IN_PLAY' ||
+    statusUpper === 'PAUSED' ||
+    statusUpper === 'CANCELLED' ||
+    statusUpper === 'POSTPONED' ||
+    statusUpper === 'SUSPENDED' ||
+    statusUpper === 'ABANDONED'
+  ) {
     return false;
   }
   if (!matchDate) return false;
@@ -1787,6 +1807,108 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100, 
 }
 
 // ==========================================
+// CENTRALIZED EVALUATION ALGORITHM (PURE)
+// ==========================================
+
+export interface PredictionToEvaluate {
+  id: number;
+  userId: number;
+  homeScore: number;
+  awayScore: number;
+  user?: {
+    id: number;
+    name?: string | null;
+    avatar?: string | null;
+  } | null;
+}
+
+export interface EvaluatedPredictionItem {
+  id: number;
+  userId: number;
+  homeScore: number;
+  awayScore: number;
+  isCorrect: boolean;
+  isGolden: boolean;
+  goldenPoints: number;
+  pointsEarned: number;
+  user?: {
+    id: number;
+    name?: string | null;
+    avatar?: string | null;
+  } | null;
+}
+
+export interface MatchEvaluationResult {
+  basePoints: number;
+  finalHomeScore: number;
+  finalAwayScore: number;
+  totalPredictionsCount: number;
+  correctPredictionsCount: number;
+  isGoldenEligible: boolean;
+  evaluatedPredictions: EvaluatedPredictionItem[];
+}
+
+/**
+ * Pure evaluation function encapsulating the exact competition rules:
+ * - RULE 1: Base points determined by match setting.
+ * - RULE 2: Golden prediction bonus is ONLY possible if base points == 2.
+ * - RULE 3: If exactly 1 person predicted correctly and base points == 2:
+ *           Points = 2 + 1 (Golden Bonus) = 3 (Golden = true, Golden points = 1).
+ * - RULE 4: If 2 or more people predicted correctly:
+ *           No Golden bonus. Each gets 2 points only (Golden = false, Golden points = 0).
+ * - RULE 5: If base points > 2 (e.g. 5, 10):
+ *           No Golden bonus at all, even if only 1 person predicted correctly.
+ */
+export function evaluateMatchPredictions(
+  pointsPerMatch: number,
+  predictionsList: PredictionToEvaluate[],
+  finalHomeScore: number,
+  finalAwayScore: number
+): MatchEvaluationResult {
+  const basePoints = typeof pointsPerMatch === 'number' && pointsPerMatch > 0 ? pointsPerMatch : 2;
+
+  // 1. Identify all correct predictions (exact score match)
+  const correctPredictions = predictionsList.filter(
+    (p) => p.homeScore === finalHomeScore && p.awayScore === finalAwayScore
+  );
+  const correctCount = correctPredictions.length;
+
+  // STRICT GOLDEN PREDICTION RULE:
+  // Golden prediction is ONLY allowed if basePoints is EXACTLY 2 AND exactly 1 participant predicted correctly!
+  // If basePoints > 2 (e.g. 3, 4, 5, 10), Golden is NEVER eligible.
+  const isGoldenEligible = basePoints === 2 && correctCount === 1;
+
+  const evaluatedPredictions: EvaluatedPredictionItem[] = predictionsList.map((pred) => {
+    const isCorrect = pred.homeScore === finalHomeScore && pred.awayScore === finalAwayScore;
+    const isGolden = isCorrect && isGoldenEligible;
+    const goldenBonus = isGolden ? 1 : 0;
+    const pointsEarned = isCorrect ? basePoints + goldenBonus : 0;
+
+    return {
+      id: pred.id,
+      userId: pred.userId,
+      homeScore: pred.homeScore,
+      awayScore: pred.awayScore,
+      isCorrect,
+      isGolden,
+      goldenPoints: goldenBonus,
+      pointsEarned,
+      user: pred.user,
+    };
+  });
+
+  return {
+    basePoints,
+    finalHomeScore,
+    finalAwayScore,
+    totalPredictionsCount: predictionsList.length,
+    correctPredictionsCount: correctCount,
+    isGoldenEligible,
+    evaluatedPredictions,
+  };
+}
+
+// ==========================================
 // ADMIN CONFIRMATION & POINTS EVALUATION
 // ==========================================
 
@@ -1868,16 +1990,13 @@ export async function confirmAndEvaluatePredictionMatch(
       const awayTeamName = pm.customAwayName || pm.match?.awayTeam?.name || 'الفريق الثاني';
       const basePoints = pm.pointsPerMatch !== undefined && pm.pointsPerMatch !== null ? pm.pointsPerMatch : 2;
 
-      // Filter correct predictions
-      const correctPredictions = pm.predictions.filter(
-        (pred) => pred.homeScore === homeScore && pred.awayScore === awayScore
+      // Centralized evaluation
+      const evaluation = evaluateMatchPredictions(
+        basePoints,
+        pm.predictions,
+        homeScore,
+        awayScore
       );
-      const correctCount = correctPredictions.length;
-
-      // STRICT GOLDEN PREDICTION RULE:
-      // Golden prediction is ONLY allowed if basePoints is EXACTLY 2 AND exactly 1 participant predicted correctly!
-      // If basePoints > 2 (e.g. 3, 4, 5, 10), Golden is NEVER eligible.
-      const isGoldenEligible = basePoints === 2 && correctCount === 1;
 
       // Clear existing ledger entries for this prediction match to guarantee strict idempotency
       await tx
@@ -1889,36 +2008,31 @@ export async function confirmAndEvaluatePredictionMatch(
       let goldenAwarded = 0;
       const correctPredictors: Array<{ id: number; name: string; avatar: string | null; isGolden: boolean }> = [];
 
-      // 2. Iterate and evaluate each user prediction
-      for (const pred of pm.predictions) {
-        const isCorrect = pred.homeScore === homeScore && pred.awayScore === awayScore;
-        const isGolden = isCorrect && isGoldenEligible;
-        const goldenBonus = isGolden ? 1 : 0; // Exactly +1 Golden bonus point
-        const totalEarned = isCorrect ? basePoints + goldenBonus : 0;
-
+      // 2. Iterate and apply evaluated user predictions
+      for (const evaluated of evaluation.evaluatedPredictions) {
         // Update prediction row in transaction
         await tx
           .update(predictions)
           .set({
-            pointsEarned: totalEarned,
+            pointsEarned: evaluated.pointsEarned,
             isEvaluated: true,
-            isGolden,
-            goldenPoints: goldenBonus,
+            isGolden: evaluated.isGolden,
+            goldenPoints: evaluated.goldenPoints,
             updatedAt: new Date(),
           })
-          .where(eq(predictions.id, pred.id));
+          .where(eq(predictions.id, evaluated.id));
 
-        if (isCorrect) {
-          if (pred.user) {
+        if (evaluated.isCorrect) {
+          if (evaluated.user) {
             correctPredictors.push({
-              id: pred.user.id,
-              name: pred.user.name || 'مشارك',
-              avatar: pred.user.avatar || null,
-              isGolden,
+              id: evaluated.user.id,
+              name: evaluated.user.name || 'مشارك',
+              avatar: evaluated.user.avatar || null,
+              isGolden: evaluated.isGolden,
             });
           }
 
-          const reasonText = isGolden
+          const reasonText = evaluated.isGolden
             ? `توقع ذهبي منفرد: ${homeTeamName} ${homeScore} - ${awayScore} ${awayTeamName} (+2 نقطة أساسية + 1 نقطة ذهبية = 3 نقاط)`
             : `توقع دقيق: ${homeTeamName} ${homeScore} - ${awayScore} ${awayTeamName} (+${basePoints} نقطة)`;
 
@@ -1926,17 +2040,17 @@ export async function confirmAndEvaluatePredictionMatch(
           await tx
             .insert(predictionPoints)
             .values({
-              userId: pred.userId,
-              predictionId: pred.id,
+              userId: evaluated.userId,
+              predictionId: evaluated.id,
               predictionMatchId: pm.id,
               contestId: pm.contestId,
-              points: totalEarned,
-              isGoldenBonus: isGolden,
+              points: evaluated.pointsEarned,
+              isGoldenBonus: evaluated.isGolden,
               reason: reasonText,
             });
 
-          pointsAwarded += totalEarned;
-          if (isGolden) goldenAwarded++;
+          pointsAwarded += evaluated.pointsEarned;
+          if (evaluated.isGolden) goldenAwarded++;
         }
 
         evaluatedCount++;
@@ -1979,7 +2093,7 @@ export async function confirmAndEvaluatePredictionMatch(
         basePoints,
         correctPredictorsCount: correctPredictors.length,
         correctPredictors,
-        isGoldenPrediction: isGoldenEligible,
+        isGoldenPrediction: evaluation.isGoldenEligible,
         finalScore: {
           home: homeScore,
           away: awayScore,

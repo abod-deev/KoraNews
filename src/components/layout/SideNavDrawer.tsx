@@ -69,7 +69,19 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
   };
 
   useEffect(() => {
-    fetchCats();
+    let isMounted = true;
+    setCategoriesError(false);
+    fetchCategories().then((cats) => {
+      if (isMounted && Array.isArray(cats) && cats.length > 0) {
+        setCategories(cats);
+      }
+    }).catch((err) => {
+      if (isMounted) {
+        console.error('Failed to fetch categories:', err);
+        setCategoriesError(true);
+      }
+    });
+    return () => { isMounted = false; };
   }, []);
 
   // Auto close on route change
@@ -136,11 +148,18 @@ export default function SideNavDrawer({ isOpen, onClose }: SideNavDrawerProps) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               onClose();
             }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+            }}
             aria-hidden="true"
-            className="absolute inset-0 bg-slate-950/60 dark:bg-black/75 backdrop-blur-xs cursor-pointer"
+            className="absolute inset-0 bg-slate-950/60 dark:bg-black/75 backdrop-blur-xs cursor-pointer z-0"
           />
 
           {/* Drawer Panel */}

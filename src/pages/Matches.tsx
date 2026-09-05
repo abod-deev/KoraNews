@@ -32,14 +32,16 @@ export default function Matches() {
   const [standingsLeague, setStandingsLeague] = useState<string>('PD');
 
   useEffect(() => {
+    let isMounted = true;
     getLeagues().then((fetched) => {
-      if (fetched && fetched.length > 0) {
+      if (isMounted && fetched && fetched.length > 0) {
         setLeagues(fetched);
       }
     });
+    return () => { isMounted = false; };
   }, []);
 
-  const fetchMatchesData = async (silent = false) => {
+  const fetchMatchesData = async (silent = false, isMountedRef?: { current: boolean }) => {
     if (!silent) {
       setIsLoadingMatches(true);
     }
@@ -59,6 +61,8 @@ export default function Matches() {
         sortBy
       );
 
+      if (isMountedRef && !isMountedRef.current) return;
+
       if (result.error) {
         if (!silent) {
           setErrorMessage(result.error);
@@ -69,35 +73,51 @@ export default function Matches() {
         setMatches(fetchedList);
       }
     } catch (err: unknown) {
+      if (isMountedRef && !isMountedRef.current) return;
       if (!silent) {
         const msg = err instanceof Error ? err.message : 'حدث خطأ غير متوقع. تأكد من اتصالك بالإنترنت.';
         setErrorMessage(msg);
         setMatches([]);
       }
     } finally {
-      if (!silent) {
-        setIsLoadingMatches(false);
+      if (!isMountedRef || isMountedRef.current) {
+        if (!silent) {
+          setIsLoadingMatches(false);
+        }
       }
     }
   };
 
   useEffect(() => {
-    fetchMatchesData(false);
+    const isMountedRef = { current: true };
+    fetchMatchesData(false, isMountedRef);
     trackMatchFilter(activeLeagueId, selectedDate, activeTab);
 
     const interval = setInterval(() => {
-      fetchMatchesData(true);
+      if (isMountedRef.current) {
+        fetchMatchesData(true, isMountedRef);
+      }
     }, 20000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(interval);
+    };
   }, [activeTab, activeLeagueId, selectedDate, season, sortBy]);
 
   useEffect(() => {
+    let isMounted = true;
     const targetLeague = activeLeagueId !== 'all' ? activeLeagueId : standingsLeague;
     setIsLoadingStandings(true);
     getStandings(targetLeague, '2026')
-      .then(setStandings)
-      .finally(() => setIsLoadingStandings(false));
+      .then((data) => {
+        if (isMounted) setStandings(data);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingStandings(false);
+      });
+
+    return () => { isMounted = false; };
   }, [activeLeagueId, standingsLeague]);
 
   const statusTabs = [

@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { adminAuth } from './src/lib/firebase-admin.ts';
 import { db, withDbRetry, initializeDatabaseSchema } from './src/db/index.ts';
@@ -16,6 +17,8 @@ import {
   AuthRequest,
   createServerSessionToken,
   verifyServerSessionToken,
+  revokeSession,
+  revokeAllUserSessions,
 } from './src/middleware/auth.ts';
 import { getOrCreateUser } from './src/db/users.ts';
 import { hashPassword, verifyPassword } from './server/security/passwords.ts';
@@ -128,9 +131,13 @@ async function startServer() {
   // Initialize DB Schema & Run Automatic Migrations
   try {
     await initializeDatabaseSchema();
-    console.log('[Server Startup] Database schema initialized successfully.');
+    console.log('[Server Startup] Database schema initialized and synchronized successfully.');
   } catch (dbErr: any) {
-    console.warn('[Server Startup] Database initialization warning:', dbErr?.message || dbErr);
+    console.error('[Server Startup Fatal Error] Critical database initialization or migration failed:', dbErr);
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Server Startup] Halting production startup due to incompatible database schema.');
+      process.exit(1);
+    }
   }
 
   // Security Headers via Helmet (configured to allow iframe & images & OAuth popups)
@@ -155,28 +162,30 @@ async function startServer() {
 
         const originLower = origin.toLowerCase().trim();
 
-        // Always allow localhost, Cloud Run (.run.app), and AI Studio domains
-        if (
-          originLower.startsWith('http://localhost:') ||
-          originLower.startsWith('http://127.0.0.1:') ||
-          originLower.endsWith('.run.app') ||
-          originLower.endsWith('.google.internal') ||
-          originLower.endsWith('.aistudio.google.com')
-        ) {
-          return callback(null, true);
-        }
+        if (isProduction) {
+          // In production, strictly enforce whitelist. Never allow '*' or unconfigured arbitrary origins.
+          if (configuredAllowedOrigins.length > 0) {
+            if (configuredAllowedOrigins.includes(originLower)) {
+              return callback(null, true);
+            }
+            return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+          }
 
-        // If specific ALLOWED_ORIGINS are configured, check them
-        if (configuredAllowedOrigins.length > 0) {
-          if (configuredAllowedOrigins.includes(originLower)) {
+          // If no explicit ALLOWED_ORIGINS configured, allow trusted internal Cloud Run / AI Studio preview origins
+          if (
+            originLower.endsWith('.run.app') ||
+            originLower.endsWith('.google.internal') ||
+            originLower.endsWith('.aistudio.google.com')
+          ) {
             return callback(null, true);
           }
-          console.warn(`[CORS] Blocked unconfigured origin: ${origin}`);
-          return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
-        }
 
-        // Default: allow origin in production/development if not explicitly restricted
-        return callback(null, true);
+          // In production, reject unknown arbitrary origins
+          return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+        } else {
+          // In development/test, allow all origins for preview iframe and dev requests
+          return callback(null, true);
+        }
       },
       credentials: true,
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-cron-secret'],
@@ -208,9 +217,30 @@ async function startServer() {
   // ==========================================
 
   /**
+   * POST /api/auth/logout
+   * Revokes the active session token and clears session state.
+   */
+  app.post('/api/auth/logout', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split('Bearer ')[1]?.trim();
+      if (token && token.startsWith('srv_')) {
+        const payload = verifyServerSessionToken(token);
+        if (payload?.jti) {
+          revokeSession(payload.jti);
+        }
+        if (payload?.uid) {
+          revokeAllUserSessions(payload.uid);
+        }
+      }
+    }
+    return res.json({ success: true, message: 'تم تسجيل الخروج بنجاح' });
+  });
+
+  /**
    * POST /api/auth/login
    * Authenticates a user securely via email & password.
-   * Uses crypto.scrypt password verification and issues cryptographically signed session tokens.
+   * Uses crypto.scrypt password verification, constant-time error messages (anti-enumeration), and issues signed session tokens.
    */
   app.post('/api/auth/login', loginLimiter, async (req, res) => {
     try {
@@ -226,7 +256,7 @@ async function startServer() {
       // 1. Super Admin Authentication (Backed by Secrets)
       if (superAdminEmail && cleanEmail === superAdminEmail && superAdminPass) {
         if (password !== superAdminPass) {
-          return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+          return res.status(401).json({ error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' });
         }
 
         const superAdminPermissions = ['news_add', 'news_edit', 'news_delete', 'news_publish', 'matches_manage', 'admin_manage'];
@@ -270,7 +300,8 @@ async function startServer() {
       );
 
       if (userRecords.length === 0) {
-        return res.status(404).json({ error: 'الحساب غير موجود. يمكنك إنشاء حساب جديد.' });
+        // Uniform error response to prevent user enumeration
+        return res.status(401).json({ error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' });
       }
 
       const dbUser = userRecords[0];
@@ -282,13 +313,13 @@ async function startServer() {
       // Check password using scrypt (or legacy plaintext with auto-migration)
       const storedHashOrPlain = dbUser.passwordHash || dbUser.password;
       if (!storedHashOrPlain) {
-        return res.status(401).json({ error: 'يرجى تسجيل الدخول بواسطة جوجل أو إعادة تعيين كلمة المرور' });
+        return res.status(401).json({ error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' });
       }
 
       const { isValid, needsMigration } = await verifyPassword(password, storedHashOrPlain);
 
       if (!isValid) {
-        return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+        return res.status(401).json({ error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' });
       }
 
       // Automatic password migration to scrypt hash if needed
@@ -423,7 +454,7 @@ async function startServer() {
       );
 
       // Clear the temporary verification session
-      clearVerificationSession(cleanEmail);
+      await clearVerificationSession(cleanEmail);
 
       const sessionToken = createServerSessionToken({
         uid: dbUser.uid,
@@ -487,10 +518,51 @@ async function startServer() {
   /**
    * POST /api/auth/sync
    * Synchronizes third-party (e.g. Google Sign-In) authenticated tokens with local database.
+   * Cryptographically verifies tokens and creates/updates database records.
    */
-  app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/api/auth/sync', async (req: AuthRequest, res) => {
     try {
-      const decodedToken = req.user!;
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized: Missing or invalid token format' });
+      }
+
+      const token = authHeader.split('Bearer ')[1]?.trim();
+      if (!token) {
+        return res.status(401).json({ error: 'Unauthorized: Empty token' });
+      }
+
+      let decodedToken: { uid: string; email: string; name?: string; picture?: string } | null = null;
+
+      if (token.startsWith('srv_')) {
+        const payload = verifyServerSessionToken(token);
+        if (payload) {
+          decodedToken = {
+            uid: payload.uid,
+            email: payload.email,
+            name: payload.name,
+          };
+        }
+      } else {
+        try {
+          const fbDecoded = await adminAuth.verifyIdToken(token);
+          if (fbDecoded && fbDecoded.uid) {
+            decodedToken = {
+              uid: fbDecoded.uid,
+              email: fbDecoded.email || '',
+              name: fbDecoded.name || (fbDecoded.email ? fbDecoded.email.split('@')[0] : 'مستخدم'),
+              picture: fbDecoded.picture,
+            };
+          }
+        } catch {
+          decodedToken = null;
+        }
+      }
+
+      if (!decodedToken || !decodedToken.uid) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid or expired authentication token' });
+      }
+
       const body = req.body || {};
       const candidateName = (typeof body.name === 'string' && body.name.trim()) ? body.name.trim() : (decodedToken.name || 'مستخدم');
       const candidatePicture = (typeof body.picture === 'string' && body.picture.trim()) ? body.picture.trim() : decodedToken.picture;
@@ -501,6 +573,10 @@ async function startServer() {
         candidateName,
         candidatePicture
       );
+
+      if (!user.isActive) {
+        return res.status(403).json({ error: 'الحساب معطل، يرجى التواصل مع الإدارة' });
+      }
 
       const sessionToken = createServerSessionToken({
         uid: user.uid,
@@ -662,6 +738,10 @@ async function startServer() {
       if (isSuperAdmin) {
         return res.status(400).json({ error: 'حساب مالك النظام الرئيسي والمدير العام محمي بالكامل ولا يمكن حذفه' });
       }
+
+      // Invalidate all active sessions for this user
+      if (user.uid) revokeAllUserSessions(user.uid);
+      if (user.email) revokeAllUserSessions(user.email);
 
       await permanentlyDeleteUserRecord(user);
       return res.json({ success: true, message: 'تم حذف الحساب نهائياً بنجاح' });
@@ -1179,7 +1259,13 @@ async function startServer() {
     const cronSecret = process.env.CRON_SECRET;
     const reqSecret = req.headers['x-cron-secret'];
 
-    const hasCronAuth = !!cronSecret && reqSecret === cronSecret;
+    let hasCronAuth = false;
+    if (cronSecret && typeof cronSecret === 'string' && cronSecret.length >= 16 && typeof reqSecret === 'string') {
+      const a = Buffer.from(reqSecret);
+      const b = Buffer.from(cronSecret);
+      hasCronAuth = a.length === b.length && crypto.timingSafeEqual(a, b);
+    }
+
     const isUserAdmin = req.dbUser && (req.dbUser.role === 'admin' || req.dbUser.role === 'superadmin');
 
     if (!hasCronAuth && !isUserAdmin) {
@@ -2274,6 +2360,12 @@ async function startServer() {
           .where(eq(users.id, targetUserId))
       );
 
+      // Invalidate active sessions if user is deactivated or permissions/role modified
+      if (isActive === false || role !== undefined || permissions !== undefined) {
+        if (targetUser.uid) revokeAllUserSessions(targetUser.uid);
+        if (targetUser.email) revokeAllUserSessions(targetUser.email);
+      }
+
       await logActivity(req.dbUser.id, 'UPDATE', 'USER', String(targetUserId), { role: newRole, permissions, isActive });
       return res.json({ success: true });
     } catch (e) {
@@ -2295,6 +2387,10 @@ async function startServer() {
       if (targetUser.role === 'superadmin' || (!!superAdminEmail && targetUser.email?.toLowerCase().trim() === superAdminEmail)) {
         return res.status(400).json({ error: 'حساب مالك النظام والمدير العام الرئيسي محمي بالكامل ولا يمكن حذفه' });
       }
+
+      // Invalidate all active sessions for target user
+      if (targetUser.uid) revokeAllUserSessions(targetUser.uid);
+      if (targetUser.email) revokeAllUserSessions(targetUser.email);
 
       await permanentlyDeleteUserRecord(targetUser);
       await logActivity(req.dbUser.id, 'DELETE', 'USER', String(targetUserId), { email: targetUser.email, name: targetUser.name });

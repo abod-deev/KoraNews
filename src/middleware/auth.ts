@@ -3,10 +3,9 @@ import { adminAuth } from '../lib/firebase-admin.ts';
 import { db, withDbRetry } from '../db/index.ts';
 import { users } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
-import { verifyServerSessionToken, createServerSessionToken } from '../../server/security/session.ts';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { verifyServerSessionToken, createServerSessionToken, revokeSession, revokeAllUserSessions } from '../../server/security/session.ts';
 
-export { createServerSessionToken, verifyServerSessionToken };
+export { createServerSessionToken, verifyServerSessionToken, revokeSession, revokeAllUserSessions };
 
 export interface AuthRequest extends Request {
   user?: {
@@ -19,43 +18,11 @@ export interface AuthRequest extends Request {
 }
 
 /**
- * Parses and validates a standard Firebase Auth JWT token if Admin SDK is operating in lightweight mode.
- */
-function parseAndValidateFirebaseToken(token: string): { uid: string; email: string; name?: string; picture?: string } | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const payloadJson = Buffer.from(parts[1], 'base64').toString('utf-8');
-    const payload = JSON.parse(payloadJson);
-    const now = Math.floor(Date.now() / 1000);
-
-    const expectedAud = firebaseConfig.projectId;
-    const expectedIss = `https://securetoken.google.com/${expectedAud}`;
-
-    const isAudValid = payload.aud === expectedAud || payload.firebase?.project_id === expectedAud;
-    const isIssValid = payload.iss === expectedIss;
-    const isNotExpired = typeof payload.exp === 'number' && payload.exp > now - 60; // 60s clock skew tolerance
-    const uid = payload.user_id || payload.sub;
-
-    if (isAudValid && isIssValid && isNotExpired && uid && typeof uid === 'string') {
-      return {
-        uid,
-        email: payload.email || '',
-        name: payload.name || (payload.email ? payload.email.split('@')[0] : 'مستخدم'),
-        picture: payload.picture,
-      };
-    }
-  } catch (err) {
-    // ignore parse error
-  }
-  return null;
-}
-
-/**
  * Strict authentication middleware:
- * 1. Supports cryptographically verified `srv_` session tokens
- * 2. Supports verified Firebase ID tokens via adminAuth.verifyIdToken and claim validation
- * 3. Verifies database user active status
+ * 1. Validates cryptographically signed `srv_` session tokens via HMAC-SHA256 & revocation checks
+ * 2. Validates Firebase ID tokens ONLY via official Firebase Admin SDK cryptographic verification
+ * 3. Enforces database user existence: if user is not in DB -> 401
+ * 4. Enforces active status: if user isActive === false -> 403
  */
 export const requireAuth = async (
   req: AuthRequest,
@@ -74,7 +41,7 @@ export const requireAuth = async (
 
   let decodedToken: { uid: string; email: string; name?: string; picture?: string } | null = null;
 
-  // 1. Try server session token (Cryptographically verified with HMAC & Expiry)
+  // 1. Try server session token (Cryptographically verified with HMAC, Expiry, and Revocation)
   if (token.startsWith('srv_')) {
     const payload = verifyServerSessionToken(token);
     if (payload) {
@@ -84,10 +51,8 @@ export const requireAuth = async (
         name: payload.name,
       };
     }
-  }
-
-  // 2. Try Firebase ID token (Verified by Firebase Admin SDK or Project-Bound Claims)
-  if (!decodedToken && !token.startsWith('srv_')) {
+  } else {
+    // 2. Try Firebase ID token (Strict Cryptographic Verification ONLY via Firebase Admin SDK)
     try {
       const fbDecoded = await adminAuth.verifyIdToken(token);
       if (fbDecoded && fbDecoded.uid) {
@@ -99,8 +64,8 @@ export const requireAuth = async (
         };
       }
     } catch (fbErr) {
-      // Fallback verification for standard Firebase OAuth ID tokens issued to our projectId
-      decodedToken = parseAndValidateFirebaseToken(token);
+      // Cryptographic verification failed or invalid token - strictly reject
+      decodedToken = null;
     }
   }
 
@@ -122,7 +87,7 @@ export const requireAuth = async (
       if (dbUsers.length > 0) {
         req.dbUser = dbUsers[0];
 
-        // Ensure superadmin status matches environment configuration
+        // Ensure superadmin status matches server environment configuration
         const isSuperAdmin = !!superAdminEmail && req.dbUser.email?.toLowerCase().trim() === superAdminEmail;
         if (isSuperAdmin && (req.dbUser.role !== 'superadmin' || !req.dbUser.isAdmin)) {
           const superAdminPermissions = ['news_add', 'news_edit', 'news_delete', 'news_publish', 'matches_manage', 'admin_manage'];
@@ -133,30 +98,19 @@ export const requireAuth = async (
           req.dbUser.isAdmin = true;
           req.dbUser.isActive = true;
         }
-      } else if (decodedToken!.email) {
-        const cleanEmail = decodedToken!.email.toLowerCase().trim();
-        const isSuperAdmin = !!superAdminEmail && cleanEmail === superAdminEmail;
-        const superAdminPermissions = ['news_add', 'news_edit', 'news_delete', 'news_publish', 'matches_manage', 'admin_manage'];
-
-        const newUsers = await db.insert(users).values({
-          uid: decodedToken!.uid,
-          email: cleanEmail,
-          name: decodedToken!.name || cleanEmail.split('@')[0],
-          avatar: decodedToken!.picture || '/default-avatar.svg',
-          role: isSuperAdmin ? 'superadmin' : 'user',
-          isAdmin: isSuperAdmin,
-          permissions: isSuperAdmin ? superAdminPermissions : [],
-          isActive: true,
-        }).returning();
-
-        req.dbUser = newUsers[0];
       }
     });
   } catch (dbErr) {
     console.error('[Auth Middleware DB Error]:', dbErr);
   }
 
-  if (req.dbUser && !req.dbUser.isActive) {
+  // If user does not exist in the database -> reject with 401 (token alone cannot keep deleted user valid)
+  if (!req.dbUser) {
+    return res.status(401).json({ error: 'المستخدم غير موجود أو تم حذف الحساب' });
+  }
+
+  // If user exists in DB but is inactive/deactivated -> reject with 403
+  if (!req.dbUser.isActive) {
     return res.status(403).json({ error: 'الحساب معطل، يرجى التواصل مع الإدارة' });
   }
 
@@ -185,6 +139,13 @@ export const requirePermission = (permission?: string) => {
       return;
     }
 
+    if (!req.dbUser.isActive) {
+      if (!res.headersSent) {
+        return res.status(403).json({ error: 'الحساب معطل، يرجى التواصل مع الإدارة' });
+      }
+      return;
+    }
+
     const dbUser = req.dbUser;
     const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
     const isSuperAdmin = dbUser.role === 'superadmin' || (!!superAdminEmail && dbUser.email?.toLowerCase().trim() === superAdminEmail);
@@ -193,7 +154,7 @@ export const requirePermission = (permission?: string) => {
       return next();
     }
 
-    if (dbUser.role !== 'admin') {
+    if (dbUser.role !== 'admin' && !dbUser.isAdmin) {
       return res.status(403).json({ error: 'Forbidden: Insufficient privileges (Admin required)' });
     }
 
@@ -209,7 +170,8 @@ export const requirePermission = (permission?: string) => {
 };
 
 /**
- * Super Admin strict guard
+ * Super Admin strict guard:
+ * Strictly verifies superadmin status based on database role and server environment configuration.
  */
 export const requireSuperAdmin = async (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.user || !req.dbUser) {
@@ -223,7 +185,14 @@ export const requireSuperAdmin = async (req: AuthRequest, res: Response, next: N
 
   if (!req.user || !req.dbUser) {
     if (!res.headersSent) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Unauthorized: Authentication required' });
+    }
+    return;
+  }
+
+  if (!req.dbUser.isActive) {
+    if (!res.headersSent) {
+      return res.status(403).json({ error: 'الحساب معطل، يرجى التواصل مع الإدارة' });
     }
     return;
   }
@@ -265,9 +234,7 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
         name: payload.name,
       };
     }
-  }
-
-  if (!decodedToken && !token.startsWith('srv_')) {
+  } else {
     try {
       const fbDecoded = await adminAuth.verifyIdToken(token);
       if (fbDecoded && fbDecoded.uid) {
@@ -279,7 +246,7 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
         };
       }
     } catch {
-      decodedToken = parseAndValidateFirebaseToken(token);
+      decodedToken = null;
     }
   }
 
@@ -291,7 +258,7 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
         if (dbUsers.length === 0 && decodedToken!.email) {
           dbUsers = await db.select().from(users).where(eq(users.email, decodedToken!.email.toLowerCase().trim()));
         }
-        if (dbUsers.length > 0) {
+        if (dbUsers.length > 0 && dbUsers[0].isActive) {
           req.dbUser = dbUsers[0];
         }
       });
@@ -302,4 +269,5 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
 
   next();
 };
+
 

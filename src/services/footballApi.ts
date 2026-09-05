@@ -28,6 +28,13 @@ export class NotFoundError extends Error {
   }
 }
 
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
 /**
  * Custom error class for API Rate Limit errors (HTTP 429).
  */
@@ -117,10 +124,26 @@ export async function fetchFromFootballData<T = any>(
       if (response.status === 404) {
         throw new NotFoundError(`Endpoint ${endpoint} not found (404)`);
       }
+      if (response.status === 403) {
+        throw new ForbiddenError(`Football API Key is invalid, restricted, or unconfigured (403): ${errorText}`);
+      }
       throw new Error(`Football API Error HTTP ${response.status} (${response.statusText}): ${errorText}`);
     }
 
-    const data = await response.json();
+    const rawText = await response.text();
+    if (!rawText || !rawText.trim()) {
+      if (cached) return cached.data as T;
+      return {} as T;
+    }
+
+    let data: any;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      if (cached) return cached.data as T;
+      return {} as T;
+    }
+
     // Cache the successful response
     cache.set(cacheKey, { timestamp: Date.now(), data });
     return data as T;
@@ -137,8 +160,8 @@ export async function fetchFromFootballData<T = any>(
       throw new Error(`Football API request timed out after ${timeoutMs}ms`);
     }
 
-    // Retry logic for transient errors (not rate limits or 404s)
-    if (retries > 0 && !(error instanceof RateLimitError) && !(error instanceof NotFoundError)) {
+    // Retry logic for transient errors (not rate limits, forbidden, or 404s)
+    if (retries > 0 && !(error instanceof RateLimitError) && !(error instanceof NotFoundError) && !(error instanceof ForbiddenError)) {
       console.warn(`[footballApi] Retrying request to ${endpoint} (${retries} retries left)...`);
       await new Promise((res) => setTimeout(res, 2000));
       return fetchFromFootballData<T>(endpoint, { timeoutMs, retries: retries - 1, ignoreCache });
@@ -148,6 +171,8 @@ export async function fetchFromFootballData<T = any>(
       console.warn(`[footballApi] Rate limit active for ${endpoint}`);
     } else if (error instanceof NotFoundError) {
       console.log(`[footballApi] Resource not found for ${endpoint}`);
+    } else if (error instanceof ForbiddenError) {
+      console.warn(`[footballApi] Forbidden (403) for ${endpoint}`);
     } else {
       console.warn(`[footballApi] Error fetching endpoint ${endpoint}:`, error.message || error);
     }
