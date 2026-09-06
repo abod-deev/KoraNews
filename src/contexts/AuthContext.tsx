@@ -220,11 +220,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error?.code === 'auth/popup-blocked') {
         throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة (Popups) وإعادة المحاولة.');
       } else if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-        throw new Error('تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية.');
+        // User closed popup window intentionally - handle silently without throwing
+        console.info('Google Sign-In popup closed by user.');
+        return;
       } else if (error?.code === 'auth/unauthorized-domain') {
-        throw new Error('النطاق الحالي غير مدرج في النطاقات المصرح بها (Authorized Domains) في إعدادات Firebase Authentication.');
+        const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+        throw new Error(`النطاق الحالي (${currentHost}) غير مدرج في النطاقات المصرح بها (Authorized Domains) في إعدادات Firebase Authentication. يرجى إضافته في Firebase Console.`);
       } else if (error?.code === 'auth/network-request-failed') {
         throw new Error('تعذر الاتصال بخدمة المصادقة، يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.');
+      } else if (error?.code === 'auth/configuration-not-found' || error?.code === 'auth/operation-not-allowed') {
+        throw new Error('مُكّن تسجيل الدخول عبر Google غير مفعّل بعد في مشروع Firebase الخاص بك (ffootball-newss). يرجى فتح Firebase Console -> Authentication -> Sign-in method وتفعيل خيار Google.');
       }
       throw new Error(error?.message || 'حدث خطأ في تسجيل الدخول بواسطة جوجل');
     }

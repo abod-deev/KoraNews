@@ -42,34 +42,34 @@ function AdminRoute() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <MatchRemindersProvider>
-          <BrowserRouter>
-            <AnalyticsTracker />
-            <ErrorBoundary>
-              <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-brand" /></div>}>
-            <Routes>
-              <Route path="/" element={<MainLayout />}>
-                <Route index element={<Home />} />
-                <Route path="news" element={<News />} />
-                <Route path="news/:id" element={<NewsDetail />} />
-                <Route path="matches" element={<Matches />} />
-                <Route path="predictions" element={<Predictions />} />
-                <Route path="predictions/leaderboard" element={<PredictionsLeaderboardPage />} />
-                <Route path="predictions/golden" element={<GoldenLeaderboardPage />} />
-                <Route path="leagues/:id" element={<LeagueDetails />} />
-                <Route path="admin" element={<AdminRoute />} />
-                <Route path="profile" element={<Profile />} />
-                <Route path="login" element={<Login />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Route>
-            </Routes>
-            </Suspense>
-            </ErrorBoundary>
-          </BrowserRouter>
-        </MatchRemindersProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider>
+          <MatchRemindersProvider>
+            <BrowserRouter>
+              <AnalyticsTracker />
+              <Suspense fallback={<div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-950 text-brand"><Loader2 className="w-10 h-10 animate-spin text-brand" /><span className="text-sm font-bold text-gray-500 dark:text-gray-400 dir-rtl">جاري التحميل...</span></div>}>
+                <Routes>
+                  <Route path="/" element={<MainLayout />}>
+                    <Route index element={<Home />} />
+                    <Route path="news" element={<News />} />
+                    <Route path="news/:id" element={<NewsDetail />} />
+                    <Route path="matches" element={<Matches />} />
+                    <Route path="predictions" element={<Predictions />} />
+                    <Route path="predictions/leaderboard" element={<PredictionsLeaderboardPage />} />
+                    <Route path="predictions/golden" element={<GoldenLeaderboardPage />} />
+                    <Route path="leagues/:id" element={<LeagueDetails />} />
+                    <Route path="admin" element={<AdminRoute />} />
+                    <Route path="profile" element={<Profile />} />
+                    <Route path="login" element={<Login />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Route>
+                </Routes>
+              </Suspense>
+            </BrowserRouter>
+          </MatchRemindersProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
