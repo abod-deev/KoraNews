@@ -118,11 +118,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Firebase auth state listener
   useEffect(() => {
+    if (!auth) {
+      const savedToken = localStorage.getItem('srv_session_token');
+      const savedUser = localStorage.getItem('srv_session_user');
+      if (savedToken && savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+          setToken(savedToken);
+        } catch {
+          setUser(null);
+          setToken(null);
+        }
+      }
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(
       auth,
       async (currentUser) => {
-        if (currentUser) {
-          try {
+        try {
+          if (currentUser) {
             const idToken = await currentUser.getIdToken();
             // Sync user with backend to ensure DB user & session are up-to-date
             const syncRes = await fetch('/api/auth/sync', {
@@ -137,27 +153,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 saveSession(syncData.sessionToken, syncData.user);
               }
             }
-          } catch (error) {
-            console.error("Failed to sync user with backend:", error);
-          }
-        } else {
-          const savedToken = localStorage.getItem('srv_session_token');
-          const savedUser = localStorage.getItem('srv_session_user');
-          if (savedToken && savedUser) {
-            try {
-              const parsed = JSON.parse(savedUser);
-              setUser(parsed);
-              setToken(savedToken);
-            } catch (e) {
+          } else {
+            const savedToken = localStorage.getItem('srv_session_token');
+            const savedUser = localStorage.getItem('srv_session_user');
+            if (savedToken && savedUser) {
+              try {
+                const parsed = JSON.parse(savedUser);
+                setUser(parsed);
+                setToken(savedToken);
+              } catch (e) {
+                setUser(null);
+                setToken(null);
+              }
+            } else {
               setUser(null);
               setToken(null);
             }
-          } else {
-            setUser(null);
-            setToken(null);
           }
+        } catch (error) {
+          console.error("Failed to sync user with backend:", error);
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
       },
       (error) => {
         const msg = error?.message || String(error);
@@ -174,6 +191,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signInWithGoogle = async () => {
+    if (!auth) {
+      throw new Error('خدمة مصادقة جوجل غير متوفرة حالياً، يرجى المحاولة لاحقاً أو استخدام البريد الإلكتروني.');
+    }
     try {
       const provider = new GoogleAuthProvider();
       provider.addScope('email');
