@@ -13,7 +13,7 @@ export default function PredictionsWidget() {
       .then((data) => {
         if (Array.isArray(data)) {
           // Filter open prediction matches
-          const open = data.filter((m: any) => m.status === 'open');
+          const open = data.filter((pm: any) => pm.isOpenForPrediction || pm.matchState === 'open');
           setOpenMatches(open.slice(0, 3));
         }
       })
@@ -63,64 +63,76 @@ export default function PredictionsWidget() {
         </div>
       ) : openMatches.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 relative z-10">
-          {openMatches.map((match) => (
-            <div
-              key={match.id}
-              className="bg-slate-800/80 hover:bg-slate-800 backdrop-blur-md rounded-2xl p-3.5 border border-slate-700/80 flex flex-col justify-between gap-3 transition-all group"
-            >
-              <div className="flex items-center justify-between text-[10px] text-amber-300 font-bold border-b border-slate-700/60 pb-2">
-                <span className="truncate max-w-[110px]">{match.leagueName || 'مباراة قمة'}</span>
-                <span className="flex items-center gap-1 text-slate-300">
-                  <Target className="w-3 h-3 text-amber-400" />
-                  <span>{match.pointsPerMatch === 1 ? '⭐ 1 نقطة' : `⭐ ${match.pointsPerMatch || 2} نقاط`}</span>
-                </span>
-              </div>
+          {openMatches.map((pm) => {
+            const m = pm.match || {};
+            const league = pm.leagueName || m.leagueName || 'مباراة قمة';
+            const homeName = m.homeTeam?.name || pm.homeTeamName || 'الفريق الأول';
+            const homeLogo = m.homeTeam?.logo || pm.homeTeamLogo;
+            const awayName = m.awayTeam?.name || pm.awayTeamName || 'الفريق الثاني';
+            const awayLogo = m.awayTeam?.logo || pm.awayTeamLogo;
+            const pts = pm.pointsPerMatch || 2;
 
-              {/* Teams Display */}
-              <div className="flex items-center justify-around my-1">
-                <div className="flex flex-col items-center gap-1 text-center w-5/12">
-                  <div className="w-9 h-9 rounded-full bg-slate-900 p-1.5 border border-slate-700 flex items-center justify-center">
-                    <img loading="lazy"
-                      src={match.homeTeamLogo}
-                      alt={match.homeTeamName}
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  </div>
-                  <span className="text-[11px] font-bold text-slate-100 truncate w-full">
-                    {getArabicTeamName(match.homeTeamName)}
-                  </span>
-                </div>
-
-                <span className="text-xs font-black text-amber-400">VS</span>
-
-                <div className="flex flex-col items-center gap-1 text-center w-5/12">
-                  <div className="w-9 h-9 rounded-full bg-slate-900 p-1.5 border border-slate-700 flex items-center justify-center">
-                    <img loading="lazy"
-                      src={match.awayTeamLogo}
-                      alt={match.awayTeamName}
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  </div>
-                  <span className="text-[11px] font-bold text-slate-100 truncate w-full">
-                    {getArabicTeamName(match.awayTeamName)}
-                  </span>
-                </div>
-              </div>
-
-              <Link
-                to="/predictions"
-                className="w-full text-center bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-extrabold text-xs py-1.5 rounded-xl border border-amber-500/30 transition-colors"
+            return (
+              <div
+                key={pm.id}
+                className="bg-slate-800/80 hover:bg-slate-800 backdrop-blur-md rounded-2xl p-3.5 border border-slate-700/80 flex flex-col justify-between gap-3 transition-all group"
               >
-                توقع النتيجة الآن
-              </Link>
-            </div>
-          ))}
+                <div className="flex items-center justify-between text-[10px] text-amber-300 font-bold border-b border-slate-700/60 pb-2">
+                  <span className="truncate max-w-[110px]">{league}</span>
+                  <span className="flex items-center gap-1 text-slate-300">
+                    <Target className="w-3 h-3 text-amber-400" />
+                    <span>{pts === 1 ? '⭐ 1 نقطة' : `⭐ ${pts} نقاط`}</span>
+                  </span>
+                </div>
+
+                {/* Teams Display */}
+                <div className="flex items-center justify-around my-1">
+                  <div className="flex flex-col items-center gap-1 text-center w-5/12">
+                    <div className="w-9 h-9 rounded-full bg-slate-900 p-1.5 border border-slate-700 flex items-center justify-center">
+                      <img
+                        loading="lazy"
+                        src={homeLogo}
+                        alt={homeName}
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-100 truncate w-full">
+                      {getArabicTeamName(homeName)}
+                    </span>
+                  </div>
+
+                  <span className="text-xs font-black text-amber-400">VS</span>
+
+                  <div className="flex flex-col items-center gap-1 text-center w-5/12">
+                    <div className="w-9 h-9 rounded-full bg-slate-900 p-1.5 border border-slate-700 flex items-center justify-center">
+                      <img
+                        loading="lazy"
+                        src={awayLogo}
+                        alt={awayName}
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-100 truncate w-full">
+                      {getArabicTeamName(awayName)}
+                    </span>
+                  </div>
+                </div>
+
+                <Link
+                  to="/predictions"
+                  className="w-full text-center bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-extrabold text-xs py-1.5 rounded-xl border border-amber-500/30 transition-colors"
+                >
+                  توقع النتيجة الآن
+                </Link>
+              </div>
+            );
+          })}
         </div>
       ) : (
         /* Call To Action Banner when no open matches right now */

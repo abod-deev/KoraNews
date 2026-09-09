@@ -24,59 +24,8 @@ export function normalizeArabicText(str: string): string {
     .replace(/\s+/g, ' ');
 }
 
-export interface PredictionMatchInfo {
-  id: number;
-  matchId: string | null;
-  isExternal: boolean;
-  pointsPerMatch: number;
-  isActive: boolean;
-  isCalculated: boolean;
-  calculatedAt: string | null;
-  isConfirmedByAdmin: boolean;
-  confirmedAt: string | null;
-  createdAt: string;
-  match: {
-    id: string;
-    leagueId: string;
-    leagueName: string;
-    leagueLogo?: string;
-    homeTeam: {
-      id: string;
-      name: string;
-      logo: string;
-    };
-    awayTeam: {
-      id: string;
-      name: string;
-      logo: string;
-    };
-    homeScore: number | null;
-    awayScore: number | null;
-    status: string;
-    matchTime: string;
-    matchDate: string;
-  };
-  isOpenForPrediction: boolean;
-  matchState: 'open' | 'upcoming' | 'live' | 'pending_admin' | 'calculated';
-  participantsCount: number;
-  correctPredictorsCount?: number;
-  correctPredictors?: Array<{ id: number; name: string; avatar: string | null; isGolden?: boolean }>;
-  goldenPredictor?: { id: number; name: string; avatar: string | null } | null;
-  userPrediction?: {
-    id: number;
-    homeScore: number;
-    awayScore: number;
-    pointsEarned: number;
-    isEvaluated: boolean;
-    isGolden: boolean;
-    goldenPoints: number;
-    createdAt: string;
-    updatedAt: string;
-    editExpiresAt: string;
-    canEdit: boolean;
-    remainingEditSeconds: number;
-  } | null;
-}
+import type { PredictionMatchInfo } from '../types.ts';
+export type { PredictionMatchInfo };
 
 // ==========================================
 // CONTEST SETTINGS & LIFECYCLE HELPERS
@@ -762,11 +711,7 @@ export async function getPredictionMatches(userId: number | null, contestId?: nu
 
       let userPredictionFormatted: PredictionMatchInfo['userPrediction'] = null;
       if (userPred) {
-        const createdAtTime = new Date(userPred.createdAt).getTime();
-        const editExpiresAt = new Date(createdAtTime + 60 * 1000).toISOString();
-        const elapsed = Date.now() - createdAtTime;
-        const canEdit = elapsed <= 60 * 1000 && isOpen;
-        const remainingEditSeconds = Math.max(0, Math.round((60 * 1000 - elapsed) / 1000));
+        const canEdit = isOpen;
 
         userPredictionFormatted = {
           id: userPred.id,
@@ -778,9 +723,9 @@ export async function getPredictionMatches(userId: number | null, contestId?: nu
           goldenPoints: userPred.goldenPoints || 0,
           createdAt: userPred.createdAt.toISOString(),
           updatedAt: userPred.updatedAt.toISOString(),
-          editExpiresAt,
+          editExpiresAt: undefined,
           canEdit,
-          remainingEditSeconds,
+          remainingEditSeconds: undefined,
         };
       }
 
@@ -938,10 +883,7 @@ export async function getUserPredictionsHistory(userId: number, contestId?: numb
         displayStatus = 'upcoming';
       }
 
-      const createdAtTime = new Date(p.createdAt).getTime();
-      const elapsed = Date.now() - createdAtTime;
-      const canEdit = elapsed <= 60 * 1000 && isOpen;
-      const remainingEditSeconds = Math.max(0, Math.round((60 * 1000 - elapsed) / 1000));
+      const canEdit = isOpen;
 
       return {
         id: p.id,
@@ -955,9 +897,9 @@ export async function getUserPredictionsHistory(userId: number, contestId?: numb
         goldenPoints: p.goldenPoints || 0,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
-        editExpiresAt: new Date(createdAtTime + 60 * 1000).toISOString(),
+        editExpiresAt: undefined,
         canEdit,
-        remainingEditSeconds,
+        remainingEditSeconds: undefined,
         displayStatus,
         matchState,
         match: {
@@ -982,6 +924,41 @@ export async function getUserPredictionsHistory(userId: number, contestId?: numb
       };
     });
   });
+}
+
+/**
+ * Calculates Golden Prediction points according to official competition rules:
+ * - Each correct golden prediction earns 3 base points.
+ * - Group Bonus: +1 extra point for every 3 completed golden predictions: Math.floor(goldenCount / 3).
+ * - Total Golden Points = (goldenCount * 3) + Math.floor(goldenCount / 3).
+ *
+ * Golden Points Calculation:
+ * - Each golden prediction (exact single correct predictor) awards +1 extra golden point in the match ledger.
+ * - Bonus reward: +1 bonus point for every 3 golden predictions (Math.floor(goldenCount / 3)).
+ * - Total extra points from golden mechanism = (goldenCount * 1) + Math.floor(goldenCount / 3).
+ *
+ * Examples:
+ * 0 golden predictions -> 0 base + 0 bonus = 0 points
+ * 1 golden prediction  -> 1 base + 0 bonus = 1 point
+ * 2 golden predictions -> 2 base + 0 bonus = 2 points
+ * 3 golden predictions -> 3 base + 1 bonus = 4 points
+ * 6 golden predictions -> 6 base + 2 bonus = 8 points
+ * 9 golden predictions -> 9 base + 3 bonus = 12 points
+ */
+export function calculateGoldenPoints(goldenCount: number): {
+  basePoints: number;
+  bonusPoints: number;
+  totalGoldenPoints: number;
+} {
+  const safeCount = Math.max(0, Math.floor(Number(goldenCount) || 0));
+  const basePoints = safeCount * 1;
+  const bonusPoints = Math.floor(safeCount / 3);
+  const totalGoldenPoints = basePoints + bonusPoints;
+  return {
+    basePoints,
+    bonusPoints,
+    totalGoldenPoints,
+  };
 }
 
 export async function getUserPredictionStats(userId: number, contestId?: number) {
@@ -1035,7 +1012,7 @@ export async function getUserPredictionStats(userId: number, contestId?: number)
       .select({ total: sum(predictionPoints.points) })
       .from(predictionPoints)
       .where(and(...pointsConditions));
-    const totalPoints = Number(pointsResult[0]?.total || 0);
+    const rawTotalPoints = Number(pointsResult[0]?.total || 0);
 
     // 2. User predictions count & breakdown for contest
     const predsConditions = [eq(predictions.userId, userId)];
@@ -1053,7 +1030,10 @@ export async function getUserPredictionStats(userId: number, contestId?: number)
     const wrongPredictions = userPreds.filter((p) => p.isEvaluated && p.pointsEarned === 0).length;
     const pendingPredictions = userPreds.filter((p) => !p.isEvaluated).length;
     const goldenPredictions = userPreds.filter((p) => p.isGolden).length;
-    const goldenPoints = userPreds.reduce((acc, p) => acc + (p.goldenPoints || 0), 0);
+    
+    // Group bonus: +1 point for every 3 completed golden predictions
+    const { bonusPoints: goldenBonus, totalGoldenPoints: goldenPoints } = calculateGoldenPoints(goldenPredictions);
+    const totalPoints = rawTotalPoints + goldenBonus;
 
     const evaluatedCount = correctPredictions + wrongPredictions;
     const successRate = evaluatedCount > 0 ? Math.round((correctPredictions / evaluatedCount) * 100) : 0;
@@ -1198,13 +1178,6 @@ export async function saveUserPrediction(
 
     if (existing.length > 0) {
       const pred = existing[0];
-      const createdAtTime = new Date(pred.createdAt).getTime();
-      const elapsed = Date.now() - createdAtTime;
-
-      // 1-minute edit window validation
-      if (elapsed > 60 * 1000) {
-        throw new Error('انتهت المهلة المسموح بها لتعديل التوقع (دقيقة واحدة من وقت التسجيل)');
-      }
 
       await db
         .update(predictions)
@@ -1215,13 +1188,11 @@ export async function saveUserPrediction(
         })
         .where(eq(predictions.id, pred.id));
 
-      const remainingSeconds = Math.max(0, Math.round((60 * 1000 - elapsed) / 1000));
-
       return {
         success: true,
         action: 'updated',
         message: 'تم تحديث توقعك بنجاح',
-        remainingEditSeconds: remainingSeconds,
+        remainingEditSeconds: 0,
         prediction: {
           id: pred.id,
           homeScore,
@@ -1336,12 +1307,6 @@ export async function updateUserPredictionById(
       throw new Error('انتهى وقت التوقع لهذه المباراة');
     }
 
-    const createdAtTime = new Date(pred.createdAt).getTime();
-    const elapsed = Date.now() - createdAtTime;
-    if (elapsed > 60 * 1000) {
-      throw new Error('انتهت المهلة المسموح بها لتعديل التوقع (دقيقة واحدة من وقت التسجيل)');
-    }
-
     const updated = await db
       .update(predictions)
       .set({
@@ -1352,12 +1317,10 @@ export async function updateUserPredictionById(
       .where(eq(predictions.id, pred.id))
       .returning();
 
-    const remainingSeconds = Math.max(0, Math.round((60 * 1000 - elapsed) / 1000));
-
     return {
       success: true,
       message: 'تم تحديث التوقع بنجاح',
-      remainingEditSeconds: remainingSeconds,
+      remainingEditSeconds: 0,
       prediction: {
         id: updated[0].id,
         homeScore: updated[0].homeScore,
@@ -1648,11 +1611,12 @@ export async function getLeaderboard(currentUserId?: number, limit = 100, contes
         const filteredPoints = u.predictionPoints || [];
         const filteredPreds = u.predictions || [];
 
-        const totalPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
+        const rawPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
         const totalPredictions = filteredPreds.length;
         const correctPredictions = filteredPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
         const goldenPredictions = filteredPreds.filter((p) => p.isGolden).length;
-        const goldenPoints = filteredPreds.reduce((acc, p) => acc + (p.goldenPoints || 0), 0);
+        const { bonusPoints: goldenBonus, totalGoldenPoints: goldenPoints } = calculateGoldenPoints(goldenPredictions);
+        const totalPoints = rawPoints + goldenBonus;
         const evaluatedCount = filteredPreds.filter((p) => p.isEvaluated).length;
         const successRate = evaluatedCount > 0 ? Math.round((correctPredictions / evaluatedCount) * 100) : 0;
 
@@ -1755,9 +1719,10 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100, 
         const filteredPoints = u.predictionPoints || [];
         const filteredPreds = u.predictions || [];
 
-        const totalPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
+        const rawPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
         const goldenPredictions = filteredPreds.filter((p) => p.isGolden).length;
-        const goldenPoints = filteredPreds.reduce((acc, p) => acc + (p.goldenPoints || 0), 0);
+        const { bonusPoints: goldenBonus, totalGoldenPoints: goldenPoints } = calculateGoldenPoints(goldenPredictions);
+        const totalPoints = rawPoints + goldenBonus;
         const correctPredictions = filteredPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
         const totalPredictions = filteredPreds.length;
         const evaluatedCount = filteredPreds.filter((p) => p.isEvaluated).length;
@@ -2133,21 +2098,25 @@ export async function getAdminAvailableMatchesForSelection(
     const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
     const tomorrowEnd = new Date(todayEnd.getTime() + 24 * 60 * 60 * 1000);
 
-    let startDate = todayStart;
+    // CRITICAL: Any match available for prediction MUST NOT have started or finished yet
+    let startDate = now;
     let endDate = todayEnd;
 
     if (dateFilter === 'tomorrow') {
-      startDate = tomorrowStart;
+      startDate = tomorrowStart > now ? tomorrowStart : now;
       endDate = tomorrowEnd;
     } else if (dateFilter === 'all') {
-      startDate = todayStart;
-      endDate = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+      startDate = now;
+      endDate = new Date(todayStart.getTime() + 14 * 24 * 60 * 60 * 1000);
+    } else {
+      startDate = now;
+      endDate = todayEnd > now ? todayEnd : new Date(now.getTime() + 12 * 60 * 60 * 1000);
     }
 
-    // 1. Fetch system matches for the target range
+    // 1. Fetch system matches for the target range that kick off after now
     const systemMatches = await db.query.matches.findMany({
       where: and(
-        sql`${matches.matchDate} >= ${startDate}`,
+        sql`${matches.matchDate} > ${now}`,
         sql`${matches.matchDate} <= ${endDate}`
       ),
       with: {
@@ -2156,6 +2125,29 @@ export async function getAdminAvailableMatchesForSelection(
         awayTeam: true,
       },
       orderBy: [asc(matches.matchDate)],
+    });
+
+    // Finished or started/live statuses to exclude
+    const finishedOrStartedStatuses = [
+      'FINISHED',
+      'FT',
+      'AET',
+      'PEN_PK',
+      'LIVE',
+      'IN_PLAY',
+      'PAUSED',
+      'SUSPENDED',
+      'CANCELLED',
+      'POSTPONED',
+    ];
+
+    // Filter out any match that has started (matchDate <= now) or has finished/live status
+    const unstartedMatches = systemMatches.filter((m) => {
+      const matchTime = new Date(m.matchDate).getTime();
+      if (matchTime <= now.getTime()) return false;
+      const st = (m.status || '').toUpperCase().trim();
+      if (finishedOrStartedStatuses.includes(st)) return false;
+      return true;
     });
 
     // 2. Fetch existing prediction matchIds for THIS contest
@@ -2187,7 +2179,7 @@ export async function getAdminAvailableMatchesForSelection(
       }
     }
 
-    return systemMatches.map((m) => {
+    return unstartedMatches.map((m) => {
       const predInfo = addedMap.get(m.id);
       return {
         id: m.id,
@@ -2377,6 +2369,25 @@ export async function addMatchToPredictions(matchId: string, pointsPerMatch: num
       throw new Error('المباراة المحددة غير موجودة في قاعدة بيانات المباريات');
     }
 
+    const finishedOrStartedStatuses = [
+      'FINISHED',
+      'FT',
+      'AET',
+      'PEN_PK',
+      'LIVE',
+      'IN_PLAY',
+      'PAUSED',
+      'SUSPENDED',
+      'CANCELLED',
+      'POSTPONED',
+    ];
+
+    const matchTime = new Date(existingMatch.matchDate).getTime();
+    const st = (existingMatch.status || '').toUpperCase().trim();
+    if (matchTime <= Date.now() || finishedOrStartedStatuses.includes(st)) {
+      throw new Error('لا يمكن إضافة مباراة قد بدأت بالفعل أو انتهت إلى مسابقة التوقعات');
+    }
+
     const points = typeof pointsPerMatch === 'number' && pointsPerMatch >= 1 ? pointsPerMatch : 2;
 
     const existing = await db
@@ -2412,6 +2423,114 @@ export async function addMatchToPredictions(matchId: string, pointsPerMatch: num
       .returning();
 
     return { message: 'تمت إضافة المباراة إلى مسابقة التوقعات بنجاح', id: inserted[0].id };
+  });
+}
+
+/**
+ * Admin: Add multiple existing system matches to the prediction contest in batch.
+ */
+export async function addMultipleMatchesToPredictions(
+  matchIds: string[],
+  pointsPerMatch: number = 2,
+  contestId?: number
+) {
+  return await withDbRetry(async () => {
+    let targetContest = contestId ? await getContestById(contestId) : await getActiveContest();
+    if (!targetContest) {
+      throw new Error('لا توجد مسابقة نشطة حالياً لإضافة مباريات إليها');
+    }
+    if (targetContest.status === 'completed') {
+      throw new Error('لا يمكن إضافة مباريات لمسابقة منتهية');
+    }
+    if (targetContest.status !== 'active') {
+      throw new Error('لا يمكن إضافة مباريات لمسابقة غير نشطة');
+    }
+
+    if (!Array.isArray(matchIds) || matchIds.length === 0) {
+      throw new Error('يرجى تحديد مباراة واحدة على الأقل');
+    }
+
+    const uniqueMatchIds = Array.from(new Set(matchIds.map((id) => String(id).trim()).filter(Boolean)));
+    if (uniqueMatchIds.length === 0) {
+      throw new Error('قائمة معرفات المباريات فارغة');
+    }
+
+    const points = typeof pointsPerMatch === 'number' && pointsPerMatch >= 1 && pointsPerMatch <= 20 ? pointsPerMatch : 2;
+
+    const finishedOrStartedStatuses = [
+      'FINISHED',
+      'FT',
+      'AET',
+      'PEN_PK',
+      'LIVE',
+      'IN_PLAY',
+      'PAUSED',
+      'SUSPENDED',
+      'CANCELLED',
+      'POSTPONED',
+    ];
+
+    // Fetch system matches for these IDs
+    const systemMatchesList = await db.query.matches.findMany({
+      where: inArray(matches.id, uniqueMatchIds),
+    });
+
+    const nowTime = Date.now();
+    const validMatches = systemMatchesList.filter((m) => {
+      const mTime = new Date(m.matchDate).getTime();
+      const st = (m.status || '').toUpperCase().trim();
+      return mTime > nowTime && !finishedOrStartedStatuses.includes(st);
+    });
+
+    if (validMatches.length === 0) {
+      throw new Error('جميع المباريات المحددة إما غير موجودة أو قد بدأت أو انتهت بالفعل');
+    }
+
+    // Check existing in contest
+    const existingInContest = await db
+      .select()
+      .from(predictionMatches)
+      .where(
+        and(
+          inArray(predictionMatches.matchId, validMatches.map((m) => m.id)),
+          eq(predictionMatches.contestId, targetContest.id)
+        )
+      );
+
+    const existingMap = new Map(existingInContest.map((pm) => [pm.matchId, pm]));
+    let addedCount = 0;
+    let reactivatedCount = 0;
+
+    for (const m of validMatches) {
+      const existing = existingMap.get(m.id);
+      if (existing) {
+        if (!existing.isActive) {
+          await db
+            .update(predictionMatches)
+            .set({ isActive: true, pointsPerMatch: points, updatedAt: new Date() })
+            .where(eq(predictionMatches.id, existing.id));
+          reactivatedCount++;
+        }
+      } else {
+        await db.insert(predictionMatches).values({
+          matchId: m.id,
+          contestId: targetContest.id,
+          pointsPerMatch: points,
+          isActive: true,
+          isExternal: false,
+        });
+        addedCount++;
+      }
+    }
+
+    const totalProcessed = addedCount + reactivatedCount;
+    return {
+      message: `تمت إضافة ${totalProcessed} مباراة بنجاح إلى مسابقة التوقعات`,
+      addedCount,
+      reactivatedCount,
+      totalProcessed,
+      totalRequested: uniqueMatchIds.length,
+    };
   });
 }
 
@@ -2632,6 +2751,10 @@ export async function addCustomExternalMatchToPredictions(data: {
     const parsedDate = new Date(data.matchDate);
     if (isNaN(parsedDate.getTime())) {
       throw new Error('تاريخ المباراة غير صالح');
+    }
+
+    if (parsedDate.getTime() <= Date.now()) {
+      throw new Error('تاريخ ووقت المباراة يجب أن يكون في المستقبل، ولا يمكن إضافة مباراة قد بدأت أو انتهت');
     }
 
     const points = typeof data.pointsPerMatch === 'number' && data.pointsPerMatch >= 1 && data.pointsPerMatch <= 20 ? data.pointsPerMatch : 2;
@@ -3034,8 +3157,24 @@ export async function getAdminPredictionStats(contestId?: number) {
     const correctPredictions = allPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
     const evaluatedPredictions = allPreds.filter((p) => p.isEvaluated).length;
     const goldenPredictionsCount = allPreds.filter((p) => p.isGolden).length;
-    const totalPointsDistributed = allPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
-    const goldenPointsDistributed = allPreds.reduce((acc, curr) => acc + (curr.goldenPoints || 0), 0);
+    
+    // Group golden predictions by user to accurately compute bonuses and distributed golden points
+    const userGoldenMap = new Map<number, number>();
+    for (const p of allPreds) {
+      if (p.isGolden) {
+        userGoldenMap.set(p.userId, (userGoldenMap.get(p.userId) || 0) + 1);
+      }
+    }
+
+    let totalGoldenBonus = 0;
+    let goldenPointsDistributed = 0;
+    for (const [, count] of userGoldenMap.entries()) {
+      const { bonusPoints, totalGoldenPoints } = calculateGoldenPoints(count);
+      totalGoldenBonus += bonusPoints;
+      goldenPointsDistributed += totalGoldenPoints;
+    }
+
+    const totalPointsDistributed = allPoints.reduce((acc, curr) => acc + (curr.points || 0), 0) + totalGoldenBonus;
     const successRate = evaluatedPredictions > 0 ? Math.round((correctPredictions / evaluatedPredictions) * 100) : 0;
 
     return {

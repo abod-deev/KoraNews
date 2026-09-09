@@ -4,6 +4,7 @@ import { Match } from '../services/sportsApi';
 import { Bell, BellOff, AlertCircle, CheckCircle2, Clock, PlayCircle, X, Sparkles, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
+import { safeStorage } from '../utils/safeStorage';
 
 export interface MatchAlert {
   match: Match;
@@ -50,7 +51,7 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
     if (user) {
       const storageKey = `match_reminders_${user.uid}`;
       try {
-        const saved = localStorage.getItem(storageKey);
+        const saved = safeStorage.getItem(storageKey);
         if (saved) {
           setRemindedMatches(JSON.parse(saved));
         } else {
@@ -70,7 +71,7 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
     if (user) {
       const storageKey = `match_reminders_${user.uid}`;
       try {
-        localStorage.setItem(storageKey, JSON.stringify(matches));
+        safeStorage.setItem(storageKey, JSON.stringify(matches));
       } catch (e) {
         console.error("Failed to save match reminders", e);
       }

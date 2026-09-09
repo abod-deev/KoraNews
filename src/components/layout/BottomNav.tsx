@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Calendar, Newspaper, User, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { preloadRoute } from '../../utils/routePreload';
 
 export default function BottomNav() {
   const location = useLocation();
@@ -66,6 +67,8 @@ export default function BottomNav() {
             <Link
               key={item.name}
               to={item.path}
+              onMouseEnter={() => preloadRoute(item.path)}
+              onTouchStart={() => preloadRoute(item.path)}
               className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
                 active
                   ? 'text-sky-600 dark:text-sky-400 font-extrabold'

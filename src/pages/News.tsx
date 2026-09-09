@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Loader2, RefreshCw, XCircle, Sparkles, Filter, Newspaper } from 'lucide-react';
 import NewsCard from '../components/news/NewsCard';
 import BreakingNews from '../components/home/BreakingNews';
-import { fetchNews, fetchCategories } from '../services/api';
+import { fetchNews, fetchCategories, getCachedNewsSync } from '../services/api';
 import { useSEO } from '../hooks/useSEO';
 
 const STATIC_CATEGORIES = [
@@ -23,13 +23,14 @@ export default function News() {
   const [searchParams, setSearchParams] = useSearchParams();
   const categoryParam = searchParams.get('category');
 
-  const [allNews, setAllNews] = useState<any[]>([]);
+  const initialCached = getCachedNewsSync();
+  const [allNews, setAllNews] = useState<any[]>(initialCached || []);
   const [categories, setCategories] = useState<any[]>(STATIC_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState<string>(categoryParam || 'all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [visibleCount, setVisibleCount] = useState(9);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(!initialCached || initialCached.length === 0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -38,9 +39,11 @@ export default function News() {
     }
   }, [categoryParam]);
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     try {
-      setIsInitialLoading(true);
+      if (!silent && (!allNews || allNews.length === 0)) {
+        setIsInitialLoading(true);
+      }
       setError(null);
       const [newsData, catData] = await Promise.all([
         fetchNews(),
@@ -65,14 +68,17 @@ export default function News() {
       }
     } catch (err: any) {
       console.error('[News page] fetch error:', err);
-      setError('تعذر تحميل الأخبار حالياً. يرجى التحقق من الاتصال بالإنترنت.');
+      if (!allNews || allNews.length === 0) {
+        setError('تعذر تحميل الأخبار حالياً. يرجى التحقق من الاتصال بالإنترنت.');
+      }
     } finally {
       setIsInitialLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    // If we have cached news, load silently in background, otherwise show skeleton
+    loadData(Boolean(initialCached && initialCached.length > 0));
   }, []);
 
   // Filter news based on active category & search query

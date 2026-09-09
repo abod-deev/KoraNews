@@ -42,7 +42,8 @@ export default function Matches() {
   }, []);
 
   const fetchMatchesData = async (silent = false, isMountedRef?: { current: boolean }) => {
-    if (!silent) {
+    const shouldShowSpinner = !silent && matches.length === 0;
+    if (shouldShowSpinner) {
       setIsLoadingMatches(true);
     }
     setErrorMessage(null);
@@ -66,7 +67,7 @@ export default function Matches() {
       if (result.error) {
         if (!silent) {
           setErrorMessage(result.error);
-          setMatches([]);
+          if (matches.length === 0) setMatches([]);
         }
       } else {
         const fetchedList = result.matches || [];
@@ -77,13 +78,11 @@ export default function Matches() {
       if (!silent) {
         const msg = err instanceof Error ? err.message : 'حدث خطأ غير متوقع. تأكد من اتصالك بالإنترنت.';
         setErrorMessage(msg);
-        setMatches([]);
+        if (matches.length === 0) setMatches([]);
       }
     } finally {
       if (!isMountedRef || isMountedRef.current) {
-        if (!silent) {
-          setIsLoadingMatches(false);
-        }
+        setIsLoadingMatches(false);
       }
     }
   };

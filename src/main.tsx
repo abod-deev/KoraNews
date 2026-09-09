@@ -17,6 +17,47 @@ if (typeof window !== 'undefined') {
     );
   };
 
+  const isChunkLoadError = (msg: string) => {
+    const text = String(msg || '').toLowerCase();
+    return (
+      text.includes('failed to fetch dynamically imported module') ||
+      text.includes('loading chunk') ||
+      text.includes('dynamically imported module') ||
+      text.includes('error loading dynamically imported module')
+    );
+  };
+
+  const handleGlobalRecovery = () => {
+    try {
+      const currentPath = window.location.pathname;
+      const now = Date.now();
+      const stored = sessionStorage.getItem('app_auto_recovery');
+      let count = 0;
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed.path === currentPath && (now - parsed.timestamp) < 15000) {
+            count = parsed.count;
+          }
+        } catch {}
+      }
+
+      if (count < 1) {
+        sessionStorage.setItem('app_auto_recovery', JSON.stringify({ path: currentPath, count: 1, timestamp: now }));
+        window.location.reload();
+      } else {
+        sessionStorage.removeItem('app_auto_recovery');
+        if (currentPath !== '/') {
+          window.location.replace('/');
+        } else {
+          window.location.reload();
+        }
+      }
+    } catch {
+      window.location.replace('/');
+    }
+  };
+
   window.addEventListener(
     'unhandledrejection',
     (event) => {
@@ -26,6 +67,11 @@ if (typeof window !== 'undefined') {
         event.preventDefault();
         event.stopImmediatePropagation?.();
         console.warn('[Storage] Suppressed browser IndexedDB teardown warning:', msg);
+        return;
+      }
+      if (isChunkLoadError(msg)) {
+        event.preventDefault();
+        handleGlobalRecovery();
       }
     },
     true
@@ -39,6 +85,11 @@ if (typeof window !== 'undefined') {
         event.preventDefault();
         event.stopImmediatePropagation?.();
         console.warn('[Storage] Handled browser background storage event:', msg);
+        return;
+      }
+      if (isChunkLoadError(msg)) {
+        event.preventDefault();
+        handleGlobalRecovery();
       }
     },
     true
@@ -49,6 +100,10 @@ if (typeof window !== 'undefined') {
     const msg = String(message || error?.message || '');
     if (isIgnorableStorageError(msg)) {
       return true; // suppresses error reporting to runner
+    }
+    if (isChunkLoadError(msg)) {
+      handleGlobalRecovery();
+      return true;
     }
     if (typeof prevOnError === 'function') {
       return prevOnError(message, source, lineno, colno, error);

@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import SideNavDrawer from './SideNavDrawer';
 import SiteLogo from './SiteLogo';
+import { preloadRoute } from '../../utils/routePreload';
 
 export default function Header() {
   const location = useLocation();
@@ -74,6 +75,8 @@ export default function Header() {
                 <Link 
                   key={link.path} 
                   to={link.path} 
+                  onMouseEnter={() => preloadRoute(link.path)}
+                  onTouchStart={() => preloadRoute(link.path)}
                   className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition-all duration-150 flex items-center gap-1.5 ${
                     isActive 
                       ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400' 

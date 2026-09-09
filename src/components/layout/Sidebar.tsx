@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { fetchCategories } from '../../services/api';
 import { checkIsAdmin } from '../../utils/authHelpers';
+import { preloadRoute } from '../../utils/routePreload';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -74,6 +75,8 @@ export default function Sidebar() {
                 <li key={item.path}>
                   <Link
                     to={item.path}
+                    onMouseEnter={() => preloadRoute(item.path)}
+                    onTouchStart={() => preloadRoute(item.path)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-150 ${
                       isExactActive
                         ? 'bg-sky-600 text-white shadow-xs'
@@ -104,6 +107,8 @@ export default function Sidebar() {
                 <li key={item.path}>
                   <Link
                     to={item.path}
+                    onMouseEnter={() => preloadRoute(item.path)}
+                    onTouchStart={() => preloadRoute(item.path)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-150 ${
                       isExactActive
                         ? 'bg-amber-500 text-white shadow-xs'

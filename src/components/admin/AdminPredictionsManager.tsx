@@ -129,7 +129,7 @@ export default function AdminPredictionsManager({
   const [availableMatches, setAvailableMatches] = useState<any[]>([]);
   const [addDayTab, setAddDayTab] = useState<'today' | 'tomorrow' | 'custom'>('today');
   const [matchSearchQuery, setMatchSearchQuery] = useState('');
-  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [selectedMatchPoints, setSelectedMatchPoints] = useState<number>(2);
 
   // Filter in main matches tab
@@ -315,130 +315,123 @@ export default function AdminPredictionsManager({
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
+  // Resilient fetch helper to gracefully survive server reloads or transient network blips
+  const safeFetchJson = async (url: string, options?: RequestInit, retries = 2) => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const res = await fetch(url, options);
+        if (res.ok) {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            return await res.json();
+          }
+        }
+        return null;
+      } catch (err: any) {
+        if (i < retries) {
+          await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+          continue;
+        }
+        console.warn(`[PredictionsManager] Could not load ${url}:`, err?.message || err);
+        return null;
+      }
+    }
+    return null;
+  };
+
   // Fetch prediction matches from Backend
   const fetchPredictionMatches = async () => {
-    try {
-      const res = await fetch('/api/admin/predictions', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPredictionMatches(data);
-      }
-    } catch (e) {
-      console.error('Error fetching prediction matches:', e);
+    if (!token) return;
+    const data = await safeFetchJson('/api/admin/predictions', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (data && Array.isArray(data)) {
+      setPredictionMatches(data);
     }
   };
 
   // Fetch available matches for selection (Today / Tomorrow / All)
   const fetchAvailableMatches = async (dateFilter: 'today' | 'tomorrow' | 'all' = 'all') => {
-    try {
-      const res = await fetch(`/api/admin/predictions/available-matches?date=${dateFilter}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAvailableMatches(data);
-      }
-    } catch (e) {
-      console.error('Error fetching available matches:', e);
+    if (!token) return;
+    const data = await safeFetchJson(`/api/admin/predictions/available-matches?date=${dateFilter}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (data && Array.isArray(data)) {
+      setAvailableMatches(data);
     }
   };
 
   // Fetch contest participants
   const fetchParticipants = async () => {
-    try {
-      const res = await fetch('/api/admin/predictions/participants', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setParticipants(data);
-      }
-    } catch (e) {
-      console.error('Error fetching participants:', e);
+    if (!token) return;
+    const data = await safeFetchJson('/api/admin/predictions/participants', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (data && Array.isArray(data)) {
+      setParticipants(data);
     }
   };
 
   // Fetch current active contest
   const fetchActiveContest = async () => {
-    try {
-      const res = await fetch('/api/admin/predictions/active-contest', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setActiveContest(data.activeContest || null);
-        if (data.activeContest) {
-          setContestSettings({
-            id: data.activeContest.id,
-            name: data.activeContest.name,
-            description: data.activeContest.description || '',
-            status: data.activeContest.status,
-            pointsPerCorrectScore: data.activeContest.pointsPerCorrectScore || 2,
-            startDate: '',
-            endDate: '',
-          });
-        }
+    if (!token) return;
+    const data = await safeFetchJson('/api/admin/predictions/active-contest', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (data) {
+      setActiveContest(data.activeContest || null);
+      if (data.activeContest) {
+        setContestSettings({
+          id: data.activeContest.id,
+          name: data.activeContest.name,
+          description: data.activeContest.description || '',
+          status: data.activeContest.status,
+          pointsPerCorrectScore: data.activeContest.pointsPerCorrectScore || 2,
+          startDate: '',
+          endDate: '',
+        });
       }
-    } catch (e) {
-      console.error('Error fetching active contest:', e);
     }
   };
 
   // Fetch contest settings
   const fetchContestSettings = async () => {
-    try {
-      const res = await fetch('/api/predictions/contest/settings');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setContestSettings({
-            id: data.id || 1,
-            name: data.name || 'مسابقة توقعات KoraNews',
-            description: data.description || '',
-            status: data.status || 'active',
-            pointsPerCorrectScore: data.pointsPerCorrectScore || 2,
-            startDate: data.startDate ? new Date(data.startDate).toISOString().slice(0, 10) : '',
-            endDate: data.endDate ? new Date(data.endDate).toISOString().slice(0, 10) : '',
-          });
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching contest settings:', e);
+    const data = await safeFetchJson('/api/predictions/contest/settings');
+    if (data) {
+      setContestSettings({
+        id: data.id || 1,
+        name: data.name || 'مسابقة توقعات KoraNews',
+        description: data.description || '',
+        status: data.status || 'active',
+        pointsPerCorrectScore: data.pointsPerCorrectScore || 2,
+        startDate: data.startDate ? new Date(data.startDate).toISOString().slice(0, 10) : '',
+        endDate: data.endDate ? new Date(data.endDate).toISOString().slice(0, 10) : '',
+      });
     }
   };
 
   // Fetch all contests list (for completed contests & archive)
   const fetchAllContests = async () => {
-    try {
-      const res = await fetch('/api/admin/predictions/contests', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const contentType = res.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const data = await res.json();
-          setAllContests(Array.isArray(data) ? data : []);
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching all contests:', e);
+    const data = await safeFetchJson(
+      '/api/admin/predictions/contests',
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    );
+    if (data && Array.isArray(data)) {
+      setAllContests(data);
     }
   };
 
   // Fetch all existing teams and leagues in the system for reuse and zero duplicates
   const fetchExistingTeamsAndLeagues = async () => {
-    try {
-      const res = await fetch('/api/admin/predictions/teams-and-leagues', {
-        headers: { Authorization: `Bearer ${token}` },
+    if (!token) return;
+    const data = await safeFetchJson('/api/admin/predictions/teams-and-leagues', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (data && typeof data === 'object') {
+      setExistingData({
+        leagues: Array.isArray(data.leagues) ? data.leagues : [],
+        teams: Array.isArray(data.teams) ? data.teams : [],
       });
-      if (res.ok) {
-        const data = await res.json();
-        setExistingData(data);
-      }
-    } catch (e) {
-      console.error('Error fetching existing teams and leagues:', e);
     }
   };
 
@@ -470,16 +463,16 @@ export default function AdminPredictionsManager({
     }
   }, [predictionMatches]);
 
-  // Add match from system database with customized points
-  const handleAddSelectedMatch = async () => {
+  // Add selected matches from system database with customized points (multi-select supported)
+  const handleAddSelectedMatches = async () => {
     if (!activeContest || activeContest.status !== 'active') {
       onShowMessage('error', 'لا توجد مسابقة نشطة حالياً. لا يمكن إضافة مباريات إلا لمسابقة نشطة.');
       await loadAll();
       return;
     }
 
-    if (!selectedMatchId) {
-      onShowMessage('error', 'يرجى اختيار مباراة من القائمة أولاً');
+    if (selectedMatchIds.length === 0) {
+      onShowMessage('error', 'يرجى تحديد مباراة واحدة على الأقل من القائمة أولاً');
       return;
     }
 
@@ -489,13 +482,25 @@ export default function AdminPredictionsManager({
       return;
     }
 
-    const matched = availableMatches.find((m) => m.id === selectedMatchId);
-    const matchLabel = matched ? `${matched.homeTeam.name} ضد ${matched.awayTeam.name}` : 'المباراة المحددة';
+    const isMultiple = selectedMatchIds.length > 1;
+    let confirmMsg = '';
+    let confirmTitle = 'إضافة مباراة للتوقعات';
+    let confirmButtonText = 'تأكيد الإضافة';
+
+    if (isMultiple) {
+      confirmTitle = `إضافة (${selectedMatchIds.length}) مباريات للتوقعات`;
+      confirmMsg = `هل أنت متأكد من إتاحة (${selectedMatchIds.length}) مباريات محددة للتوقع في المسابقة بـ (${pts} نقاط لكل مباراة)؟`;
+      confirmButtonText = `تأكيد إضافة (${selectedMatchIds.length}) مباريات`;
+    } else {
+      const matched = availableMatches.find((m) => m.id === selectedMatchIds[0]);
+      const matchLabel = matched ? `${matched.homeTeam.name} ضد ${matched.awayTeam.name}` : 'المباراة المحددة';
+      confirmMsg = `هل أنت متأكد من إتاحة مباراة (${matchLabel}) للتوقع في المسابقة بـ (${pts} نقاط)؟`;
+    }
 
     requestConfirmation({
-      title: 'إضافة مباراة للتوقعات',
-      message: `هل أنت متأكد من إتاحة مباراة (${matchLabel}) للتوقع في المسابقة بـ (${pts} نقاط)؟`,
-      confirmText: 'تأكيد الإضافة',
+      title: confirmTitle,
+      message: confirmMsg,
+      confirmText: confirmButtonText,
       onConfirm: async () => {
         setIsActionLoading(true);
         try {
@@ -506,18 +511,24 @@ export default function AdminPredictionsManager({
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({
-              matchId: selectedMatchId,
+              matchIds: selectedMatchIds,
               pointsPerMatch: pts,
             }),
           });
 
           const data = await res.json();
           if (!res.ok) {
-            onShowMessage('error', data.error || 'فشل في إضافة المباراة');
+            onShowMessage('error', data.error || 'فشل في إضافة المباريات');
             await loadAll();
           } else {
-            onShowMessage('success', `تمت إضافة المباراة لمسابقات التوقع بنجاح (${pts} نقاط)!`);
-            setSelectedMatchId(null);
+            const countAdded = data.totalProcessed || selectedMatchIds.length;
+            onShowMessage(
+              'success',
+              isMultiple
+                ? `تمت إضافة (${countAdded}) مباريات لمسابقات التوقع بنجاح (${pts} نقاط لكل مباراة)!`
+                : `تمت إضافة المباراة لمسابقات التوقع بنجاح (${pts} نقاط)!`
+            );
+            setSelectedMatchIds([]);
             setSelectedMatchPoints(2);
             await Promise.all([fetchPredictionMatches(), fetchAvailableMatches('all'), fetchActiveContest()]);
             setSubTab('matches');
@@ -1334,8 +1345,29 @@ export default function AdminPredictionsManager({
   const tomorrowObj = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const tomorrowDateStr = tomorrowObj.toISOString().slice(0, 10);
 
-  // Filter available matches by Today vs Tomorrow vs Search
+  // Helper to determine if a match has already started or finished
+  const isMatchStartedOrFinished = (m: any) => {
+    if (!m) return true;
+    const mTime = new Date(m.matchDate).getTime();
+    if (isNaN(mTime) || mTime <= Date.now()) return true;
+    const st = (m.status || '').toUpperCase().trim();
+    return [
+      'FINISHED',
+      'FT',
+      'AET',
+      'PEN_PK',
+      'LIVE',
+      'IN_PLAY',
+      'PAUSED',
+      'SUSPENDED',
+      'CANCELLED',
+      'POSTPONED',
+    ].includes(st);
+  };
+
+  // Filter available matches by strictly unstarted matches and Today vs Tomorrow vs Search
   const filteredAvailableMatches = availableMatches
+    .filter((m) => !isMatchStartedOrFinished(m))
     .filter((m) => {
       const mDateStr = new Date(m.matchDate).toISOString().slice(0, 10);
       if (addDayTab === 'today') return mDateStr === todayDateStr;
@@ -2110,7 +2142,7 @@ export default function AdminPredictionsManager({
                 type="button"
                 onClick={() => {
                   setAddDayTab('today');
-                  setSelectedMatchId(null);
+                  setSelectedMatchIds([]);
                 }}
                 className={`px-4 py-2 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer ${
                   addDayTab === 'today'
@@ -2118,13 +2150,13 @@ export default function AdminPredictionsManager({
                     : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100'
                 }`}
               >
-                مباريات اليوم ({availableMatches.filter((m) => new Date(m.matchDate).toISOString().slice(0, 10) === todayDateStr).length})
+                مباريات اليوم ({availableMatches.filter((m) => !isMatchStartedOrFinished(m) && new Date(m.matchDate).toISOString().slice(0, 10) === todayDateStr).length})
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setAddDayTab('tomorrow');
-                  setSelectedMatchId(null);
+                  setSelectedMatchIds([]);
                 }}
                 className={`px-4 py-2 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer ${
                   addDayTab === 'tomorrow'
@@ -2132,13 +2164,13 @@ export default function AdminPredictionsManager({
                     : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100'
                 }`}
               >
-                مباريات الغد ({availableMatches.filter((m) => new Date(m.matchDate).toISOString().slice(0, 10) === tomorrowDateStr).length})
+                مباريات الغد ({availableMatches.filter((m) => !isMatchStartedOrFinished(m) && new Date(m.matchDate).toISOString().slice(0, 10) === tomorrowDateStr).length})
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setAddDayTab('custom');
-                  setSelectedMatchId(null);
+                  setSelectedMatchIds([]);
                 }}
                 className={`px-4 py-2 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer ${
                   addDayTab === 'custom'
@@ -2409,63 +2441,102 @@ export default function AdminPredictionsManager({
               </form>
             </div>
           ) : (
-            /* Match Selection Grid for Today/Tomorrow with Points Configuration */
+            /* Match Selection Grid for Today/Tomorrow with Points Configuration & Multi-Select */
             <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-gray-800">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-gray-600 dark:text-gray-300">
-                    اختر مباراة، وحدد نقاطها:
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-gray-800">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                    {selectedMatchIds.length === 0
+                      ? 'حدد مباراة أو عدة مباريات للتوقع:'
+                      : `تم تحديد (${selectedMatchIds.length}) من (${
+                          filteredAvailableMatches.filter(
+                            (m) => !predictionMatches.some((pm) => pm.matchId === m.id)
+                          ).length
+                        }) مباراة`}
                   </span>
-                  {selectedMatchId && (
-                    <div className="flex items-center gap-2 bg-purple-50 dark:bg-purple-950/40 px-3 py-1 rounded-xl border border-purple-200 dark:border-purple-800">
-                      <span className="text-xs font-black text-purple-700 dark:text-purple-300">النقاط:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={selectedMatchPoints}
-                        onChange={(e) => setSelectedMatchPoints(parseInt(e.target.value, 10) || 2)}
-                        className="w-16 text-center py-0.5 rounded-lg border border-purple-300 dark:border-purple-700 font-black text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                      />
-                      <div className="flex items-center gap-1">
-                        {[2, 3, 5, 10].map((pts) => (
-                          <button
-                            key={pts}
-                            type="button"
-                            onClick={() => setSelectedMatchPoints(pts)}
-                            className={`px-1.5 py-0.5 rounded text-[11px] font-black cursor-pointer ${
-                              selectedMatchPoints === pts
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300'
-                            }`}
-                          >
-                            +{pts}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+
+                  {filteredAvailableMatches.some(
+                    (m) => !predictionMatches.some((pm) => pm.matchId === m.id)
+                  ) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selectable = filteredAvailableMatches.filter(
+                          (m) => !predictionMatches.some((pm) => pm.matchId === m.id)
+                        );
+                        if (selectedMatchIds.length === selectable.length && selectable.length > 0) {
+                          setSelectedMatchIds([]);
+                        } else {
+                          setSelectedMatchIds(selectable.map((m) => m.id));
+                        }
+                      }}
+                      className="text-[11px] font-black text-brand hover:underline px-2.5 py-1 rounded-lg bg-brand/10 hover:bg-brand/20 transition-colors cursor-pointer"
+                    >
+                      {selectedMatchIds.length > 0 &&
+                      selectedMatchIds.length ===
+                        filteredAvailableMatches.filter(
+                          (m) => !predictionMatches.some((pm) => pm.matchId === m.id)
+                        ).length
+                        ? 'إلغاء تحديد الكل'
+                        : 'تحديد جميع مباريات القائمة'}
+                    </button>
                   )}
+
+                  {/* Points selector */}
+                  <div className="flex items-center gap-2 bg-purple-50 dark:bg-purple-950/40 px-3 py-1 rounded-xl border border-purple-200 dark:border-purple-800">
+                    <span className="text-xs font-black text-purple-700 dark:text-purple-300">النقاط لكل مباراة:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={selectedMatchPoints}
+                      onChange={(e) => setSelectedMatchPoints(parseInt(e.target.value, 10) || 2)}
+                      className="w-14 text-center py-0.5 rounded-lg border border-purple-300 dark:border-purple-700 font-black text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    />
+                    <div className="flex items-center gap-1">
+                      {[2, 3, 5, 10].map((pts) => (
+                        <button
+                          key={pts}
+                          type="button"
+                          onClick={() => setSelectedMatchPoints(pts)}
+                          className={`px-1.5 py-0.5 rounded text-[11px] font-black cursor-pointer ${
+                            selectedMatchPoints === pts
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300'
+                          }`}
+                        >
+                          +{pts}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <button
                   type="button"
-                  disabled={!selectedMatchId || isActionLoading}
-                  onClick={handleAddSelectedMatch}
-                  className="px-5 py-2 rounded-xl bg-brand text-white font-black text-xs hover:bg-emerald-600 disabled:opacity-40 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                  disabled={selectedMatchIds.length === 0 || isActionLoading}
+                  onClick={handleAddSelectedMatches}
+                  className="px-5 py-2.5 rounded-xl bg-brand text-white font-black text-xs hover:bg-emerald-600 disabled:opacity-40 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors shrink-0"
                 >
                   {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  <span>إضافة المباراة المحددة ({selectedMatchPoints} نقاط)</span>
+                  <span>
+                    {selectedMatchIds.length > 1
+                      ? `إضافة (${selectedMatchIds.length}) مباريات محددة (${selectedMatchPoints} نقاط لكل منها)`
+                      : selectedMatchIds.length === 1
+                      ? `إضافة المباراة المحددة (${selectedMatchPoints} نقاط)`
+                      : 'حدد مباريات للإضافة'}
+                  </span>
                 </button>
               </div>
 
               {filteredAvailableMatches.length === 0 ? (
                 <div className="text-center py-14 text-gray-400 font-bold text-xs">
-                  لا توجد مباريات مطابقة لتاريخ {addDayTab === 'today' ? 'اليوم' : 'الغد'}.
+                  لا توجد مباريات قادمة متاحة لتاريخ {addDayTab === 'today' ? 'اليوم' : 'الغد'}.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[460px] overflow-y-auto pr-1 custom-scrollbar">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[480px] overflow-y-auto pr-1 custom-scrollbar">
                   {filteredAvailableMatches.map((m) => {
-                    const isSelected = selectedMatchId === m.id;
+                    const isSelected = selectedMatchIds.includes(m.id);
                     const isAlreadyAdded = predictionMatches.some((pm) => pm.matchId === m.id);
                     const mDate = new Date(m.matchDate);
 
@@ -2473,7 +2544,11 @@ export default function AdminPredictionsManager({
                       <div
                         key={m.id}
                         onClick={() => {
-                          if (!isAlreadyAdded) setSelectedMatchId(m.id);
+                          if (!isAlreadyAdded) {
+                            setSelectedMatchIds((prev) =>
+                              prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                            );
+                          }
                         }}
                         className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-2.5 ${
                           isAlreadyAdded
@@ -2484,10 +2559,23 @@ export default function AdminPredictionsManager({
                         }`}
                       >
                         <div className="flex items-center justify-between text-[11px] text-gray-400 font-bold">
-                          <span className="truncate max-w-[150px] text-gray-700 dark:text-gray-300 font-black">
-                            {m.leagueName}
-                          </span>
-                          <span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {!isAlreadyAdded && (
+                              <div
+                                className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-all ${
+                                  isSelected
+                                    ? 'bg-brand border-brand text-white shadow-xs'
+                                    : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                              </div>
+                            )}
+                            <span className="truncate max-w-[130px] text-gray-700 dark:text-gray-300 font-black">
+                              {m.leagueName}
+                            </span>
+                          </div>
+                          <span className="shrink-0 font-mono">
                             {mDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
                           </span>
                         </div>
@@ -2518,9 +2606,13 @@ export default function AdminPredictionsManager({
                           </span>
                         ) : isSelected ? (
                           <span className="text-[10px] font-black text-brand bg-brand/10 px-2 py-0.5 rounded text-center">
-                            تم التحديد (جاهزة للإضافة بـ {selectedMatchPoints} نقاط)
+                            تم التحديد (ستضاف بـ {selectedMatchPoints} نقاط)
                           </span>
-                        ) : null}
+                        ) : (
+                          <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 text-center">
+                            انقر للتحديد
+                          </span>
+                        )}
                       </div>
                     );
                   })}

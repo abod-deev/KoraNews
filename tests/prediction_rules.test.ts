@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isMatchOpenForPrediction,
   evaluateMatchPredictions,
+  calculateGoldenPoints,
 } from '../src/services/predictionService.ts';
 import {
   validateScore,
@@ -272,5 +273,63 @@ describe('Comprehensive Prediction Rules & Business Logic Tests', () => {
 
     const totalPointsContest1 = filteredForUser1.reduce((acc, p) => acc + p.points, 0);
     expect(totalPointsContest1).toBe(3);
+  });
+
+  // 12. Cumulative Golden Points Formula & Explicit Cases:
+  // Each golden = 3 base points.
+  // Group Bonus: +1 extra point for every 3 completed golden predictions: floor(goldenCount / 3).
+  // Total = (goldenCount * 3) + floor(goldenCount / 3).
+  it('Scenario 12: Cumulative Golden Points Formula strictly satisfies all mandatory cases (0 to 12 & milestones)', () => {
+    const testCases: Array<{ count: number; expectedBase: number; expectedBonus: number; expectedTotal: number }> = [
+      { count: 0, expectedBase: 0, expectedBonus: 0, expectedTotal: 0 },
+      { count: 1, expectedBase: 3, expectedBonus: 0, expectedTotal: 3 },
+      { count: 2, expectedBase: 6, expectedBonus: 0, expectedTotal: 6 },
+      { count: 3, expectedBase: 9, expectedBonus: 1, expectedTotal: 10 },
+      { count: 4, expectedBase: 12, expectedBonus: 1, expectedTotal: 13 },
+      { count: 5, expectedBase: 15, expectedBonus: 1, expectedTotal: 16 },
+      { count: 6, expectedBase: 18, expectedBonus: 2, expectedTotal: 20 },
+      { count: 7, expectedBase: 21, expectedBonus: 2, expectedTotal: 23 },
+      { count: 8, expectedBase: 24, expectedBonus: 2, expectedTotal: 26 },
+      { count: 9, expectedBase: 27, expectedBonus: 3, expectedTotal: 30 },
+      { count: 10, expectedBase: 30, expectedBonus: 3, expectedTotal: 33 },
+      { count: 11, expectedBase: 33, expectedBonus: 3, expectedTotal: 36 },
+      { count: 12, expectedBase: 36, expectedBonus: 4, expectedTotal: 40 },
+      { count: 15, expectedBase: 45, expectedBonus: 5, expectedTotal: 50 },
+      { count: 18, expectedBase: 54, expectedBonus: 6, expectedTotal: 60 },
+    ];
+
+    for (const tc of testCases) {
+      const res = calculateGoldenPoints(tc.count);
+      expect(res.basePoints).toBe(tc.expectedBase);
+      expect(res.bonusPoints).toBe(tc.expectedBonus);
+      expect(res.totalGoldenPoints).toBe(tc.expectedTotal);
+    }
+  });
+
+  // 13. Incomplete group validation:
+  // - Bonus is only awarded upon completing multiples of 3.
+  // - 5 goldens = only 1 bonus (16 points total).
+  // - 8 goldens = only 2 bonuses (26 points total).
+  it('Scenario 13: Incomplete groups do not receive extra bonuses', () => {
+    const res5 = calculateGoldenPoints(5);
+    expect(res5.bonusPoints).toBe(1);
+    expect(res5.totalGoldenPoints).toBe(16);
+
+    const res8 = calculateGoldenPoints(8);
+    expect(res8.bonusPoints).toBe(2);
+    expect(res8.totalGoldenPoints).toBe(26);
+  });
+
+  // 14. Idempotency validation:
+  // Recalculating repeatedly yields the exact same deterministic result without point inflation.
+  it('Scenario 14: Golden scoring calculation is strictly idempotent', () => {
+    const count = 6;
+    const run1 = calculateGoldenPoints(count);
+    const run2 = calculateGoldenPoints(count);
+    const run3 = calculateGoldenPoints(count);
+
+    expect(run1).toEqual(run2);
+    expect(run2).toEqual(run3);
+    expect(run1.totalGoldenPoints).toBe(20);
   });
 });

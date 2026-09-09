@@ -26,7 +26,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import PredictionMatchCard from '../components/predictions/PredictionMatchCard';
 import MyPredictionsList, { MyPredictionItem } from '../components/predictions/MyPredictionsList';
 import PredictionsLeaderboard, { LeaderboardUser } from '../components/predictions/PredictionsLeaderboard';
-import { PredictionMatchInfo } from '../services/predictionService';
+import type { PredictionMatchInfo } from '../types';
 import { getContestPermissions } from '../utils/contestPermissions';
 
 export default function Predictions() {

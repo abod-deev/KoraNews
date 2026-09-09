@@ -1,4 +1,4 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
   initializeAuth,
   getAuth,
@@ -7,28 +7,41 @@ import {
   inMemoryPersistence,
   browserPopupRedirectResolver,
   GoogleAuthProvider,
+  Auth,
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+let app: FirebaseApp | undefined;
+let authInstance: Auth | null = null;
 
-let authInstance: any;
 try {
-  // Always initializeAuth FIRST with browserLocalPersistence and browserPopupRedirectResolver
-  // to avoid indexedDBLocalPersistence teardown errors while ensuring popup auth works seamlessly.
-  authInstance = initializeAuth(app, {
-    persistence: [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
-    popupRedirectResolver: browserPopupRedirectResolver,
-  });
-} catch {
-  // Fallback if already initialized
+  if (getApps().length > 0) {
+    app = getApp();
+  } else if (firebaseConfig && firebaseConfig.projectId) {
+    app = initializeApp(firebaseConfig);
+  }
+} catch (err) {
+  console.warn('[Firebase App] Failed to initialize app:', err);
+}
+
+if (app) {
   try {
-    authInstance = getAuth(app);
-  } catch (err) {
-    console.warn('[Firebase Auth] Failed to retrieve initialized auth:', err);
+    // initializeAuth takes AuthSettings with persistence array and popupRedirectResolver
+    authInstance = initializeAuth(app, {
+      persistence: [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    try {
+      authInstance = getAuth(app);
+    } catch (err) {
+      console.warn('[Firebase Auth] Failed to retrieve initialized auth:', err);
+      authInstance = null;
+    }
   }
 }
 
 export const auth = authInstance;
 export const googleAuthProvider = new GoogleAuthProvider();
 export { browserPopupRedirectResolver };
+

@@ -567,7 +567,7 @@ export default function Profile() {
               👑 {predStats?.goldenPredictions || 0}
             </div>
             <span className="text-[10px] text-amber-700/70 dark:text-amber-400/80 font-bold mt-1">
-              +{predStats?.goldenPoints || 0} نقاط إضافية
+              +{predStats?.goldenPoints || 0} نقطة ذهبية
             </span>
           </div>
         </div>
@@ -637,7 +637,7 @@ export default function Profile() {
 
                     {item.displayStatus === 'finished_correct' && (
                       <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black border border-emerald-500/20">
-                        ⭐ توقع صحيح (+{item.pointsEarned + item.goldenPoints} نقطة)
+                        ⭐ توقع صحيح (+{item.pointsEarned} نقطة)
                       </span>
                     )}
 

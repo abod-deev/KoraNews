@@ -338,12 +338,24 @@ export default function Login() {
     setSuccessMsg(null);
     setSubmitting(true);
     try {
-      await signInWithGoogle();
-      trackAuthEvent('login', 'google');
-      navigate('/', { replace: true });
+      const success = await signInWithGoogle();
+      if (success) {
+        trackAuthEvent('login', 'google');
+        navigate('/', { replace: true });
+      }
     } catch (err: any) {
-      console.error('Google Sign In Error:', err);
-      setErrorMsg(err.message || 'فشل تسجيل الدخول بواسطة جوجل، يرجى المحاولة لاحقاً');
+      const code = err?.code || '';
+      const msg = err?.message || '';
+      const isDismissed =
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request' ||
+        msg.includes('popup-closed-by-user') ||
+        msg.includes('cancelled-popup-request');
+
+      if (!isDismissed) {
+        console.error('Google Sign In Error:', err);
+        setErrorMsg(err.message || 'فشل تسجيل الدخول بواسطة جوجل، يرجى المحاولة لاحقاً');
+      }
     } finally {
       setSubmitting(false);
     }

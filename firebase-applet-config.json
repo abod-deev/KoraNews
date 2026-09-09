@@ -1,12 +1,12 @@
 {
   "projectId": "ffootball-newss",
-  "appId": "1:605229772920:web:c334e44221a5ac2c487d8d",
+  "appId": "1:605229772920:web:a675e1d7463bc6c5487d8d",
   "apiKey": "AIzaSyDmIRl6XCKW_CroWP61lcYHYVdAGqf08ek",
   "authDomain": "ffootball-newss.firebaseapp.com",
   "firestoreDatabaseId": "ffootball-news",
   "storageBucket": "ffootball-newss.firebasestorage.app",
   "messagingSenderId": "605229772920",
-  "measurementId": "G-TTVLM4EYXL",
-  "oAuthClientId": "",
+  "measurementId": "",
+  "oAuthClientId": "605229772920-dqc1hcql4s2rppbe1f79clqdg0qujcq1.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

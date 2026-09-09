@@ -4,10 +4,6 @@ import {
   Crown,
   Search,
   X,
-  Sparkles,
-  Medal,
-  Target,
-  User as UserIcon,
 } from 'lucide-react';
 
 export interface LeaderboardUser {
@@ -40,10 +36,6 @@ export default function PredictionsLeaderboard({
   const filtered = leaderboard.filter((u) =>
     u.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
   );
-
-  const top1 = filtered.find((u) => u.rank === 1);
-  const top2 = filtered.find((u) => u.rank === 2);
-  const top3 = filtered.find((u) => u.rank === 3);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 w-full overflow-hidden">
@@ -86,36 +78,20 @@ export default function PredictionsLeaderboard({
 
       {isLoading ? (
         /* Loading Skeleton */
-        <div className="space-y-4 animate-pulse">
-          {/* Top 3 Skeletons */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 space-y-3 flex flex-col items-center"
-              >
-                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800" />
-                <div className="h-4 w-28 bg-slate-100 dark:bg-slate-800 rounded" />
-                <div className="h-6 w-20 bg-slate-100 dark:bg-slate-800 rounded-full" />
-              </div>
-            ))}
-          </div>
-
-          {/* Rows Skeletons */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 p-2">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="p-3.5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800" />
-                  <div className="space-y-1.5">
-                    <div className="h-3.5 w-28 bg-slate-100 dark:bg-slate-800 rounded" />
-                    <div className="h-2.5 w-16 bg-slate-100 dark:bg-slate-800 rounded" />
-                  </div>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 p-2 animate-pulse">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div key={i} className="p-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800" />
+                <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800" />
+                <div className="space-y-1.5">
+                  <div className="h-3.5 w-28 bg-slate-100 dark:bg-slate-800 rounded" />
+                  <div className="h-2.5 w-16 bg-slate-100 dark:bg-slate-800 rounded" />
                 </div>
-                <div className="h-5 w-14 bg-slate-100 dark:bg-slate-800 rounded" />
               </div>
-            ))}
-          </div>
+              <div className="h-5 w-14 bg-slate-100 dark:bg-slate-800 rounded" />
+            </div>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         /* Empty State */
@@ -134,154 +110,6 @@ export default function PredictionsLeaderboard({
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Top 3: Professional Sports Podium (Formal, Premium, Non-gamey) */}
-          {!searchQuery && filtered.length >= 3 && top1 && top2 && top3 && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 items-stretch">
-              
-              {/* المركز الثاني (Silver / الوصيف) */}
-              <div className="order-2 sm:order-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 shadow-xs flex flex-col items-center justify-between text-center relative overflow-hidden transition-all hover:border-slate-300 dark:hover:border-slate-700">
-                <div className="w-full flex items-center justify-between mb-3 text-xs">
-                  <span className="inline-flex items-center gap-1 font-bold text-slate-500 dark:text-slate-400">
-                    <span className="w-2 h-2 rounded-full bg-slate-400" />
-                    المركز الثاني
-                  </span>
-                  <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono font-black text-xs flex items-center justify-center border border-slate-200 dark:border-slate-700">
-                    2
-                  </span>
-                </div>
-
-                <div className="my-2 flex flex-col items-center">
-                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full bg-slate-100 dark:bg-slate-800 p-0.5 border-2 border-slate-300 dark:border-slate-600 overflow-hidden shadow-2xs mb-2.5">
-                    {top2.avatar ? (
-                      <img
-                        src={top2.avatar}
-                        alt={top2.name}
-                        className="w-full h-full rounded-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-black text-slate-600 dark:text-slate-300 text-lg">
-                        {top2.name.charAt(0)}
-                      </div>
-                    )}
-                  </div>
-                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate max-w-[170px]">
-                    {top2.name}
-                  </h4>
-                  {top2.isCurrentUser && (
-                    <span className="mt-1 px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-black">
-                      أنت
-                    </span>
-                  )}
-                </div>
-
-                <div className="w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-center">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    النقاط:{' '}
-                    <strong className="text-sm font-black text-slate-900 dark:text-white font-mono mr-1">
-                      {top2.totalPoints}
-                    </strong>
-                  </span>
-                </div>
-              </div>
-
-              {/* المركز الأول (Gold / المتصدر - أكثر بروزاً قليلاً) */}
-              <div className="order-1 sm:order-2 rounded-2xl bg-gradient-to-b from-amber-500/5 to-transparent dark:from-amber-500/10 dark:to-transparent bg-white dark:bg-slate-900 border-2 border-amber-400/80 dark:border-amber-500/80 p-5 sm:p-6 shadow-sm flex flex-col items-center justify-between text-center relative overflow-hidden transition-all">
-                <div className="w-full flex items-center justify-between mb-3 text-xs">
-                  <span className="inline-flex items-center gap-1 font-black text-amber-700 dark:text-amber-400">
-                    <Crown className="w-3.5 h-3.5 text-amber-500" />
-                    المركز الأول
-                  </span>
-                  <span className="w-6 h-6 rounded-full bg-amber-500 text-white font-mono font-black text-xs flex items-center justify-center shadow-xs">
-                    1
-                  </span>
-                </div>
-
-                <div className="my-2 flex flex-col items-center">
-                  <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-amber-50 dark:bg-amber-950/40 p-1 border-2 border-amber-400 dark:border-amber-500 overflow-hidden shadow-sm mb-2.5">
-                    {top1.avatar ? (
-                      <img
-                        src={top1.avatar}
-                        alt={top1.name}
-                        className="w-full h-full rounded-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center font-black text-amber-700 dark:text-amber-300 text-2xl">
-                        {top1.name.charAt(0)}
-                      </div>
-                    )}
-                  </div>
-                  <h4 className="font-black text-base text-slate-900 dark:text-white truncate max-w-[190px]">
-                    {top1.name}
-                  </h4>
-                  {top1.isCurrentUser && (
-                    <span className="mt-1 px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-black">
-                      أنت
-                    </span>
-                  )}
-                </div>
-
-                <div className="w-full mt-3 pt-3 border-t border-amber-200/60 dark:border-amber-800/60 flex items-center justify-center">
-                  <span className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                    النقاط:{' '}
-                    <strong className="text-base font-black text-amber-700 dark:text-amber-300 font-mono mr-1">
-                      {top1.totalPoints}
-                    </strong>
-                  </span>
-                </div>
-              </div>
-
-              {/* المركز الثالث (Bronze) */}
-              <div className="order-3 sm:order-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 shadow-xs flex flex-col items-center justify-between text-center relative overflow-hidden transition-all hover:border-slate-300 dark:hover:border-slate-700">
-                <div className="w-full flex items-center justify-between mb-3 text-xs">
-                  <span className="inline-flex items-center gap-1 font-bold text-amber-800 dark:text-amber-500">
-                    <span className="w-2 h-2 rounded-full bg-amber-700" />
-                    المركز الثالث
-                  </span>
-                  <span className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-amber-800 dark:text-amber-400 font-mono font-black text-xs flex items-center justify-center border border-amber-800/30">
-                    3
-                  </span>
-                </div>
-
-                <div className="my-2 flex flex-col items-center">
-                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-full bg-amber-900/10 dark:bg-amber-950/30 p-0.5 border-2 border-amber-700/60 dark:border-amber-700/60 overflow-hidden shadow-2xs mb-2.5">
-                    {top3.avatar ? (
-                      <img
-                        src={top3.avatar}
-                        alt={top3.name}
-                        className="w-full h-full rounded-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full rounded-full bg-amber-100/50 dark:bg-amber-900/20 flex items-center justify-center font-black text-amber-800 dark:text-amber-500 text-lg">
-                        {top3.name.charAt(0)}
-                      </div>
-                    )}
-                  </div>
-                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate max-w-[170px]">
-                    {top3.name}
-                  </h4>
-                  {top3.isCurrentUser && (
-                    <span className="mt-1 px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-black">
-                      أنت
-                    </span>
-                  )}
-                </div>
-
-                <div className="w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-center">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    النقاط:{' '}
-                    <strong className="text-sm font-black text-slate-900 dark:text-white font-mono mr-1">
-                      {top3.totalPoints}
-                    </strong>
-                  </span>
-                </div>
-              </div>
-
-            </div>
-          )}
-
           {/* Leaderboard Table / Cards List */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
             {/* Desktop Table View */}
@@ -321,8 +149,8 @@ export default function PredictionsLeaderboard({
                             3
                           </span>
                         ) : (
-                          <span className="text-slate-500 dark:text-slate-400 text-xs font-mono font-bold">
-                            #{item.rank}
+                          <span className="text-slate-600 dark:text-slate-400 text-xs font-mono font-bold">
+                            {item.rank}
                           </span>
                         )}
                       </td>
@@ -410,7 +238,7 @@ export default function PredictionsLeaderboard({
                         ) : item.rank === 3 ? (
                           <span className="text-amber-700 font-black">3</span>
                         ) : (
-                          <span className="text-slate-400 font-medium">#{item.rank}</span>
+                          <span className="text-slate-500 dark:text-slate-400 font-bold">{item.rank}</span>
                         )}
                       </span>
 

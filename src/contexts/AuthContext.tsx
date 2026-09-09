@@ -8,12 +8,13 @@ import {
 } from 'firebase/auth';
 import { auth, browserPopupRedirectResolver } from '../lib/firebase';
 import { AuthUser } from '../utils/authHelpers';
+import { safeStorage } from '../utils/safeStorage';
 
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   token: string | null;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: () => Promise<boolean>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name?: string) => Promise<void>;
   sendVerificationCode: (email: string, pass: string, name?: string) => Promise<{ success: boolean; message: string; email: string; devCode?: string }>;
@@ -28,7 +29,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   token: null,
-  signInWithGoogle: async () => {},
+  signInWithGoogle: async () => false,
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
   sendVerificationCode: async () => ({ success: false, message: '', email: '' }),
@@ -51,18 +52,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
-  // Helper to persist session
+  // Helper to persist session safely
   const saveSession = (sessionToken: string, userObj: any) => {
-    localStorage.setItem('srv_session_token', sessionToken);
-    localStorage.setItem('srv_session_user', JSON.stringify(userObj));
+    safeStorage.setItem('srv_session_token', sessionToken);
+    safeStorage.setItem('srv_session_user', JSON.stringify(userObj));
     setToken(sessionToken);
     setUser(userObj);
   };
 
-  // On mount restore local session first
+  const clearSession = () => {
+    safeStorage.removeItem('srv_session_token');
+    safeStorage.removeItem('srv_session_user');
+    setToken(null);
+    setUser(null);
+  };
+
+  // Hard safety guarantee: Ensure loading never stalls longer than 2.5s under any condition
   useEffect(() => {
-    const savedToken = localStorage.getItem('srv_session_token');
-    const savedUser = localStorage.getItem('srv_session_user');
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 2500);
+    return () => clearTimeout(safetyTimer);
+  }, []);
+
+  // Restore local session on mount and verify profile in background
+  useEffect(() => {
+    const savedToken = safeStorage.getItem('srv_session_token');
+    const savedUser = safeStorage.getItem('srv_session_user');
+
     if (savedToken && savedUser) {
       try {
         const parsed = JSON.parse(savedUser);
@@ -75,6 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
           .then(async (res) => {
             if (res.status === 401) {
+              // Try auto-refresh via Firebase if Firebase user is active
               if (auth && auth.currentUser) {
                 try {
                   const idToken = await auth.currentUser.getIdToken(true);
@@ -93,11 +111,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   // ignore
                 }
               }
-              // If completely unrecoverable, clear invalid tokens
-              localStorage.removeItem('srv_session_token');
-              localStorage.removeItem('srv_session_user');
-              setToken(null);
-              setUser(null);
+              // If completely unrecoverable, clear invalid token
+              clearSession();
               return null;
             }
             return res.ok ? res.json() : null;
@@ -106,41 +121,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (data) {
               const merged = { ...parsed, ...data };
               setUser(merged);
-              localStorage.setItem('srv_session_user', JSON.stringify(merged));
+              safeStorage.setItem('srv_session_user', JSON.stringify(merged));
             }
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            setLoading(false);
+          });
       } catch (e) {
-        // ignore
+        clearSession();
+        setLoading(false);
       }
+    } else {
+      setLoading(false);
     }
   }, []);
 
   // Firebase auth state listener
   useEffect(() => {
     if (!auth) {
-      const savedToken = localStorage.getItem('srv_session_token');
-      const savedUser = localStorage.getItem('srv_session_user');
-      if (savedToken && savedUser) {
-        try {
-          setUser(JSON.parse(savedUser));
-          setToken(savedToken);
-        } catch {
-          setUser(null);
-          setToken(null);
-        }
-      }
       setLoading(false);
       return;
     }
 
+    let isSubscribed = true;
+
     const unsubscribe = onAuthStateChanged(
       auth,
       async (currentUser) => {
+        if (!isSubscribed) return;
         try {
           if (currentUser) {
             const idToken = await currentUser.getIdToken();
-            // Sync user with backend to ensure DB user & session are up-to-date
             const syncRes = await fetch('/api/auth/sync', {
               method: 'POST',
               headers: {
@@ -149,31 +161,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             if (syncRes.ok) {
               const syncData = await syncRes.json();
-              if (syncData.sessionToken && syncData.user) {
+              if (syncData.sessionToken && syncData.user && isSubscribed) {
                 saveSession(syncData.sessionToken, syncData.user);
               }
-            }
-          } else {
-            const savedToken = localStorage.getItem('srv_session_token');
-            const savedUser = localStorage.getItem('srv_session_user');
-            if (savedToken && savedUser) {
-              try {
-                const parsed = JSON.parse(savedUser);
-                setUser(parsed);
-                setToken(savedToken);
-              } catch (e) {
-                setUser(null);
-                setToken(null);
-              }
-            } else {
-              setUser(null);
-              setToken(null);
             }
           }
         } catch (error) {
           console.error("Failed to sync user with backend:", error);
         } finally {
-          setLoading(false);
+          if (isSubscribed) {
+            setLoading(false);
+          }
         }
       },
       (error) => {
@@ -183,26 +181,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           console.warn('[Auth] Auth state error:', msg);
         }
-        setLoading(false);
+        if (isSubscribed) {
+          setLoading(false);
+        }
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      isSubscribed = false;
+      unsubscribe();
+    };
   }, []);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (): Promise<boolean> => {
     if (!auth) {
       throw new Error('خدمة مصادقة جوجل غير متوفرة حالياً، يرجى المحاولة لاحقاً أو استخدام البريد الإلكتروني.');
     }
     try {
       const provider = new GoogleAuthProvider();
-      provider.addScope('email');
-      provider.addScope('profile');
-      provider.addScope('openid');
       provider.setCustomParameters({
-        prompt: 'consent select_account',
+        prompt: 'select_account',
       });
-      const result = await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       if (result?.user) {
         const idToken = await result.user.getIdToken();
         const syncRes = await fetch('/api/auth/sync', {
@@ -234,24 +234,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (syncData.sessionToken && syncData.user) {
           saveSession(syncData.sessionToken, syncData.user);
         }
+        return true;
       }
+      return false;
     } catch (error: any) {
+      const errorCode = error?.code || '';
+      const errorMessage = error?.message || '';
+      const isCancellation =
+        errorCode === 'auth/popup-closed-by-user' ||
+        errorCode === 'auth/cancelled-popup-request' ||
+        errorMessage.includes('popup-closed-by-user') ||
+        errorMessage.includes('cancelled-popup-request');
+
+      if (isCancellation) {
+        // User closed the popup window before finishing sign-in - expected user action, do not log as error
+        console.info('Google Sign-In was dismissed or closed by the user.');
+        return false;
+      }
+
       console.error('Error signing in with Google:', error);
-      if (error?.code === 'auth/popup-blocked') {
+      if (errorCode === 'auth/popup-blocked') {
         throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة (Popups) وإعادة المحاولة.');
-      } else if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-        // User closed popup window intentionally - handle silently without throwing
-        console.info('Google Sign-In popup closed by user.');
-        return;
-      } else if (error?.code === 'auth/unauthorized-domain') {
+      } else if (errorCode === 'auth/unauthorized-domain') {
         const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
         throw new Error(`النطاق الحالي (${currentHost}) غير مدرج في النطاقات المصرح بها (Authorized Domains) في إعدادات Firebase Authentication. يرجى إضافته في Firebase Console.`);
-      } else if (error?.code === 'auth/network-request-failed') {
+      } else if (errorCode === 'auth/network-request-failed') {
         throw new Error('تعذر الاتصال بخدمة المصادقة، يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.');
-      } else if (error?.code === 'auth/configuration-not-found' || error?.code === 'auth/operation-not-allowed') {
-        throw new Error('مُكّن تسجيل الدخول عبر Google غير مفعّل بعد في مشروع Firebase الخاص بك (ffootball-newss). يرجى فتح Firebase Console -> Authentication -> Sign-in method وتفعيل خيار Google.');
+      } else if (errorCode === 'auth/configuration-not-found' || errorCode === 'auth/operation-not-allowed') {
+        throw new Error('مُكّن تسجيل الدخول عبر Google غير مفعّل بعد في مشروع Firebase الخاص بك. يرجى فتح Firebase Console -> Authentication -> Sign-in method وتفعيل خيار Google.');
       }
-      throw new Error(error?.message || 'حدث خطأ في تسجيل الدخول بواسطة جوجل');
+      throw new Error(errorMessage || 'حدث خطأ في تسجيل الدخول بواسطة جوجل');
     }
   };
 
@@ -369,7 +381,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateUserProfile = async (name: string, avatar: string | null) => {
-    let currentToken = token || localStorage.getItem('srv_session_token');
+    let currentToken = token || safeStorage.getItem('srv_session_token');
     if (!currentToken) throw new Error('يرجى تسجيل الدخول أولاً');
     
     let res = await fetch('/api/user/profile', {
@@ -422,13 +434,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else if (data.user) {
       const updated = { ...user, ...data.user };
       setUser(updated);
-      localStorage.setItem('srv_session_user', JSON.stringify(updated));
+      safeStorage.setItem('srv_session_user', JSON.stringify(updated));
     }
     return data.user;
   };
 
   const deleteAccount = async () => {
-    const currentToken = token || localStorage.getItem('srv_session_token');
+    const currentToken = token || safeStorage.getItem('srv_session_token');
     if (!currentToken) throw new Error('يرجى تسجيل الدخول أولاً');
     const res = await fetch('/api/user/account', {
       method: 'DELETE',
@@ -451,7 +463,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    const currentToken = token || localStorage.getItem('srv_session_token');
+    const currentToken = token || safeStorage.getItem('srv_session_token');
     if (currentToken) {
       fetch('/api/auth/logout', {
         method: 'POST',
@@ -461,10 +473,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }).catch(() => {});
     }
 
-    localStorage.removeItem('srv_session_token');
-    localStorage.removeItem('srv_session_user');
-    setUser(null);
-    setToken(null);
+    clearSession();
     try {
       if (auth && auth.currentUser) {
         await signOut(auth);

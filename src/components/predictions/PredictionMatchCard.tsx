@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PredictionMatchInfo } from '../../services/predictionService';
+import type { PredictionMatchInfo } from '../../types';
 import {
   Clock,
   Unlock,
@@ -77,15 +77,30 @@ export default function PredictionMatchCard({
     }
   }, [userPred]);
 
-  const isPendingAdmin = m.status === 'FINISHED' && predictionMatch.pointsPerMatch === undefined;
-  const isCalculated = m.status === 'FINISHED' && predictionMatch.pointsPerMatch !== undefined;
-  const isFinished = m.status === 'FINISHED' || predictionMatch.matchState === 'calculated';
-  const isLive = m.status === 'LIVE' || predictionMatch.matchState === 'live';
+  const isCalculated =
+    predictionMatch.isCalculated ||
+    predictionMatch.matchState === 'calculated' ||
+    (m.status === 'FINISHED' && predictionMatch.pointsPerMatch !== undefined);
+  const isFinished =
+    isCalculated ||
+    predictionMatch.matchState === 'pending_admin' ||
+    m.status === 'FINISHED' ||
+    m.status === 'FT' ||
+    m.status === 'AET' ||
+    m.status === 'PEN';
+  const isLive =
+    predictionMatch.matchState === 'live' ||
+    m.status === 'LIVE' ||
+    m.status === 'IN_PLAY' ||
+    m.status === 'PAUSED' ||
+    m.status === '1H' ||
+    m.status === '2H' ||
+    m.status === 'HT';
   const isOpen =
-    m.status === 'PENDING' &&
     isContestActive &&
     (predictionMatch.isOpenForPrediction || predictionMatch.matchState === 'open') &&
-    (userPred ? userPred.canEdit !== false : true);
+    !isFinished &&
+    !isLive;
 
   const formattedDate = (() => {
     try {

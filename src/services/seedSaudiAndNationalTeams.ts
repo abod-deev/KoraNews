@@ -78,74 +78,91 @@ export const NATIONAL_TEAMS = [
   { id: 'nt_usa', name: 'منتخب الولايات المتحدة', logo: 'https://flagcdn.com/w160/us.png' },
 ];
 
+let hasSeeded = false;
+let seedingPromise: Promise<{ leaguesCount: number; teamsCount: number }> | null = null;
+
 /**
  * Ensures Saudi League and National Teams are seeded in the database without duplicates.
  */
 export async function seedSaudiAndNationalTeams(): Promise<{ leaguesCount: number; teamsCount: number }> {
-  let seededLeagues = 0;
-  let seededTeams = 0;
-
-  // 1. Seed Leagues
-  for (const league of ADDITIONAL_LEAGUES) {
-    const existing = await db
-      .select()
-      .from(leagues)
-      .where(ilike(leagues.name, league.name));
-
-    if (existing.length === 0) {
-      await db
-        .insert(leagues)
-        .values({
-          id: league.id,
-          name: league.name,
-          logo: league.logo,
-        })
-        .onConflictDoNothing();
-      seededLeagues++;
-    }
+  if (hasSeeded) {
+    return { leaguesCount: 0, teamsCount: 0 };
+  }
+  if (seedingPromise) {
+    return seedingPromise;
   }
 
-  // 2. Seed Saudi Teams
-  for (const team of SAUDI_TEAMS) {
-    const existing = await db
-      .select()
-      .from(teams)
-      .where(ilike(teams.name, team.name));
+  seedingPromise = (async () => {
+    try {
+      let seededLeagues = 0;
+      let seededTeams = 0;
 
-    if (existing.length === 0) {
-      await db
-        .insert(teams)
-        .values({
-          id: team.id,
-          name: team.name,
-          logo: team.logo,
-        })
-        .onConflictDoNothing();
-      seededTeams++;
+      // 1. Seed Leagues
+      for (const league of ADDITIONAL_LEAGUES) {
+        const existing = await db
+          .select()
+          .from(leagues)
+          .where(ilike(leagues.name, league.name));
+
+        if (existing.length === 0) {
+          await db
+            .insert(leagues)
+            .values({
+              id: league.id,
+              name: league.name,
+              logo: league.logo,
+            })
+            .onConflictDoNothing();
+          seededLeagues++;
+        }
+      }
+
+      // 2. Seed Saudi Teams
+      for (const team of SAUDI_TEAMS) {
+        const existing = await db
+          .select()
+          .from(teams)
+          .where(ilike(teams.name, team.name));
+
+        if (existing.length === 0) {
+          await db
+            .insert(teams)
+            .values({
+              id: team.id,
+              name: team.name,
+              logo: team.logo,
+            })
+            .onConflictDoNothing();
+          seededTeams++;
+        }
+      }
+
+      // 3. Seed National Teams
+      for (const team of NATIONAL_TEAMS) {
+        const existing = await db
+          .select()
+          .from(teams)
+          .where(ilike(teams.name, team.name));
+
+        if (existing.length === 0) {
+          await db
+            .insert(teams)
+            .values({
+              id: team.id,
+              name: team.name,
+              logo: team.logo,
+            })
+            .onConflictDoNothing();
+          seededTeams++;
+        }
+      }
+
+      hasSeeded = true;
+      return { leaguesCount: seededLeagues, teamsCount: seededTeams };
+    } finally {
+      seedingPromise = null;
     }
-  }
+  })();
 
-  // 3. Seed National Teams
-  for (const team of NATIONAL_TEAMS) {
-    // Check both exact name and without "منتخب " prefix
-    const baseName = team.name.replace(/^منتخب\s+/, '');
-    const existing = await db
-      .select()
-      .from(teams)
-      .where(ilike(teams.name, team.name));
-
-    if (existing.length === 0) {
-      await db
-        .insert(teams)
-        .values({
-          id: team.id,
-          name: team.name,
-          logo: team.logo,
-        })
-        .onConflictDoNothing();
-      seededTeams++;
-    }
-  }
-
-  return { leaguesCount: seededLeagues, teamsCount: seededTeams };
+  return seedingPromise;
 }

@@ -56,6 +56,7 @@ import {
   getGoldenLeaderboard,
   getAdminPredictionMatches,
   addMatchToPredictions,
+  addMultipleMatchesToPredictions,
   addCustomExternalMatchToPredictions,
   updatePredictionMatchPoints,
   togglePredictionMatchActive,
@@ -123,7 +124,7 @@ async function startServer() {
     .filter((o) => o.length > 0);
 
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Trust first proxy (Cloud Run / Nginx reverse proxy)
   app.set('trust proxy', 1);
@@ -159,28 +160,36 @@ async function startServer() {
 
         const originLower = origin.toLowerCase().trim();
 
+        // 1. Always allow configured allowed origins if specified
+        if (configuredAllowedOrigins.length > 0 && configuredAllowedOrigins.includes(originLower)) {
+          return callback(null, true);
+        }
+
+        // 2. Always allow standard localhost / loopback development & test origins
+        if (
+          originLower.startsWith('http://localhost') ||
+          originLower.startsWith('https://localhost') ||
+          originLower.startsWith('http://127.0.0.1') ||
+          originLower.startsWith('https://127.0.0.1')
+        ) {
+          return callback(null, true);
+        }
+
+        // 3. Always allow Cloud Run and AI Studio domains (.run.app, .google.internal, .aistudio.google.com)
+        if (
+          originLower.endsWith('.run.app') ||
+          originLower.endsWith('.google.internal') ||
+          originLower.endsWith('.aistudio.google.com')
+        ) {
+          return callback(null, true);
+        }
+
         if (isProduction) {
-          // In production, strictly enforce whitelist. Never allow '*' or unconfigured arbitrary origins.
-          if (configuredAllowedOrigins.length > 0) {
-            if (configuredAllowedOrigins.includes(originLower)) {
-              return callback(null, true);
-            }
-            return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
-          }
-
-          // If no explicit ALLOWED_ORIGINS configured, allow trusted internal Cloud Run / AI Studio preview origins
-          if (
-            originLower.endsWith('.run.app') ||
-            originLower.endsWith('.google.internal') ||
-            originLower.endsWith('.aistudio.google.com')
-          ) {
-            return callback(null, true);
-          }
-
-          // In production, reject unknown arbitrary origins
-          return callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+          // If in production and origin is not whitelisted, reject gracefully without throwing a 500 server crash.
+          // Per CORS specification and cors package docs, callback(null, false) denies CORS without throwing an unhandled Express exception.
+          return callback(null, false);
         } else {
-          // In development/test, allow all origins for preview iframe and dev requests
+          // In development, allow all origins for preview iframe and dev requests
           return callback(null, true);
         }
       },
@@ -551,7 +560,8 @@ async function startServer() {
               picture: fbDecoded.picture,
             };
           }
-        } catch {
+        } catch (err: any) {
+          console.warn('[Auth Sync] adminAuth.verifyIdToken error:', err?.message || err);
           decodedToken = null;
         }
       }
@@ -1758,14 +1768,11 @@ async function startServer() {
 
   /**
    * POST /api/admin/predictions
-   * Add a system match to the prediction contest list with custom points per match.
+   * Add a system match (or multiple matches) to the prediction contest list with custom points per match.
    */
   app.post('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
     try {
-      const { matchId, pointsPerMatch, contestId } = req.body;
-      if (!matchId || typeof matchId !== 'string' || !matchId.trim()) {
-        return res.status(400).json({ error: 'معرف المباراة مطلوب' });
-      }
+      const { matchId, matchIds, pointsPerMatch, contestId } = req.body;
 
       let pts = 2;
       if (pointsPerMatch !== undefined && pointsPerMatch !== null) {
@@ -1777,15 +1784,39 @@ async function startServer() {
       }
 
       const parsedContestId = contestId ? parseInt(String(contestId), 10) : undefined;
+      const validContestId = parsedContestId && !isNaN(parsedContestId) ? parsedContestId : undefined;
+
+      // Handle batch addition if matchIds array is provided
+      if (Array.isArray(matchIds)) {
+        const filteredIds = matchIds.map((id) => String(id).trim()).filter(Boolean);
+        if (filteredIds.length === 0) {
+          return res.status(400).json({ error: 'يرجى تحديد مباراة واحدة على الأقل' });
+        }
+
+        const result = await addMultipleMatchesToPredictions(filteredIds, pts, validContestId);
+        await logActivity(req.dbUser.id, 'CREATE_BATCH', 'PREDICTION_MATCH', filteredIds.join(','), {
+          matchIds: filteredIds,
+          pointsPerMatch: pts,
+          contestId: validContestId,
+          totalProcessed: result.totalProcessed,
+        });
+        return res.status(201).json(result);
+      }
+
+      // Handle single match addition
+      if (!matchId || typeof matchId !== 'string' || !matchId.trim()) {
+        return res.status(400).json({ error: 'معرف المباراة مطلوب' });
+      }
+
       const result = await addMatchToPredictions(
         matchId.trim(),
         pts,
-        parsedContestId && !isNaN(parsedContestId) ? parsedContestId : undefined
+        validContestId
       );
       await logActivity(req.dbUser.id, 'CREATE', 'PREDICTION_MATCH', matchId, {
         matchId,
         pointsPerMatch: pts,
-        contestId: parsedContestId,
+        contestId: validContestId,
       });
       return res.status(201).json(result);
     } catch (error: any) {
