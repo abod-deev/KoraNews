@@ -7,12 +7,18 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { adminAuth } from './src/lib/firebase-admin.ts';
 import { db, withDbRetry, initializeDatabaseSchema } from './src/db/index.ts';
-import { users, news, categories, comments, emailVerifications, activityLogs, contestParticipants, predictionMatches } from './src/db/schema.ts';
-import { eq, desc, sql } from 'drizzle-orm';
+import { users, news, categories, comments, emailVerifications, activityLogs, errorLogs, contestParticipants, predictionMatches } from './src/db/schema.ts';
+import { eq, desc, sql, and, or, ilike, lt } from 'drizzle-orm';
+import { checkUserHasPermission } from './src/constants/permissions.ts';
 import {
   requireAuth,
   requirePermission,
   requireSuperAdmin,
+  requireManager,
+  requireOwner,
+  isDbUserOwner,
+  isDbUserManager,
+  isDbUserAdmin,
   optionalAuth,
   AuthRequest,
   createServerSessionToken,
@@ -87,6 +93,7 @@ import {
   adminDeleteUserPrediction,
 } from './src/services/predictionService.ts';
 import { seedSaudiAndNationalTeams } from './src/services/seedSaudiAndNationalTeams.ts';
+import { runSystemCompatibilityAudit } from './src/services/systemCompatibilityService.ts';
 import {
   validateScore,
   validatePointsPerMatch,
@@ -106,12 +113,47 @@ async function logActivity(
         userId,
         action,
         entityType,
-        entityId: entityId || null,
+        entityId: entityId || 'SYSTEM',
         details: details || null,
       })
     );
   } catch (e) {
     // Non-blocking log failure
+  }
+}
+
+export async function logErrorToDb(data: {
+  source?: string;
+  severity?: 'fatal' | 'error' | 'warning' | 'info';
+  message: string;
+  stack?: string;
+  endpoint?: string;
+  statusCode?: number;
+  userId?: number;
+  userEmail?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  metadata?: any;
+}) {
+  try {
+    await withDbRetry(() =>
+      db.insert(errorLogs).values({
+        source: data.source || 'server',
+        severity: data.severity || 'error',
+        message: String(data.message || 'Unknown error').slice(0, 3000),
+        stack: data.stack ? String(data.stack).slice(0, 15000) : null,
+        endpoint: data.endpoint ? String(data.endpoint).slice(0, 500) : null,
+        statusCode: typeof data.statusCode === 'number' ? data.statusCode : null,
+        userId: data.userId || null,
+        userEmail: data.userEmail || null,
+        ipAddress: data.ipAddress ? String(data.ipAddress).slice(0, 100) : null,
+        userAgent: data.userAgent ? String(data.userAgent).slice(0, 500) : null,
+        metadata: data.metadata || null,
+      })
+    );
+  } catch (e) {
+    // Non-blocking log failure
+    console.error('Failed to log error to DB:', e);
   }
 }
 
@@ -265,18 +307,22 @@ async function startServer() {
           return res.status(401).json({ error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' });
         }
 
-        const superAdminPermissions = ['news_add', 'news_edit', 'news_delete', 'news_publish', 'matches_manage', 'admin_manage'];
+        const ownerPermissions = [
+          'news_add', 'news_edit', 'news_delete', 'news_publish', 'news_featured', 'news_breaking',
+          'categories_manage', 'matches_manage', 'predictions_manage', 'contests_manage',
+          'users_view', 'users_manage', 'logs_view', 'admins_manage', 'managers_manage', 'settings_manage'
+        ];
         let dbUser = await getOrCreateUser(
           `superadmin_${cleanEmail}`,
           cleanEmail,
-          'مدير النظام',
+          'مالك النظام',
           undefined,
           superAdminPass
         );
 
-        // Ensure superadmin role & permissions
+        // Ensure owner role & full permissions
         await db.update(users)
-          .set({ role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions })
+          .set({ role: 'owner', isAdmin: true, isActive: true, permissions: ownerPermissions })
           .where(eq(users.id, dbUser.id));
 
         const sessionToken = createServerSessionToken({
@@ -296,7 +342,7 @@ async function startServer() {
         return res.json({
           sessionToken,
           customToken,
-          user: toSafeUser({ ...dbUser, role: 'superadmin', isAdmin: true, isActive: true, permissions: superAdminPermissions }),
+          user: toSafeUser({ ...dbUser, role: 'owner', isAdmin: true, isActive: true, permissions: ownerPermissions }),
         });
       }
 
@@ -694,13 +740,13 @@ async function startServer() {
     // 2. Delete activity logs
     await withDbRetry(() => db.delete(activityLogs).where(eq(activityLogs.userId, user.id)));
 
-    // 3. Reassign news to superadmin or delete
-    const superAdmins = await withDbRetry(() =>
-      db.select().from(users).where(eq(users.role, 'superadmin')).limit(1)
+    // 3. Reassign news to system owner or delete
+    const systemOwners = await withDbRetry(() =>
+      db.select().from(users).where(sql`role IN ('superadmin', 'owner', 'system_owner')`).orderBy(users.id).limit(1)
     );
 
-    if (superAdmins.length > 0 && superAdmins[0].id !== user.id) {
-      await withDbRetry(() => db.update(news).set({ authorId: superAdmins[0].id }).where(eq(news.authorId, user.id)));
+    if (systemOwners.length > 0 && systemOwners[0].id !== user.id) {
+      await withDbRetry(() => db.update(news).set({ authorId: systemOwners[0].id }).where(eq(news.authorId, user.id)));
     } else {
       await withDbRetry(() => db.delete(news).where(eq(news.authorId, user.id)));
     }
@@ -789,7 +835,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/categories', requirePermission('news_add'), async (req: AuthRequest, res) => {
+  app.post('/api/categories', requirePermission('categories_add'), async (req: AuthRequest, res) => {
     try {
       const { name, slug } = req.body;
       if (!name || !slug) {
@@ -956,7 +1002,7 @@ async function startServer() {
             const requester = await db.select().from(users).where(eq(users.uid, decoded.uid)).limit(1);
             if (requester.length > 0) {
               const u = requester[0];
-              if (u.role === 'admin' || u.role === 'superadmin' || u.id === article.authorId) {
+              if (isDbUserAdmin(u) || u.id === article.authorId) {
                 isAuthorizedViewer = true;
               }
             }
@@ -1273,7 +1319,7 @@ async function startServer() {
       hasCronAuth = a.length === b.length && crypto.timingSafeEqual(a, b);
     }
 
-    const isUserAdmin = req.dbUser && (req.dbUser.role === 'admin' || req.dbUser.role === 'superadmin');
+    const isUserAdmin = isDbUserAdmin(req.dbUser);
 
     if (!hasCronAuth && !isUserAdmin) {
       return res.status(403).json({ error: 'Forbidden: Admin authorization or valid Cron Secret required for match synchronization' });
@@ -1320,7 +1366,7 @@ async function startServer() {
    * GET /api/admin/predictions/active-contest
    * Admin: Get current active contest with participant count and matches count.
    */
-  app.get('/api/admin/predictions/active-contest', requirePermission('matches_manage'), async (_req, res) => {
+  app.get('/api/admin/predictions/active-contest', requirePermission('predictions_view'), async (_req, res) => {
     try {
       const active = await getActiveContest();
       if (!active) {
@@ -1361,7 +1407,7 @@ async function startServer() {
    * GET /api/admin/predictions/contests
    * Admin: List all contests (historical & active).
    */
-  app.get('/api/admin/predictions/contests', requirePermission('matches_manage'), async (_req, res) => {
+  app.get('/api/admin/predictions/contests', requirePermission('predictions_view'), async (_req, res) => {
     try {
       const list = await getAllContests();
       return res.json(list);
@@ -1375,7 +1421,7 @@ async function startServer() {
    * POST /api/admin/predictions/contests
    * Admin: Create a new contest manually.
    */
-  app.post('/api/admin/predictions/contests', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions/contests', requirePermission('predictions_contest_create'), async (req: AuthRequest, res) => {
     try {
       const contest = await createContest(req.body);
       await logActivity(req.dbUser.id, 'CREATE', 'CONTEST_SETTINGS', String(contest.id), req.body);
@@ -1390,7 +1436,7 @@ async function startServer() {
    * POST /api/admin/predictions/contests/:id/complete
    * Admin: Mark a contest as completed.
    */
-  app.post('/api/admin/predictions/contests/:id/complete', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions/contests/:id/complete', requirePermission('predictions_contest_end'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المسابقة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -1411,7 +1457,7 @@ async function startServer() {
    * Admin: Delete a completed contest and all associated prediction data.
    * Rejects if contest is active.
    */
-  app.delete('/api/admin/predictions/contests/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.delete('/api/admin/predictions/contests/:id', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المسابقة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -1431,7 +1477,7 @@ async function startServer() {
    * PUT /api/admin/predictions/contest/settings
    * Admin: Update contest configuration.
    */
-  app.put('/api/admin/predictions/contest/settings', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/predictions/contest/settings', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const updated = await updateContestSettings(req.body);
       await logActivity(req.dbUser.id, 'UPDATE', 'CONTEST_SETTINGS', String(updated.id), req.body);
@@ -1484,7 +1530,7 @@ async function startServer() {
    * GET /api/admin/predictions/participants
    * Admin: List all contest participants with filters.
    */
-  app.get('/api/admin/predictions/participants', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.get('/api/admin/predictions/participants', requirePermission('predictions_participants_manage'), async (req: AuthRequest, res) => {
     try {
       const statusFilter = (req.query.status as string) || undefined;
       const search = (req.query.search as string) || undefined;
@@ -1505,7 +1551,7 @@ async function startServer() {
    * PUT /api/admin/predictions/participants/:id/status
    * Admin: Approve, reject, block, or reset participant.
    */
-  app.put('/api/admin/predictions/participants/:id/status', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/predictions/participants/:id/status', requirePermission('predictions_participants_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المشترك');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -1530,7 +1576,7 @@ async function startServer() {
    * DELETE /api/admin/predictions/participants/:id
    * Admin: Delete participant record.
    */
-  app.delete('/api/admin/predictions/participants/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.delete('/api/admin/predictions/participants/:id', requirePermission('predictions_participants_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المشترك');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -1707,7 +1753,7 @@ async function startServer() {
    * GET /api/admin/predictions/stats
    * Admin: Fetch general stats for predictions contest dashboard.
    */
-  app.get('/api/admin/predictions/stats', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.get('/api/admin/predictions/stats', requirePermission('predictions_view'), async (req: AuthRequest, res) => {
     try {
       const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
       const stats = await getAdminPredictionStats(isNaN(contestId as number) ? undefined : contestId);
@@ -1722,7 +1768,7 @@ async function startServer() {
    * GET /api/admin/predictions/available-matches
    * Admin: Get matches for Today and Tomorrow for quick selection.
    */
-  app.get('/api/admin/predictions/available-matches', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.get('/api/admin/predictions/available-matches', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const dateFilter = (req.query.date as 'today' | 'tomorrow' | 'all') || 'today';
       const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
@@ -1741,7 +1787,7 @@ async function startServer() {
    * GET /api/admin/predictions/teams-and-leagues
    * Admin: Fetch all existing teams and leagues in the system for autocomplete / reuse.
    */
-  app.get('/api/admin/predictions/teams-and-leagues', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.get('/api/admin/predictions/teams-and-leagues', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const data = await getExistingTeamsAndLeagues();
       return res.json(data);
@@ -1755,7 +1801,7 @@ async function startServer() {
    * GET /api/admin/predictions
    * Fetch all prediction matches with admin meta and user participation.
    */
-  app.get('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.get('/api/admin/predictions', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
       const data = await getAdminPredictionMatches(isNaN(contestId as number) ? undefined : contestId);
@@ -1770,7 +1816,7 @@ async function startServer() {
    * POST /api/admin/predictions
    * Add a system match (or multiple matches) to the prediction contest list with custom points per match.
    */
-  app.post('/api/admin/predictions', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions', requirePermission('predictions_match_add'), async (req: AuthRequest, res) => {
     try {
       const { matchId, matchIds, pointsPerMatch, contestId } = req.body;
 
@@ -1829,7 +1875,7 @@ async function startServer() {
    * POST /api/admin/predictions/custom-match
    * Admin: Add a match from an external league not in KoraNews with custom points.
    */
-  app.post('/api/admin/predictions/custom-match', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions/custom-match', requirePermission('predictions_match_add'), async (req: AuthRequest, res) => {
     try {
       const {
         leagueName,
@@ -1882,7 +1928,7 @@ async function startServer() {
    * PUT /api/admin/predictions/:id/points
    * Admin: Update points for a prediction match.
    */
-  app.put('/api/admin/predictions/:id/points', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/predictions/:id/points', requirePermission('predictions_points_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -1908,7 +1954,7 @@ async function startServer() {
    * POST /api/admin/predictions/:id/confirm-result
    * Admin: Manually confirm match final score, award points (+2) and display winners.
    */
-  app.post('/api/admin/predictions/:id/confirm-result', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions/:id/confirm-result', requirePermission('predictions_results_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -1957,7 +2003,7 @@ async function startServer() {
    * PUT /api/admin/predictions/:id/result
    * Admin: Edit match result (homeScore, awayScore, status) and safely recalculate points without duplicates.
    */
-  app.put('/api/admin/predictions/:id/result', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/predictions/:id/result', requirePermission('predictions_results_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -2001,7 +2047,7 @@ async function startServer() {
    * PUT /api/admin/predictions/:id
    * Admin: Edit match details (teams, time, league, points, status, score, isActive).
    */
-  app.put('/api/admin/predictions/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/predictions/:id', requirePermission('predictions_match_edit'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -2066,7 +2112,7 @@ async function startServer() {
    * PUT /api/admin/predictions/:id/toggle
    * Toggle activation status of a prediction match.
    */
-  app.put('/api/admin/predictions/:id/toggle', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/predictions/:id/toggle', requirePermission('predictions_match_edit'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -2087,7 +2133,7 @@ async function startServer() {
    * DELETE /api/admin/predictions/:id
    * Remove match from prediction contest.
    */
-  app.delete('/api/admin/predictions/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.delete('/api/admin/predictions/:id', requirePermission('predictions_match_delete'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف المباراة');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -2107,7 +2153,7 @@ async function startServer() {
    * POST /api/admin/predictions/leagues
    * Admin: Add a new league or tournament explicitly.
    */
-  app.post('/api/admin/predictions/leagues', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions/leagues', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const { name, logo } = req.body;
       if (!name || typeof name !== 'string' || !name.trim()) {
@@ -2125,7 +2171,7 @@ async function startServer() {
    * POST /api/admin/predictions/teams
    * Admin: Add a new team or national team explicitly.
    */
-  app.post('/api/admin/predictions/teams', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions/teams', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const { name, logo } = req.body;
       if (!name || typeof name !== 'string' || !name.trim()) {
@@ -2143,7 +2189,7 @@ async function startServer() {
    * POST /api/admin/predictions/user-prediction
    * Admin: Add or save a prediction for a participant on a match.
    */
-  app.post('/api/admin/predictions/user-prediction', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.post('/api/admin/predictions/user-prediction', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const { userId, predictionMatchId, homeScore, awayScore } = req.body;
 
@@ -2192,7 +2238,7 @@ async function startServer() {
    * PUT /api/admin/predictions/user-prediction/:id
    * Admin: Edit an existing prediction score directly.
    */
-  app.put('/api/admin/predictions/user-prediction/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/predictions/user-prediction/:id', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -2233,7 +2279,7 @@ async function startServer() {
    * DELETE /api/admin/predictions/user-prediction/:id
    * Admin: Delete any user prediction with complete points cleanup.
    */
-  app.delete('/api/admin/predictions/user-prediction/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+  app.delete('/api/admin/predictions/user-prediction/:id', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
     try {
       const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
       if (!idCheck.valid || idCheck.value === undefined) {
@@ -2262,7 +2308,7 @@ async function startServer() {
         const publishedCount = await db.select({ count: sql`count(*)` }).from(news).where(eq(news.status, 'published'));
         const draftsCount = await db.select({ count: sql`count(*)` }).from(news).where(eq(news.status, 'draft'));
         const usersCount = await db.select({ count: sql`count(*)` }).from(users);
-        const adminsCount = await db.select({ count: sql`count(*)` }).from(users).where(sql`role IN ('admin', 'superadmin')`);
+        const adminsCount = await db.select({ count: sql`count(*)` }).from(users).where(sql`role IN ('admin', 'superadmin', 'manager', 'system_manager', 'owner', 'system_owner') OR is_admin = true`);
 
         const latestNewsRows = await db
           .select({
@@ -2337,7 +2383,601 @@ async function startServer() {
     }
   });
 
-  app.get('/api/admin/users', requirePermission('admin_manage'), async (req: AuthRequest, res) => {
+  app.get('/api/admin/system/compatibility-audit', requireOwner, async (req: AuthRequest, res) => {
+    try {
+      const report = await runSystemCompatibilityAudit();
+      return res.json({ success: true, report });
+    } catch (e: any) {
+      console.error('Compatibility audit error:', e);
+      return res.status(500).json({ error: 'فشل فحص توافق قاعدة البيانات' });
+    }
+  });
+
+  /**
+   * GET /api/admin/logs
+   * Fetches paginated activity audit logs with search and category filtering.
+   */
+  app.get('/api/admin/logs', requirePermission('activity_logs_view'), async (req: AuthRequest, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+      const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string, 10) || 50));
+      const offset = (page - 1) * limit;
+
+      const actionFilter = typeof req.query.action === 'string' && req.query.action.trim() && req.query.action !== 'ALL'
+        ? req.query.action.trim()
+        : null;
+      const entityFilter = typeof req.query.entityType === 'string' && req.query.entityType.trim() && req.query.entityType !== 'ALL'
+        ? req.query.entityType.trim()
+        : null;
+      const search = typeof req.query.search === 'string' && req.query.search.trim()
+        ? req.query.search.trim()
+        : null;
+
+      const conditions = [];
+
+      if (actionFilter) {
+        conditions.push(eq(activityLogs.action, actionFilter));
+      }
+
+      if (entityFilter) {
+        conditions.push(eq(activityLogs.entityType, entityFilter));
+      }
+
+      if (search) {
+        const searchPattern = `%${search}%`;
+        conditions.push(
+          or(
+            ilike(activityLogs.action, searchPattern),
+            ilike(activityLogs.entityType, searchPattern),
+            ilike(activityLogs.entityId, searchPattern),
+            ilike(users.name, searchPattern),
+            ilike(users.email, searchPattern),
+            sql`CAST(${activityLogs.details} AS TEXT) ILIKE ${searchPattern}`
+          )
+        );
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countRes] = await withDbRetry(() =>
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(activityLogs)
+          .leftJoin(users, eq(activityLogs.userId, users.id))
+          .where(whereClause)
+      );
+      const total = Number(countRes?.count || 0);
+
+      const rows = await withDbRetry(() =>
+        db
+          .select({
+            id: activityLogs.id,
+            userId: activityLogs.userId,
+            action: activityLogs.action,
+            entityType: activityLogs.entityType,
+            entityId: activityLogs.entityId,
+            details: activityLogs.details,
+            createdAt: activityLogs.createdAt,
+            userName: users.name,
+            userEmail: users.email,
+            userAvatar: users.avatar,
+            userRole: users.role,
+          })
+          .from(activityLogs)
+          .leftJoin(users, eq(activityLogs.userId, users.id))
+          .where(whereClause)
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(limit)
+          .offset(offset)
+      );
+
+      const formattedLogs = rows.map((log) => ({
+        id: log.id,
+        userId: log.userId,
+        action: log.action,
+        entityType: log.entityType,
+        entityId: log.entityId,
+        details: log.details,
+        createdAt: log.createdAt,
+        timestamp: log.createdAt,
+        user: log.userName || log.userEmail || `مشرف #${log.userId}`,
+        userName: log.userName,
+        userEmail: log.userEmail,
+        userAvatar: log.userAvatar,
+        userRole: log.userRole,
+      }));
+
+      // If flat array format requested
+      if (req.query.flat === 'true') {
+        return res.json(formattedLogs);
+      }
+
+      return res.json({
+        logs: formattedLogs,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      });
+    } catch (error: any) {
+      console.error('Error fetching admin logs:', error);
+      return res.status(500).json({ error: 'فشل في جلب سجل العمليات' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/logs
+   * Purges or clears activity logs. System Owner only for security.
+   */
+  app.delete('/api/admin/logs', requireOwner, async (req: AuthRequest, res) => {
+    try {
+      const daysOld = parseInt(req.query.daysOld as string, 10);
+      let deletedCount = 0;
+      if (!isNaN(daysOld) && daysOld > 0) {
+        const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+        const delRes = await withDbRetry(() =>
+          db.delete(activityLogs).where(lt(activityLogs.createdAt, cutoff))
+        );
+        deletedCount = delRes.rowCount || 0;
+      } else {
+        const delRes = await withDbRetry(() => db.delete(activityLogs));
+        deletedCount = delRes.rowCount || 0;
+      }
+
+      if (req.dbUser) {
+        await logActivity(req.dbUser.id, 'PURGE', 'ACTIVITY_LOGS', 'ALL', {
+          daysOld: isNaN(daysOld) ? 'ALL' : daysOld,
+          deletedCount,
+        });
+      }
+
+      return res.json({ success: true, deletedCount });
+    } catch (error: any) {
+      console.error('Error clearing activity logs:', error);
+      return res.status(500).json({ error: 'فشل في مسح سجل العمليات' });
+    }
+  });
+
+  /**
+   * POST /api/errors/report
+   * Report an error from client/frontend or external services
+   */
+  app.post('/api/errors/report', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const { message, stack, source, severity, metadata, endpoint, statusCode } = req.body || {};
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ error: 'حقل رسالة الخطأ مطلوب' });
+      }
+
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress || 'unknown';
+      const userAgent = (req.headers['user-agent'] as string) || 'unknown';
+
+      await logErrorToDb({
+        source: typeof source === 'string' && source ? source : 'client',
+        severity: (['fatal', 'error', 'warning', 'info'].includes(severity) ? severity : 'error') as any,
+        message: message.trim(),
+        stack: typeof stack === 'string' ? stack : undefined,
+        endpoint: typeof endpoint === 'string' ? endpoint : (req.headers['referer'] as string || undefined),
+        statusCode: typeof statusCode === 'number' ? statusCode : 500,
+        userId: req.dbUser?.id,
+        userEmail: req.dbUser?.email,
+        ipAddress: clientIp,
+        userAgent,
+        metadata: metadata || null,
+      });
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error('Error reporting client error:', err);
+      return res.status(500).json({ error: 'فشل في تسجيل الخطأ' });
+    }
+  });
+
+  /**
+   * GET /api/admin/errors
+   * Paginated error logs with search, severity and source filters, and stats summary
+   * Restricted to System Manager & System Owner only
+   */
+  app.get('/api/admin/errors', requireManager, async (req: AuthRequest, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+      const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string, 10) || 50));
+      const offset = (page - 1) * limit;
+
+      const severityFilter = typeof req.query.severity === 'string' && req.query.severity.trim() && req.query.severity !== 'ALL'
+        ? req.query.severity.trim()
+        : null;
+      const sourceFilter = typeof req.query.source === 'string' && req.query.source.trim() && req.query.source !== 'ALL'
+        ? req.query.source.trim()
+        : null;
+      const resolvedFilter = typeof req.query.resolved === 'string' && req.query.resolved.trim() && req.query.resolved !== 'ALL'
+        ? req.query.resolved.trim() === 'true'
+        : null;
+      const search = typeof req.query.search === 'string' && req.query.search.trim()
+        ? req.query.search.trim()
+        : null;
+
+      const conditions = [];
+      if (severityFilter) {
+        conditions.push(eq(errorLogs.severity, severityFilter));
+      }
+      if (sourceFilter) {
+        conditions.push(eq(errorLogs.source, sourceFilter));
+      }
+      if (resolvedFilter !== null) {
+        conditions.push(eq(errorLogs.resolved, resolvedFilter));
+      }
+      if (search) {
+        const searchPattern = `%${search}%`;
+        conditions.push(
+          or(
+            ilike(errorLogs.message, searchPattern),
+            ilike(errorLogs.endpoint, searchPattern),
+            ilike(errorLogs.userEmail, searchPattern),
+            ilike(errorLogs.stack, searchPattern)
+          )
+        );
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countResult] = await withDbRetry(() =>
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(errorLogs)
+          .where(whereClause)
+      );
+      const total = countResult?.count || 0;
+
+      // Stats counters
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const [statsResult] = await withDbRetry(() =>
+        db
+          .select({
+            total: sql<number>`count(*)::int`,
+            fatal: sql<number>`count(case when ${errorLogs.severity} = 'fatal' then 1 end)::int`,
+            error: sql<number>`count(case when ${errorLogs.severity} = 'error' then 1 end)::int`,
+            warning: sql<number>`count(case when ${errorLogs.severity} = 'warning' then 1 end)::int`,
+            unresolved: sql<number>`count(case when ${errorLogs.resolved} = false then 1 end)::int`,
+            today: sql<number>`count(case when ${errorLogs.createdAt} >= ${todayStart} then 1 end)::int`,
+          })
+          .from(errorLogs)
+      );
+
+      const rows = await withDbRetry(() =>
+        db
+          .select({
+            id: errorLogs.id,
+            source: errorLogs.source,
+            severity: errorLogs.severity,
+            message: errorLogs.message,
+            stack: errorLogs.stack,
+            endpoint: errorLogs.endpoint,
+            statusCode: errorLogs.statusCode,
+            userId: errorLogs.userId,
+            userEmail: errorLogs.userEmail,
+            ipAddress: errorLogs.ipAddress,
+            userAgent: errorLogs.userAgent,
+            metadata: errorLogs.metadata,
+            resolved: errorLogs.resolved,
+            resolvedAt: errorLogs.resolvedAt,
+            resolvedBy: errorLogs.resolvedBy,
+            createdAt: errorLogs.createdAt,
+            resolverName: users.name,
+            resolverEmail: users.email,
+          })
+          .from(errorLogs)
+          .leftJoin(users, eq(errorLogs.resolvedBy, users.id))
+          .where(whereClause)
+          .orderBy(desc(errorLogs.createdAt))
+          .limit(limit)
+          .offset(offset)
+      );
+
+      const formattedErrors = rows.map((r) => ({
+        id: r.id,
+        source: r.source,
+        severity: r.severity,
+        message: r.message,
+        stack: r.stack,
+        endpoint: r.endpoint,
+        statusCode: r.statusCode,
+        userId: r.userId,
+        userEmail: r.userEmail,
+        ipAddress: r.ipAddress,
+        userAgent: r.userAgent,
+        metadata: r.metadata,
+        resolved: r.resolved,
+        resolvedAt: r.resolvedAt,
+        resolvedBy: r.resolvedBy,
+        resolvedByName: r.resolverName || r.resolverEmail || null,
+        createdAt: r.createdAt,
+      }));
+
+      return res.json({
+        errors: formattedErrors,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+        stats: statsResult || {
+          total: 0,
+          fatal: 0,
+          error: 0,
+          warning: 0,
+          unresolved: 0,
+          today: 0,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching error logs:', error);
+      return res.status(500).json({ error: 'فشل في جلب سجل الأخطاء' });
+    }
+  });
+
+  /**
+   * GET /api/admin/errors/export
+   * Export error logs as CSV or TXT format file
+   * Restricted to System Manager & System Owner only
+   */
+  app.get('/api/admin/errors/export', requireManager, async (req: AuthRequest, res) => {
+    try {
+      const format = (req.query.format as string)?.toLowerCase() === 'txt' ? 'txt' : 'csv';
+      const severityFilter = typeof req.query.severity === 'string' && req.query.severity.trim() && req.query.severity !== 'ALL'
+        ? req.query.severity.trim()
+        : null;
+      const sourceFilter = typeof req.query.source === 'string' && req.query.source.trim() && req.query.source !== 'ALL'
+        ? req.query.source.trim()
+        : null;
+      const resolvedFilter = typeof req.query.resolved === 'string' && req.query.resolved.trim() && req.query.resolved !== 'ALL'
+        ? req.query.resolved.trim() === 'true'
+        : null;
+      const search = typeof req.query.search === 'string' && req.query.search.trim()
+        ? req.query.search.trim()
+        : null;
+
+      const conditions = [];
+      if (severityFilter) conditions.push(eq(errorLogs.severity, severityFilter));
+      if (sourceFilter) conditions.push(eq(errorLogs.source, sourceFilter));
+      if (resolvedFilter !== null) conditions.push(eq(errorLogs.resolved, resolvedFilter));
+      if (search) {
+        const searchPattern = `%${search}%`;
+        conditions.push(
+          or(
+            ilike(errorLogs.message, searchPattern),
+            ilike(errorLogs.endpoint, searchPattern),
+            ilike(errorLogs.userEmail, searchPattern),
+            ilike(errorLogs.stack, searchPattern)
+          )
+        );
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const rows = await withDbRetry(() =>
+        db
+          .select({
+            id: errorLogs.id,
+            source: errorLogs.source,
+            severity: errorLogs.severity,
+            message: errorLogs.message,
+            stack: errorLogs.stack,
+            endpoint: errorLogs.endpoint,
+            statusCode: errorLogs.statusCode,
+            userId: errorLogs.userId,
+            userEmail: errorLogs.userEmail,
+            ipAddress: errorLogs.ipAddress,
+            userAgent: errorLogs.userAgent,
+            metadata: errorLogs.metadata,
+            resolved: errorLogs.resolved,
+            resolvedAt: errorLogs.resolvedAt,
+            createdAt: errorLogs.createdAt,
+            resolverName: users.name,
+          })
+          .from(errorLogs)
+          .leftJoin(users, eq(errorLogs.resolvedBy, users.id))
+          .where(whereClause)
+          .orderBy(desc(errorLogs.createdAt))
+          .limit(5000)
+      );
+
+      const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+
+      if (format === 'csv') {
+        const escapeCsv = (str: any) => {
+          if (str === null || str === undefined) return '""';
+          const s = String(str).replace(/"/g, '""');
+          return `"${s}"`;
+        };
+
+        const headers = [
+          'المعرف (ID)',
+          'المستوى (Severity)',
+          'المصدر (Source)',
+          'رمز الحالة (Status Code)',
+          'المسار / الرابط (Endpoint)',
+          'رسالة الخطأ (Message)',
+          'البريد الإلكتروني (User Email)',
+          'معرف المستخدم (User ID)',
+          'عنوان IP (IP Address)',
+          'تم الحل (Resolved)',
+          'تاريخ الحدوث (Created At)',
+          'تاريخ المعالجة (Resolved At)',
+          'عولج بواسطة (Resolved By)',
+          'تتبع الخطأ (Stack Trace)',
+        ].map(escapeCsv).join(',');
+
+        const csvLines = rows.map((r) => {
+          return [
+            escapeCsv(r.id),
+            escapeCsv(r.severity),
+            escapeCsv(r.source),
+            escapeCsv(r.statusCode || ''),
+            escapeCsv(r.endpoint || ''),
+            escapeCsv(r.message || ''),
+            escapeCsv(r.userEmail || ''),
+            escapeCsv(r.userId || ''),
+            escapeCsv(r.ipAddress || ''),
+            escapeCsv(r.resolved ? 'نعم' : 'لا'),
+            escapeCsv(r.createdAt ? new Date(r.createdAt).toISOString() : ''),
+            escapeCsv(r.resolvedAt ? new Date(r.resolvedAt).toISOString() : ''),
+            escapeCsv(r.resolverName || ''),
+            escapeCsv(r.stack || ''),
+          ].join(',');
+        });
+
+        // Add UTF-8 BOM for Arabic Excel compatibility
+        const csvContent = '\uFEFF' + [headers, ...csvLines].join('\r\n');
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="kora-errors-${timestampStr}.csv"`);
+        return res.send(csvContent);
+      } else {
+        // Format: TXT
+        let txtContent = `================================================================================\r\n`;
+        txtContent += `تقرير سجل الأخطاء - KORANEWS ERROR LOGS REPORT\r\n`;
+        txtContent += `تاريخ التصدير: ${new Date().toISOString()}\r\n`;
+        txtContent += `إجمالي السجلات: ${rows.length}\r\n`;
+        txtContent += `تم الاستخراج بواسطة: ${req.dbUser?.email || 'Admin'} (ID: ${req.dbUser?.id})\r\n`;
+        txtContent += `================================================================================\r\n\r\n`;
+
+        rows.forEach((r) => {
+          const dateStr = r.createdAt ? new Date(r.createdAt).toISOString() : 'N/A';
+          txtContent += `[#${r.id}] [${r.severity.toUpperCase()}] [${r.source.toUpperCase()}] - ${dateStr}\r\n`;
+          txtContent += `المسار (Endpoint): ${r.endpoint || 'N/A'} | رمز الحالة: ${r.statusCode || 'N/A'}\r\n`;
+          txtContent += `المستخدم: ${r.userEmail ? `${r.userEmail} (ID: ${r.userId})` : 'غير مسجل (Guest)'} | IP: ${r.ipAddress || 'N/A'}\r\n`;
+          txtContent += `حالة الحل: ${r.resolved ? `تم الحل (${r.resolverName || 'مشرف'} - ${r.resolvedAt ? new Date(r.resolvedAt).toISOString() : ''})` : 'قيد الانتظار (لم يتم الحل)'}\r\n`;
+          if (r.userAgent) {
+            txtContent += `المتصفح: ${r.userAgent}\r\n`;
+          }
+          txtContent += `الرسالة:\r\n  ${r.message}\r\n`;
+          if (r.stack) {
+            txtContent += `تتبع المكدس (Stack Trace):\r\n  ${r.stack.replace(/\n/g, '\r\n  ')}\r\n`;
+          }
+          if (r.metadata) {
+            try {
+              txtContent += `بيانات إضافية (Metadata):\r\n  ${JSON.stringify(r.metadata, null, 2).replace(/\n/g, '\r\n  ')}\r\n`;
+            } catch (e) {}
+          }
+          txtContent += `--------------------------------------------------------------------------------\r\n\r\n`;
+        });
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="kora-errors-${timestampStr}.txt"`);
+        return res.send(txtContent);
+      }
+    } catch (error: any) {
+      console.error('Error exporting error logs:', error);
+      return res.status(500).json({ error: 'فشل في تصدير سجل الأخطاء' });
+    }
+  });
+
+  /**
+   * PATCH /api/admin/errors/:id/resolve
+   * Mark error as resolved or unresolved
+   * Restricted to System Manager & System Owner only
+   */
+  app.patch('/api/admin/errors/:id/resolve', requireManager, async (req: AuthRequest, res) => {
+    try {
+      const errorId = parseInt(req.params.id as string, 10);
+      if (isNaN(errorId)) return res.status(400).json({ error: 'معرف خطأ غير صحيح' });
+
+      const resolved = req.body.resolved !== false;
+      const now = new Date();
+
+      const [updated] = await withDbRetry(() =>
+        db
+          .update(errorLogs)
+          .set({
+            resolved,
+            resolvedAt: resolved ? now : null,
+            resolvedBy: resolved ? (req.dbUser?.id || null) : null,
+          })
+          .where(eq(errorLogs.id, errorId))
+          .returning()
+      );
+
+      if (!updated) {
+        return res.status(404).json({ error: 'سجل الخطأ غير موجود' });
+      }
+
+      if (req.dbUser) {
+        await logActivity(req.dbUser.id, resolved ? 'RESOLVE_ERROR' : 'UNRESOLVE_ERROR', 'ERROR_LOG', String(errorId), {
+          message: updated.message?.slice(0, 100),
+          resolved,
+        });
+      }
+
+      return res.json({ success: true, error: updated });
+    } catch (error: any) {
+      console.error('Error updating error resolution status:', error);
+      return res.status(500).json({ error: 'فشل في تحديث حالة الخطأ' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/errors/:id
+   * Delete single error log (Manager or Owner)
+   */
+  app.delete('/api/admin/errors/:id', requireManager, async (req: AuthRequest, res) => {
+    try {
+      const errorId = parseInt(req.params.id as string, 10);
+      if (isNaN(errorId)) return res.status(400).json({ error: 'معرف خطأ غير صحيح' });
+
+      await withDbRetry(() => db.delete(errorLogs).where(eq(errorLogs.id, errorId)));
+
+      if (req.dbUser) {
+        await logActivity(req.dbUser.id, 'DELETE_ERROR', 'ERROR_LOG', String(errorId));
+      }
+
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting error log:', error);
+      return res.status(500).json({ error: 'فشل في حذف سجل الخطأ' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/errors
+   * Purge error logs (System Owner only)
+   */
+  app.delete('/api/admin/errors', requireOwner, async (req: AuthRequest, res) => {
+    try {
+      const daysOld = parseInt(req.query.daysOld as string, 10);
+      const onlyResolved = req.query.onlyResolved === 'true';
+      let deletedCount = 0;
+
+      const conditions = [];
+      if (!isNaN(daysOld) && daysOld > 0) {
+        const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+        conditions.push(lt(errorLogs.createdAt, cutoff));
+      }
+      if (onlyResolved) {
+        conditions.push(eq(errorLogs.resolved, true));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const delRes = await withDbRetry(() => db.delete(errorLogs).where(whereClause));
+      deletedCount = delRes.rowCount || 0;
+
+      if (req.dbUser) {
+        await logActivity(req.dbUser.id, 'PURGE_ERROR_LOGS', 'ERROR_LOG', 'ALL', {
+          daysOld: isNaN(daysOld) ? 'ALL' : daysOld,
+          onlyResolved,
+          deletedCount,
+        });
+      }
+
+      return res.json({ success: true, deletedCount });
+    } catch (error: any) {
+      console.error('Error purging error logs:', error);
+      return res.status(500).json({ error: 'فشل في تفريغ سجل الأخطاء' });
+    }
+  });
+
+  app.get('/api/admin/users', requirePermission('users_view'), async (req: AuthRequest, res) => {
     try {
       const allUsers = await withDbRetry(() => db.select().from(users).orderBy(desc(users.createdAt)));
       const safeUsers = allUsers.map(toSafeUser);
@@ -2348,7 +2988,7 @@ async function startServer() {
     }
   });
 
-  app.put('/api/admin/users/:id', requirePermission('admin_manage'), async (req: AuthRequest, res) => {
+  app.put('/api/admin/users/:id', requirePermission('users_manage'), async (req: AuthRequest, res) => {
     try {
       const targetUserId = parseInt(req.params.id as string, 10);
       if (isNaN(targetUserId)) return res.status(400).json({ error: 'معرف غير صحيح' });
@@ -2360,21 +3000,103 @@ async function startServer() {
       const targetUser = targetUserList[0];
 
       const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
-      const isTargetSuperAdmin = targetUser.role === 'superadmin' || (!!superAdminEmail && targetUser.email?.toLowerCase().trim() === superAdminEmail);
+      const callerIsOwner = isDbUserOwner(req.dbUser);
+      const callerIsManager = isDbUserManager(req.dbUser);
+      
+      const callerHasUsersManage = req.dbUser && checkUserHasPermission(req.dbUser, 'users_manage');
+      const callerHasAdminsManage = req.dbUser && checkUserHasPermission(req.dbUser, 'admins_manage');
 
-      // Only superadmin can modify a superadmin or elevate anyone to superadmin
-      const isRequesterSuperAdmin = req.dbUser.role === 'superadmin' || (!!superAdminEmail && req.dbUser.email?.toLowerCase().trim() === superAdminEmail);
-
-      if (isTargetSuperAdmin && !isRequesterSuperAdmin) {
-        return res.status(403).json({ error: 'لا يمكن تعديل حساب المدير العام الرئيسي إلا من خلاله' });
+      if (!callerIsManager && !callerIsOwner && !callerHasUsersManage && !callerHasAdminsManage) {
+        return res.status(403).json({ error: 'ليس لديك صلاحية إدارة المستخدمين' });
       }
 
-      if (role === 'superadmin' && !isRequesterSuperAdmin) {
-        return res.status(403).json({ error: 'فقط المدير العام يمكنه تعيين مدراء عامين' });
+      const targetIsOwner = isDbUserOwner(targetUser);
+      const targetIsManager = isDbUserManager(targetUser) && !targetIsOwner;
+      const targetIsAdmin = targetUser.role === 'admin' || targetUser.isAdmin;
+
+      // Rule 1: System Owner account can ONLY be modified by a System Owner
+      if (targetIsOwner && !callerIsOwner) {
+        return res.status(403).json({ error: 'لا يمكن تعديل حساب مالك النظام إلا من قِبل مالك النظام' });
       }
 
-      const newRole = role || targetUser.role;
-      const newIsAdmin = newRole === 'admin' || newRole === 'superadmin';
+      // Rule 2: Primary env owner cannot be demoted or deactivated
+      const isTargetPrimaryOwner = !!superAdminEmail && targetUser.email?.toLowerCase().trim() === superAdminEmail;
+      if (isTargetPrimaryOwner && (role === 'user' || role === 'admin' || role === 'manager' || isActive === false)) {
+        return res.status(400).json({ error: 'حساب مالك النظام الأساسي محمي ولا يمكن خفض رتبته أو تعطيله' });
+      }
+
+      // Prevent the ONLY System Owner from demoting or deactivating themselves
+      if (targetIsOwner && (role === 'user' || role === 'admin' || role === 'manager' || isActive === false)) {
+        const ownerCountList = await withDbRetry(() => db.execute(sql`SELECT count(*) as count FROM ${users} WHERE role IN ('owner', 'system_owner', 'superadmin')`));
+        const ownerCount = Number(ownerCountList[0]?.count || 0);
+        if (ownerCount <= 1) {
+          return res.status(400).json({ error: 'لا يمكنك خفض رتبتك أو تعطيل حسابك لأنك المالك الوحيد للنظام' });
+        }
+      }
+
+      // Rule 3: System Manager can ONLY be modified or demoted by a System Owner
+      if (targetIsManager && !callerIsOwner) {
+        return res.status(403).json({ error: 'فقط مالك النظام يمكنه تعديل أو خفض رتبة مدير النظام' });
+      }
+
+      // Rule 3b: Admin can ONLY be modified by Manager or Owner or Admin with admins_manage
+      if (targetIsAdmin && !callerIsOwner && !callerIsManager && !callerHasAdminsManage) {
+        return res.status(403).json({ error: 'ليس لديك صلاحية لتعديل حساب مشرف آخر' });
+      }
+
+      // Rule 4: Elevating to System Owner requires System Owner caller
+      if ((role === 'owner' || role === 'system_owner' || role === 'superadmin') && !callerIsOwner) {
+        return res.status(403).json({ error: 'فقط مالك النظام يمكنه تعيين مالك نظام جديد' });
+      }
+
+      // Rule 5: Elevating to System Manager requires System Owner caller
+      if ((role === 'manager' || role === 'system_manager') && !callerIsOwner) {
+        return res.status(403).json({ error: 'فقط مالك النظام يمكنه ترقية مستخدم إلى مدير نظام' });
+      }
+
+      // Rule 6: Elevating to Admin requires Manager/Owner or admins_manage
+      if (role === 'admin' && !callerIsOwner && !callerIsManager && !callerHasAdminsManage) {
+        return res.status(403).json({ error: 'ليس لديك صلاحية لتعيين مشرف جديد' });
+      }
+
+      // Determine standardized new role
+      let newRole = role || targetUser.role || 'user';
+      if (newRole === 'system_owner' || newRole === 'superadmin') newRole = 'owner';
+      if (newRole === 'system_manager') newRole = 'manager';
+
+      const newIsAdmin = newRole === 'admin' || newRole === 'manager' || newRole === 'owner';
+
+      // Set permissions based on new dynamic system - we respect what's passed in from the frontend
+      // Admin users define their permissions array. Manager/Owner permissions array is irrelevant now because checkUserHasPermission handles them.
+      let finalPermissions: string[] = [];
+      if (newRole === 'admin') {
+        let rawPerms: string[] = [];
+        if (Array.isArray(permissions)) {
+          rawPerms = permissions;
+        } else if (Array.isArray(targetUser.permissions)) {
+          rawPerms = targetUser.permissions;
+        }
+
+        // Normalize old permissions to new ones
+        const normalizedPerms = new Set(rawPerms);
+        if (normalizedPerms.has('news_manage')) {
+          normalizedPerms.add('news_add').add('news_edit').add('news_delete').add('news_publish');
+        }
+        if (normalizedPerms.has('matches_manage')) {
+          normalizedPerms.add('matches_view').add('matches_edit').add('matches_sync');
+        }
+        if (normalizedPerms.has('contests_manage')) {
+          normalizedPerms.add('predictions_manage');
+        }
+        if (normalizedPerms.has('admin_manage') || normalizedPerms.has('admins_manage')) {
+          normalizedPerms.add('admins_view').add('admins_add').add('admins_edit').add('admins_remove').add('admins_permissions_manage');
+        }
+        if (normalizedPerms.has('users_view')) {
+          // If they just had view, they keep view.
+        }
+
+        finalPermissions = Array.from(normalizedPerms);
+      }
 
       await withDbRetry(() =>
         db
@@ -2382,7 +3104,7 @@ async function startServer() {
           .set({
             role: newRole,
             isAdmin: newIsAdmin,
-            permissions: permissions || targetUser.permissions,
+            permissions: finalPermissions,
             isActive: isActive !== undefined ? isActive : targetUser.isActive,
           })
           .where(eq(users.id, targetUserId))
@@ -2394,16 +3116,23 @@ async function startServer() {
         if (targetUser.email) revokeAllUserSessions(targetUser.email);
       }
 
-      await logActivity(req.dbUser.id, 'UPDATE', 'USER', String(targetUserId), { role: newRole, permissions, isActive });
-      return res.json({ success: true });
+      await logActivity(req.dbUser.id, 'UPDATE', 'USER', String(targetUserId), {
+        role: newRole,
+        permissions: finalPermissions,
+        isActive,
+      });
+
+      return res.json({ success: true, message: 'تم تحديث بيانات وصلاحيات المستخدم بنجاح' });
     } catch (e) {
       console.error('Admin user update error:', e);
       return res.status(500).json({ error: true });
     }
   });
 
-  app.delete('/api/admin/users/:id', requireSuperAdmin, async (req: AuthRequest, res) => {
+  app.delete('/api/admin/users/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
+      if (!req.dbUser) return res.status(401).json({ error: 'غير مصرح' });
+
       const targetUserId = parseInt(req.params.id as string, 10);
       if (isNaN(targetUserId)) return res.status(400).json({ error: 'معرف غير صحيح' });
 
@@ -2412,8 +3141,42 @@ async function startServer() {
       const targetUser = targetUserList[0];
 
       const superAdminEmail = (process.env.SUPERADMIN_EMAIL || '').toLowerCase().trim();
-      if (targetUser.role === 'superadmin' || (!!superAdminEmail && targetUser.email?.toLowerCase().trim() === superAdminEmail)) {
-        return res.status(400).json({ error: 'حساب مالك النظام والمدير العام الرئيسي محمي بالكامل ولا يمكن حذفه' });
+      const callerIsOwner = isDbUserOwner(req.dbUser);
+      const callerIsManager = isDbUserManager(req.dbUser);
+      
+      const callerHasUsersManage = checkUserHasPermission(req.dbUser, 'users_manage');
+      const callerHasAdminsManage = checkUserHasPermission(req.dbUser, 'admins_manage');
+
+      if (!callerIsManager && !callerIsOwner && !callerHasUsersManage && !callerHasAdminsManage) {
+        return res.status(403).json({ error: 'ليس لديك صلاحية لحذف المستخدمين' });
+      }
+
+      const isTargetPrimaryOwner = !!superAdminEmail && targetUser.email?.toLowerCase().trim() === superAdminEmail;
+      if (isTargetPrimaryOwner) {
+        return res.status(400).json({ error: 'حساب مالك النظام الأساسي محمي ولا يمكن حذفه' });
+      }
+
+      const targetIsOwner = isDbUserOwner(targetUser);
+      const targetIsManager = isDbUserManager(targetUser) && !targetIsOwner;
+      const targetIsAdmin = targetUser.role === 'admin' || targetUser.isAdmin;
+
+      if (targetIsOwner) {
+        if (!callerIsOwner) {
+          return res.status(403).json({ error: 'لا يمكن حذف حساب مالك النظام إلا من قِبل مالك النظام' });
+        }
+        const ownerCountList = await withDbRetry(() => db.execute(sql`SELECT count(*) as count FROM ${users} WHERE role IN ('owner', 'system_owner', 'superadmin')`));
+        const ownerCount = Number(ownerCountList[0]?.count || 0);
+        if (ownerCount <= 1) {
+          return res.status(400).json({ error: 'لا يمكنك حذف هذا الحساب لأنه المالك الوحيد المتبقي للنظام' });
+        }
+      }
+
+      if (targetIsManager && !callerIsOwner) {
+        return res.status(403).json({ error: 'فقط مالك النظام يمكنه حذف مدير نظام' });
+      }
+
+      if (targetIsAdmin && !callerIsOwner && !callerIsManager && !callerHasAdminsManage) {
+        return res.status(403).json({ error: 'ليس لديك صلاحية لحذف حساب مشرف آخر' });
       }
 
       // Invalidate all active sessions for target user
@@ -2455,15 +3218,33 @@ async function startServer() {
   // Global API error handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Unhandled API error:', err);
+    const authReq = req as AuthRequest;
+    const statusCode = err.status || err.statusCode || 500;
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress || 'unknown';
+
+    logErrorToDb({
+      source: 'api',
+      severity: statusCode >= 500 ? 'fatal' : 'error',
+      message: err.message || 'Internal Server Error',
+      stack: err.stack,
+      endpoint: `${req.method} ${req.originalUrl || req.url}`,
+      statusCode,
+      userId: authReq.dbUser?.id,
+      userEmail: authReq.dbUser?.email,
+      ipAddress: clientIp,
+      userAgent: req.headers['user-agent'] as string,
+    }).catch(() => {});
+
     if (res.headersSent) {
       return next(err);
     }
-    return res.status(500).json({ error: true, message: 'حدث خطأ في الخادم' });
+    return res.status(statusCode).json({ error: true, message: 'حدث خطأ في الخادم' });
   });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[KoraNews Server] Running smoothly on http://0.0.0.0:${PORT}`);
     seedSaudiAndNationalTeams().catch((err) => console.error('Error seeding Saudi & National teams:', err));
+    runSystemCompatibilityAudit().catch((err) => console.error('Error running system compatibility audit:', err));
   });
 }
 

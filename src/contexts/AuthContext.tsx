@@ -7,13 +7,38 @@ import {
   GoogleAuthProvider
 } from 'firebase/auth';
 import { auth, browserPopupRedirectResolver } from '../lib/firebase';
-import { AuthUser } from '../utils/authHelpers';
+import {
+  AuthUser,
+  isSystemOwner,
+  isSystemManager,
+  isAnyAdmin,
+  hasUserPermission,
+  hasUserAnyPermission,
+  hasUserAllPermissions,
+  getRoleBadgeInfo
+} from '../utils/authHelpers';
 import { safeStorage } from '../utils/safeStorage';
 
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   token: string | null;
+
+  // Direct boolean flags for backward-compatibility & clean JSX condition checks
+  isOwner: boolean;
+  isManager: boolean;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+
+  // Centralized Helper functions bound to the active user (Frontend UI helpers)
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (...permissions: (string | string[])[]) => boolean;
+  hasAllPermissions: (...permissions: (string | string[])[]) => boolean;
+  isSystemOwner: () => boolean;
+  isSystemManager: () => boolean;
+  isAdminRole: () => boolean;
+
+  roleBadge: { label: string; englishLabel: string; color: string; badgeClass: string; rank: number; icon: string };
   signInWithGoogle: () => Promise<boolean>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name?: string) => Promise<void>;
@@ -25,10 +50,23 @@ interface AuthContextType {
   logout: () => Promise<void>;
 }
 
+const defaultRoleBadge = getRoleBadgeInfo('user');
+
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   token: null,
+  isOwner: false,
+  isManager: false,
+  isAdmin: false,
+  isSuperAdmin: false,
+  hasPermission: () => false,
+  hasAnyPermission: () => false,
+  hasAllPermissions: () => false,
+  isSystemOwner: () => false,
+  isSystemManager: () => false,
+  isAdminRole: () => false,
+  roleBadge: defaultRoleBadge,
   signInWithGoogle: async () => false,
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
@@ -39,6 +77,18 @@ const AuthContext = createContext<AuthContextType>({
   deleteAccount: async () => {},
   logout: async () => {},
 });
+
+function normalizeAuthUser(rawUser: any): AuthUser | null {
+  if (!rawUser) return null;
+  const role = rawUser.role || (rawUser.isAdmin ? 'admin' : 'user');
+  const isAdmin = isAnyAdmin({ ...rawUser, role });
+  return {
+    ...rawUser,
+    role,
+    isAdmin,
+    permissions: Array.isArray(rawUser.permissions) ? rawUser.permissions : [],
+  };
+}
 
 function extractErrorMessage(data: any, fallback: string): string {
   if (typeof data?.error === 'string') return data.error;
@@ -54,10 +104,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper to persist session safely
   const saveSession = (sessionToken: string, userObj: any) => {
+    const safeUser = normalizeAuthUser(userObj);
     safeStorage.setItem('srv_session_token', sessionToken);
-    safeStorage.setItem('srv_session_user', JSON.stringify(userObj));
+    safeStorage.setItem('srv_session_user', JSON.stringify(safeUser));
     setToken(sessionToken);
-    setUser(userObj);
+    setUser(safeUser);
   };
 
   const clearSession = () => {
@@ -82,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (savedToken && savedUser) {
       try {
-        const parsed = JSON.parse(savedUser);
+        const parsed = normalizeAuthUser(JSON.parse(savedUser));
         setToken(savedToken);
         setUser(parsed);
 
@@ -119,7 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
           .then((data) => {
             if (data) {
-              const merged = { ...parsed, ...data };
+              const merged = normalizeAuthUser({ ...parsed, ...data });
               setUser(merged);
               safeStorage.setItem('srv_session_user', JSON.stringify(merged));
             }
@@ -488,11 +539,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const isOwner = isSystemOwner(user);
+  const isManager = isSystemManager(user);
+  const isAdmin = isAnyAdmin(user);
+  const isSuperAdmin = isOwner;
+
+  const hasPermission = (permission: string) => hasUserPermission(user, permission);
+  const hasAnyPermission = (...permissions: (string | string[])[]) => hasUserAnyPermission(user, ...permissions);
+  const hasAllPermissions = (...permissions: (string | string[])[]) => hasUserAllPermissions(user, ...permissions);
+  const isSystemOwnerFn = () => isSystemOwner(user);
+  const isSystemManagerFn = () => isSystemManager(user);
+  const isAdminRoleFn = () => isAnyAdmin(user);
+
+  const roleBadge = getRoleBadgeInfo(user?.role);
+
   return (
     <AuthContext.Provider value={{
       user,
       loading,
       token,
+      isOwner,
+      isManager,
+      isAdmin,
+      isSuperAdmin,
+      hasPermission,
+      hasAnyPermission,
+      hasAllPermissions,
+      isSystemOwner: isSystemOwnerFn,
+      isSystemManager: isSystemManagerFn,
+      isAdminRole: isAdminRoleFn,
+      roleBadge,
       signInWithGoogle,
       signInWithEmail,
       signUpWithEmail,

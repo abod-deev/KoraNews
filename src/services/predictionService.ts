@@ -525,12 +525,19 @@ export function determineMatchPredictionState(
     return 'calculated';
   }
 
-  const statusUpper = (matchStatus || '').toUpperCase();
-  if (statusUpper === 'FINISHED') {
+  const statusUpper = (matchStatus || '').toUpperCase().trim();
+  if (statusUpper === 'FINISHED' || statusUpper === 'FT' || statusUpper === 'AET' || statusUpper === 'PEN_PK' || statusUpper === 'PEN') {
     return isConfirmedByAdmin ? 'calculated' : 'pending_admin';
   }
 
-  if (statusUpper === 'LIVE' || statusUpper === 'IN_PLAY' || statusUpper === 'PAUSED') {
+  if (
+    statusUpper === 'LIVE' ||
+    statusUpper === 'IN_PLAY' ||
+    statusUpper === 'PAUSED' ||
+    statusUpper === '1H' ||
+    statusUpper === '2H' ||
+    statusUpper === 'HT'
+  ) {
     return 'live';
   }
 
@@ -547,9 +554,19 @@ export function determineMatchPredictionState(
     return 'upcoming';
   }
 
-  if (!matchDate) return 'upcoming';
-  const kickoffTime = new Date(matchDate).getTime();
-  if (isNaN(kickoffTime)) return 'upcoming';
+  if (!matchDate) return 'open';
+  
+  let kickoffTime: number;
+  if (typeof matchDate === 'string' && matchDate.length > 0) {
+    const normalized = matchDate.includes('T') && !matchDate.endsWith('Z') && !matchDate.includes('+') && !matchDate.includes('-')
+      ? matchDate + 'Z'
+      : matchDate;
+    kickoffTime = new Date(normalized).getTime();
+  } else {
+    kickoffTime = new Date(matchDate).getTime();
+  }
+
+  if (isNaN(kickoffTime)) return 'open';
 
   if (nowMs >= kickoffTime) {
     return 'live';
@@ -570,12 +587,19 @@ export function isMatchOpenForPrediction(
   nowMs: number = Date.now()
 ): boolean {
   if (!predictionMatchIsActive) return false;
-  const statusUpper = (matchStatus || '').toUpperCase();
+  const statusUpper = (matchStatus || '').toUpperCase().trim();
   if (
     statusUpper === 'FINISHED' ||
+    statusUpper === 'FT' ||
+    statusUpper === 'AET' ||
+    statusUpper === 'PEN_PK' ||
+    statusUpper === 'PEN' ||
     statusUpper === 'LIVE' ||
     statusUpper === 'IN_PLAY' ||
     statusUpper === 'PAUSED' ||
+    statusUpper === '1H' ||
+    statusUpper === '2H' ||
+    statusUpper === 'HT' ||
     statusUpper === 'CANCELLED' ||
     statusUpper === 'POSTPONED' ||
     statusUpper === 'SUSPENDED' ||
@@ -583,10 +607,19 @@ export function isMatchOpenForPrediction(
   ) {
     return false;
   }
-  if (!matchDate) return false;
+  if (!matchDate) return true;
 
-  const kickoffTime = new Date(matchDate).getTime();
-  if (isNaN(kickoffTime)) return false;
+  let kickoffTime: number;
+  if (typeof matchDate === 'string' && matchDate.length > 0) {
+    const normalized = matchDate.includes('T') && !matchDate.endsWith('Z') && !matchDate.includes('+') && !matchDate.includes('-')
+      ? matchDate + 'Z'
+      : matchDate;
+    kickoffTime = new Date(normalized).getTime();
+  } else {
+    kickoffTime = new Date(matchDate).getTime();
+  }
+
+  if (isNaN(kickoffTime)) return true;
 
   // Closes strictly 1 minute (60,000ms) before match start time based on Server Time
   const lockTime = kickoffTime - 60 * 1000;
@@ -1128,13 +1161,40 @@ export async function saveUserPrediction(
       throw new Error('المسابقة غير نشطة حالياً ولا يمكن استقبال توقعات جديدة');
     }
 
-    // 4. STRICT PARTICIPANT CHECK: Must be approved specifically in THIS contest
-    const participant = await db.query.contestParticipants.findFirst({
+    // 4. PARTICIPANT CHECK: Must be approved specifically in THIS contest
+    let participant = await db.query.contestParticipants.findFirst({
       where: and(
         eq(contestParticipants.userId, userId),
         eq(contestParticipants.contestId, matchContestId)
       ),
     });
+
+    const userObj = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    const isStaffUser = userObj && (
+      userObj.isAdmin === true ||
+      userObj.role === 'admin' ||
+      userObj.role === 'manager' ||
+      userObj.role === 'system_manager' ||
+      userObj.role === 'owner' ||
+      userObj.role === 'system_owner' ||
+      userObj.role === 'superadmin'
+    );
+
+    if (!participant && isStaffUser) {
+      // Auto-approve staff user as participant
+      const [newP] = await db.insert(contestParticipants).values({
+        userId,
+        contestId: matchContestId,
+        status: 'approved',
+        appliedAt: new Date(),
+        reviewedAt: new Date(),
+        reviewedBy: userId,
+      }).returning();
+      participant = newP;
+    }
 
     if (!participant || participant.status !== 'approved') {
       if (!participant) {
@@ -1152,10 +1212,19 @@ export async function saveUserPrediction(
     }
 
     const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
-    const matchDateVal = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
+    const matchDateVal: any = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
 
     // 5. Strict Backend Pre-Match Lock Check (1 minute before kickoff)
-    const kickoffTime = new Date(matchDateVal).getTime();
+    let kickoffTime: number;
+    if (typeof matchDateVal === 'string' && matchDateVal.length > 0) {
+      const normalized = matchDateVal.includes('T') && !matchDateVal.endsWith('Z') && !matchDateVal.includes('+') && !matchDateVal.includes('-')
+        ? matchDateVal + 'Z'
+        : matchDateVal;
+      kickoffTime = new Date(normalized).getTime();
+    } else {
+      kickoffTime = new Date(matchDateVal).getTime();
+    }
+
     if (!isNaN(kickoffTime) && Date.now() >= kickoffTime - 60 * 1000) {
       throw new Error('تم إغلاق التوقعات لهذه المباراة قبل دقيقة واحدة من موعد انطلاقها');
     }

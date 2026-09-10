@@ -1,19 +1,14 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Calendar, Newspaper, User, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { checkIsAdmin } from '../../utils/authHelpers';
 import { preloadRoute } from '../../utils/routePreload';
 
 export default function BottomNav() {
   const location = useLocation();
   const { user } = useAuth();
 
-  const canAccessAdmin = !!(
-    user &&
-    (user.isAdmin ||
-      user.role === 'admin' ||
-      user.role === 'superadmin' ||
-      user.email === 'abod46071@gmail.com')
-  );
+  const canAccessAdmin = checkIsAdmin(user);
 
   const navItems = [
     {

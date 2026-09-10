@@ -208,6 +208,30 @@ export async function initializeDatabaseSchema() {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS error_logs (
+        id SERIAL PRIMARY KEY,
+        source TEXT DEFAULT 'server' NOT NULL,
+        severity TEXT DEFAULT 'error' NOT NULL,
+        message TEXT NOT NULL,
+        stack TEXT,
+        endpoint TEXT,
+        status_code INTEGER,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        user_email TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        metadata JSONB,
+        resolved BOOLEAN DEFAULT FALSE NOT NULL,
+        resolved_at TIMESTAMP,
+        resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_error_logs_source ON error_logs(source);
+      CREATE INDEX IF NOT EXISTS idx_error_logs_severity ON error_logs(severity);
+      CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs(created_at);
+      CREATE INDEX IF NOT EXISTS idx_error_logs_resolved ON error_logs(resolved);
+
       CREATE TABLE IF NOT EXISTS contest_participants (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

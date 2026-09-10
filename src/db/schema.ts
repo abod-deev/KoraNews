@@ -209,6 +209,31 @@ export const activityLogs = pgTable('activity_logs', {
   createdAtIdx: index('idx_activity_logs_created_at').on(table.createdAt),
 }));
 
+export const errorLogs = pgTable('error_logs', {
+  id: serial('id').primaryKey(),
+  source: text('source').default('server').notNull(), // 'server' | 'client' | 'api' | 'auth' | 'database'
+  severity: text('severity').default('error').notNull(), // 'fatal' | 'error' | 'warning' | 'info'
+  message: text('message').notNull(),
+  stack: text('stack'),
+  endpoint: text('endpoint'),
+  statusCode: integer('status_code'),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+  userEmail: text('user_email'),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  metadata: jsonb('metadata'),
+  resolved: boolean('resolved').default(false).notNull(),
+  resolvedAt: timestamp('resolved_at'),
+  resolvedBy: integer('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  sourceIdx: index('idx_error_logs_source').on(table.source),
+  severityIdx: index('idx_error_logs_severity').on(table.severity),
+  createdAtIdx: index('idx_error_logs_created_at').on(table.createdAt),
+  resolvedIdx: index('idx_error_logs_resolved').on(table.resolved),
+  endpointIdx: index('idx_error_logs_endpoint').on(table.endpoint),
+}));
+
 export const standingsCache = pgTable('standings_cache', {
   leagueId: text('league_id').primaryKey(),
   season: text('season').default('2026').notNull(),

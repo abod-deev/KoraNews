@@ -97,7 +97,7 @@ export default function PredictionMatchCard({
     m.status === '2H' ||
     m.status === 'HT';
   const isOpen =
-    isContestActive &&
+    contestStatus !== 'completed' &&
     (predictionMatch.isOpenForPrediction || predictionMatch.matchState === 'open') &&
     !isFinished &&
     !isLive;
@@ -386,7 +386,7 @@ export default function PredictionMatchCard({
                   </div>
                 </div>
               </div>
-            ) : isOpen && isLoggedIn && isApprovedParticipant ? (
+            ) : isOpen ? (
               <div className="flex flex-col items-center w-full">
                 <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 whitespace-nowrap">
                   ضع توقعك للنتيجة
@@ -466,7 +466,7 @@ export default function PredictionMatchCard({
                   VS
                 </div>
                 <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 text-center">
-                  {isOpen ? 'سجل للتوقع' : 'التوقع مغلق'}
+                  التوقع مغلق
                 </span>
               </div>
             )}

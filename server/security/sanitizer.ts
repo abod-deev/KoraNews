@@ -19,27 +19,39 @@ export interface SafeUserDTO {
 /**
  * Strips password, passwordHash, and internal sensitive database fields from user objects.
  */
-export function toSafeUser(user: any): SafeUserDTO {
+export function toSafeUser(user: Record<string, unknown> | null | undefined): SafeUserDTO {
   if (!user) {
     throw new Error('Invalid user object provided for serialization');
   }
 
-  const role = user.role || (user.isAdmin || user.is_admin ? 'admin' : 'user');
-  const isAdmin = role === 'admin' || role === 'superadmin' || !!user.isAdmin || !!user.is_admin;
-  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  const role = typeof user.role === 'string' && user.role
+    ? user.role
+    : (user.isAdmin || user.is_admin ? 'admin' : 'user');
+
+  const isAdmin =
+    role === 'admin' ||
+    role === 'manager' ||
+    role === 'system_manager' ||
+    role === 'owner' ||
+    role === 'system_owner' ||
+    role === 'superadmin' ||
+    Boolean(user.isAdmin) ||
+    Boolean(user.is_admin);
+
+  const permissions = Array.isArray(user.permissions) ? (user.permissions as string[]) : [];
 
   return {
-    id: user.id,
-    uid: user.uid,
-    email: (user.email || '').toLowerCase().trim(),
-    name: user.name || (user.email ? user.email.split('@')[0] : 'مستخدم'),
-    displayName: user.name || (user.email ? user.email.split('@')[0] : 'مستخدم'),
-    avatar: user.avatar || '/default-avatar.svg',
+    id: typeof user.id === 'number' ? user.id : undefined,
+    uid: String(user.uid || ''),
+    email: (typeof user.email === 'string' ? user.email : '').toLowerCase().trim(),
+    name: typeof user.name === 'string' && user.name ? user.name : (typeof user.email === 'string' && user.email ? user.email.split('@')[0] : 'مستخدم'),
+    displayName: typeof user.name === 'string' && user.name ? user.name : (typeof user.email === 'string' && user.email ? user.email.split('@')[0] : 'مستخدم'),
+    avatar: typeof user.avatar === 'string' && user.avatar ? user.avatar : '/default-avatar.svg',
     role,
     permissions,
     isAdmin,
-    isActive: user.isActive !== undefined ? !!user.isActive : (user.is_active !== undefined ? !!user.is_active : true),
-    createdAt: user.createdAt || user.created_at || null,
+    isActive: user.isActive !== undefined ? Boolean(user.isActive) : (user.is_active !== undefined ? Boolean(user.is_active) : true),
+    createdAt: (user.createdAt as Date | string) || (user.created_at as Date | string) || null,
   };
 }
 

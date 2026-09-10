@@ -1545,10 +1545,46 @@ export default function AdminPredictionsManager({
                 </div>
               </div>
 
+              {/* Active Contest Interactive Controls Panel */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50/30 dark:from-slate-800/60 dark:to-blue-950/20 border border-slate-200/80 dark:border-slate-700 space-y-3">
+                <div className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  إجراءات سريعة للمسابقة النشطة:
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setSubTab('participants')}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>عرض المشاركين في المسابقة الحالية ({activeContest.participantsCount ?? participants.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubTab('matches')}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+                  >
+                    <Trophy className="w-4 h-4" />
+                    <span>عرض المباريات الخاصة بالمسابقة الحالية ({activeContest.matchesCount ?? predictionMatches.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubTab('settings')}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span>إعدادات المسابقة الحالية</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Prevention Notice */}
               <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-2.5">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>توجد مسابقة حالية. يجب إنهاؤها أولًا قبل إنشاء مسابقة جديدة.</span>
+                <span>توجد مسابقة حالية نشطة. يجب إنهاؤها أولًا قبل إمكانية إنشاء مسابقة جديدة.</span>
               </div>
             </div>
           ) : (
@@ -3025,6 +3061,30 @@ export default function AdminPredictionsManager({
               </button>
             </div>
           </form>
+
+          {/* End Active Contest Section within Contest Settings */}
+          {activeContest && activeContest.status === 'active' && (
+            <div className="mt-6 pt-5 border-t border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/30 p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-xs font-black text-rose-800 dark:text-rose-300 flex items-center gap-2">
+                  <Ban className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                  إنهاء المسابقة الحالية
+                </h4>
+                <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1 font-medium">
+                  عند إنهاء المسابقة الحالية، سيتوقف استقبال أي توقعات جديدة وسيتم نقل المسابقة ومخرجاتها إلى أرشيف المسابقات المنتهية.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCompleteContest}
+                disabled={isActionLoading}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer shrink-0"
+              >
+                <Ban className="w-4 h-4" />
+                <span>إنهاء المسابقة الآن</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

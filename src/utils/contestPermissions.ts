@@ -1,3 +1,5 @@
+import { checkUserHasPermission, PERMISSIONS } from '../constants/permissions.ts';
+
 export interface ContestInfo {
   id?: number;
   name?: string;
@@ -46,18 +48,17 @@ export function getContestPermissions(
   const contestStatus: 'active' | 'completed' | 'none' =
     rawStatus === 'active' ? 'active' : rawStatus === 'completed' ? 'completed' : 'none';
 
-  const isAdmin = !!(
-    user &&
-    (user.role === 'admin' ||
-      user.role === 'superadmin' ||
-      user.isAdmin === true ||
-      (Array.isArray(user.permissions) && user.permissions.includes('matches_manage')))
-  );
+  const isUserAdmin = checkUserHasPermission(user, PERMISSIONS.PREDICTIONS_VIEW);
+  const canManageContest = checkUserHasPermission(user, PERMISSIONS.PREDICTIONS_MANAGE);
+  const canAddPredictionMatch = checkUserHasPermission(user, PERMISSIONS.PREDICTIONS_MATCH_ADD) && contestStatus === 'active';
+  const canEndContest = checkUserHasPermission(user, PERMISSIONS.PREDICTIONS_CONTEST_END) && contestStatus === 'active';
+  const canDeleteContest = checkUserHasPermission(user, PERMISSIONS.PREDICTIONS_CONTEST_DELETE) && (contestStatus === 'completed' || currentContest?.status === 'completed');
 
   const participationStatus: 'not_registered' | 'pending' | 'approved' | 'rejected' | 'blocked' =
     participationInfo?.status || 'not_registered';
 
-  const isParticipant = participationStatus === 'approved';
+  // Admins, System Managers, and System Owners are automatically considered participants for testing/usage
+  const isParticipant = isUserAdmin || participationStatus === 'approved';
 
   // Rules:
   // 1. canParticipate: Only if ACTIVE contest and not registered yet
@@ -69,25 +70,13 @@ export function getContestPermissions(
   // 3. canEditPrediction: Base prediction capability
   const canEditPrediction = canPredict;
 
-  // 4. canDeletePrediction: Regular users cannot delete predictions; only admins
-  const canDeletePrediction = isAdmin;
-
-  // 5. canManageContest: Admin only
-  const canManageContest = isAdmin;
-
-  // 6. canAddPredictionMatch: Admin only + ACTIVE contest
-  const canAddPredictionMatch = isAdmin && contestStatus === 'active';
-
-  // 7. canEndContest: Admin only + ACTIVE contest
-  const canEndContest = isAdmin && contestStatus === 'active';
-
-  // 8. canDeleteContest: Admin only + COMPLETED contest
-  const canDeleteContest = isAdmin && (contestStatus === 'completed' || currentContest?.status === 'completed');
+  // 4. canDeletePrediction: Regular users cannot delete predictions; only admins with predictions_manage
+  const canDeletePrediction = canManageContest;
 
   return {
     currentContest,
     contestStatus,
-    isAdmin,
+    isAdmin: isUserAdmin,
     isParticipant,
     participationStatus,
     canParticipate,

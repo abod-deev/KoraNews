@@ -72,7 +72,7 @@ interface UserPredictionStats {
 
 export default function Profile() {
   useSEO('الملف الشخصي والإحصائيات', 'إدارة حسابك وبياناتك الشخصية وسجل توقعاتك');
-  const { user, token, loading: authLoading, updateUserProfile, deleteAccount, logout } = useAuth();
+  const { user, token, loading: authLoading, updateUserProfile, deleteAccount, logout, roleBadge, isOwner, isManager, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   // Profile data states
@@ -325,8 +325,6 @@ export default function Profile() {
     );
   }
 
-  const isSuperAdmin = user.role === 'superadmin';
-  const isAdmin = user.isAdmin || user.role === 'admin' || isSuperAdmin;
   const currentAvatarSrc = avatarUrl || DEFAULT_AVATAR;
   const hasCustomAvatar = avatarUrl && avatarUrl !== DEFAULT_AVATAR;
 
@@ -463,32 +461,38 @@ export default function Profile() {
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2.5 flex-wrap justify-center sm:justify-start">
-                  <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
-                    {displayName || 'متسابق التوقعات'}
-                  </h1>
+                <div className="flex flex-col items-center sm:items-start gap-1 mb-2">
+                  <div className="flex items-center gap-2.5 flex-wrap justify-center sm:justify-start">
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
+                      {displayName || 'متسابق التوقعات'}
+                    </h1>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTempName(displayName);
-                      setIsEditingName(true);
-                    }}
-                    className="p-1.5 rounded-xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors cursor-pointer"
-                    title="تعديل الاسم"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTempName(displayName);
+                        setIsEditingName(true);
+                      }}
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors cursor-pointer"
+                      title="تعديل الاسم"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  </div>
 
-                  {isSuperAdmin && (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                      <Shield className="w-3.5 h-3.5" /> مالك النظام
-                    </span>
-                  )}
-                  {!isSuperAdmin && isAdmin && (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                      <Shield className="w-3.5 h-3.5" /> مشرف الموقع
-                    </span>
+                  {isAdmin && (
+                    <div className="flex justify-center sm:justify-start mt-1">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border ${roleBadge.badgeClass}`}>
+                        {roleBadge.rank === 4 ? (
+                          <Crown className="w-3.5 h-3.5 text-amber-500" />
+                        ) : roleBadge.rank === 3 ? (
+                          <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                        ) : (
+                          <Shield className="w-3.5 h-3.5 text-emerald-500" />
+                        )}
+                        <span>{roleBadge.label}</span>
+                      </span>
+                    </div>
                   )}
                 </div>
               )}
@@ -731,7 +735,7 @@ export default function Profile() {
           <span>تسجيل الخروج</span>
         </button>
 
-        {!isSuperAdmin && (
+        {!isOwner && (
           <button
             type="button"
             onClick={() => setIsDeleteModalOpen(true)}
