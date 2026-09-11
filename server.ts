@@ -157,6 +157,27 @@ export async function logErrorToDb(data: {
   }
 }
 
+// Global process error handlers to log unhandled server exceptions
+process.on('uncaughtException', (err: any) => {
+  console.error('[Process Uncaught Exception]:', err);
+  logErrorToDb({
+    source: 'server_uncaught',
+    severity: 'fatal',
+    message: err?.message || String(err),
+    stack: err?.stack,
+  }).catch(() => {});
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[Process Unhandled Rejection]:', reason);
+  logErrorToDb({
+    source: 'server_unhandled_promise',
+    severity: 'error',
+    message: reason?.message || String(reason),
+    stack: reason?.stack,
+  }).catch(() => {});
+});
+
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';
   const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
@@ -3082,20 +3103,20 @@ async function startServer() {
         if (normalizedPerms.has('news_manage')) {
           normalizedPerms.add('news_add').add('news_edit').add('news_delete').add('news_publish');
         }
-        if (normalizedPerms.has('matches_manage')) {
-          normalizedPerms.add('matches_view').add('matches_edit').add('matches_sync');
-        }
         if (normalizedPerms.has('contests_manage')) {
           normalizedPerms.add('predictions_manage');
         }
-        if (normalizedPerms.has('admin_manage') || normalizedPerms.has('admins_manage')) {
-          normalizedPerms.add('admins_view').add('admins_add').add('admins_edit').add('admins_remove').add('admins_permissions_manage');
-        }
-        if (normalizedPerms.has('users_view')) {
-          // If they just had view, they keep view.
-        }
 
-        finalPermissions = Array.from(normalizedPerms);
+        // Security enforcement: Restrict sensitive permissions so regular admins can never receive them
+        const restricted = new Set([
+          'users_view', 'users_manage', 'users_activate', 'users_deactivate',
+          'admins_view', 'admins_add', 'admins_edit', 'admins_remove', 'admins_permissions_manage',
+          'categories_add', 'categories_edit', 'categories_delete',
+          'matches_view', 'matches_manage', 'matches_edit', 'matches_sync',
+          'error_logs_view', 'system_settings'
+        ]);
+
+        finalPermissions = Array.from(normalizedPerms).filter(p => !restricted.has(p));
       }
 
       await withDbRetry(() =>
@@ -3110,8 +3131,8 @@ async function startServer() {
           .where(eq(users.id, targetUserId))
       );
 
-      // Invalidate active sessions if user is deactivated or permissions/role modified
-      if (isActive === false || role !== undefined || permissions !== undefined) {
+      // Invalidate active sessions ONLY if user is deactivated
+      if (isActive === false) {
         if (targetUser.uid) revokeAllUserSessions(targetUser.uid);
         if (targetUser.email) revokeAllUserSessions(targetUser.email);
       }

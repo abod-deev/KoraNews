@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { RefreshCw, Home } from 'lucide-react';
+import { reportClientError } from '../utils/errorLogger.ts';
 
 interface Props {
   children: ReactNode;
@@ -105,6 +106,16 @@ class ErrorBoundary extends Component<Props, State> {
     }
 
     console.error('[ErrorBoundary] Uncaught component error caught:', error, errorInfo);
+
+    reportClientError({
+      source: 'client_react_boundary',
+      severity: 'fatal',
+      message: error?.message || String(error),
+      stack: error?.stack || errorInfo?.componentStack || undefined,
+      metadata: {
+        componentStack: errorInfo?.componentStack,
+      },
+    });
 
     if (!this.recoveryTriggered) {
       this.recoveryTriggered = true;

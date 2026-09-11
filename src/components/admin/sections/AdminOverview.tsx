@@ -92,9 +92,21 @@ interface AdminOverviewProps {
   token: string | null;
   onNavigateTab?: (tab: 'overview' | 'news' | 'predictions_contests' | 'predictions_matches' | 'predictions_participants' | 'users' | 'logs' | 'error_logs') => void;
   isSuperAdmin?: boolean;
+  canManageNews?: boolean;
+  canManagePredictions?: boolean;
+  canManageUsers?: boolean;
+  canViewLogs?: boolean;
 }
 
-export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: AdminOverviewProps) {
+export default function AdminOverview({
+  token,
+  onNavigateTab,
+  isSuperAdmin,
+  canManageNews = true,
+  canManagePredictions = true,
+  canManageUsers = false,
+  canViewLogs = false,
+}: AdminOverviewProps) {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [activeContest, setActiveContest] = useState<ActiveContestInfo | null>(null);
   const [predictionStats, setPredictionStats] = useState<PredictionStatsInfo | null>(null);
@@ -316,9 +328,9 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
 
         {/* Card 2: Users Count */}
         <div 
-          onClick={() => isSuperAdmin && onNavigateTab?.('users')}
+          onClick={() => (canManageUsers || isSuperAdmin) && onNavigateTab?.('users')}
           className={`group bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
-            isSuperAdmin ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
+            (canManageUsers || isSuperAdmin) ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
           }`}
         >
           <div className="flex items-center justify-between gap-1.5">
@@ -451,44 +463,50 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Standard Button Toolbar */}
         <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
           {/* Primary Action Button */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('news')}
-            className="min-h-[36px] px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-          >
-            <FileEdit className="w-3.5 h-3.5" />
-            <span>إدارة الأخبار</span>
-          </button>
+          {canManageNews && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.('news')}
+              className="min-h-[36px] px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+            >
+              <FileEdit className="w-3.5 h-3.5" />
+              <span>إدارة الأخبار</span>
+            </button>
+          )}
 
           {/* Secondary Action Buttons */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('predictions_matches')}
-            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
-          >
-            <Target className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-            <span>مباريات التوقع</span>
-          </button>
+          {canManagePredictions && (
+            <>
+              <button
+                type="button"
+                onClick={() => onNavigateTab?.('predictions_matches')}
+                className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+              >
+                <Target className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>مباريات التوقع</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('predictions_contests')}
-            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
-          >
-            <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span>إعدادات المسابقات</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => onNavigateTab?.('predictions_contests')}
+                className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+              >
+                <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>إعدادات المسابقات</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('predictions_participants')}
-            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
-          >
-            <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>المشاركون</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => onNavigateTab?.('predictions_participants')}
+                className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>المشاركون</span>
+              </button>
+            </>
+          )}
 
-          {isSuperAdmin && (
+          {canManageUsers && (
             <button
               type="button"
               onClick={() => onNavigateTab?.('users')}
@@ -499,14 +517,16 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('logs')}
-            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
-          >
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
-            <span>سجل العمليات</span>
-          </button>
+          {canViewLogs && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.('logs')}
+              className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+            >
+              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <span>سجل العمليات</span>
+            </button>
+          )}
         </div>
       </div>
 

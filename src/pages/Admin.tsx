@@ -475,6 +475,10 @@ export default function Admin() {
               token={token}
               onNavigateTab={(tab) => navigateToTab(tab)}
               isSuperAdmin={isOwner}
+              canManageNews={canManageNews}
+              canManagePredictions={canManagePredictions}
+              canManageUsers={canManageUsers}
+              canViewLogs={canViewLogs}
             />
           )}
 

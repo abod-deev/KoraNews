@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
+import { reportClientError } from './utils/errorLogger.ts';
 
 // Intercept benign browser / indexedDB teardown & visibility change errors (e.g. iframe refresh or background tab)
 if (typeof window !== 'undefined') {
@@ -69,6 +70,12 @@ if (typeof window !== 'undefined') {
         console.warn('[Storage] Suppressed browser IndexedDB teardown warning:', msg);
         return;
       }
+      reportClientError({
+        source: 'client_promise',
+        severity: 'error',
+        message: msg,
+        stack: reason?.stack,
+      });
       if (isChunkLoadError(msg)) {
         event.preventDefault();
         handleGlobalRecovery();
@@ -87,6 +94,17 @@ if (typeof window !== 'undefined') {
         console.warn('[Storage] Handled browser background storage event:', msg);
         return;
       }
+      reportClientError({
+        source: 'client_runtime',
+        severity: 'error',
+        message: msg,
+        stack: event?.error?.stack,
+        metadata: {
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+        },
+      });
       if (isChunkLoadError(msg)) {
         event.preventDefault();
         handleGlobalRecovery();

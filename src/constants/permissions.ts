@@ -81,6 +81,7 @@ export interface PermissionDefinition {
   description: string;
   section: 'NEWS' | 'CATEGORIES' | 'MATCHES' | 'PREDICTIONS' | 'USERS' | 'ADMINS' | 'SYSTEM';
   sectionLabel: string;
+  isOwnerManagerOnly?: boolean;
 }
 
 export const PERMISSION_SECTIONS = [
@@ -93,8 +94,42 @@ export const PERMISSION_SECTIONS = [
   { id: 'SYSTEM', label: 'النظام وسجل العمليات' },
 ] as const;
 
+/**
+ * List of permissions strictly reserved for System Owner and System Manager.
+ * These CANNOT be assigned to regular Admins upon promotion/editing.
+ */
+export const OWNER_MANAGER_ONLY_PERMISSIONS: string[] = [
+  // 1. Users
+  PERMISSIONS.USERS_VIEW,
+  PERMISSIONS.USERS_MANAGE,
+  PERMISSIONS.USERS_ACTIVATE,
+  PERMISSIONS.USERS_DEACTIVATE,
+
+  // 2. Admins
+  PERMISSIONS.ADMINS_VIEW,
+  PERMISSIONS.ADMINS_ADD,
+  PERMISSIONS.ADMINS_EDIT,
+  PERMISSIONS.ADMINS_REMOVE,
+  PERMISSIONS.ADMINS_PERMISSIONS_MANAGE,
+
+  // 3. Categories modification
+  PERMISSIONS.CATEGORIES_ADD,
+  PERMISSIONS.CATEGORIES_EDIT,
+  PERMISSIONS.CATEGORIES_DELETE,
+
+  // 4. Matches and schedules
+  PERMISSIONS.MATCHES_VIEW,
+  PERMISSIONS.MATCHES_MANAGE,
+  PERMISSIONS.MATCHES_EDIT,
+  PERMISSIONS.MATCHES_SYNC,
+
+  // 5. System
+  PERMISSIONS.SYSTEM_SETTINGS,
+  PERMISSIONS.ERROR_LOGS_VIEW,
+];
+
 export const ALL_PERMISSIONS_DEFINITIONS: PermissionDefinition[] = [
-  // --- NEWS ---
+  // --- NEWS (Assignable to Admins) ---
   {
     key: PERMISSIONS.NEWS_VIEW,
     label: 'استعراض الأخبار',
@@ -152,67 +187,74 @@ export const ALL_PERMISSIONS_DEFINITIONS: PermissionDefinition[] = [
     sectionLabel: 'المحتوى والأخبار',
   },
 
-  // --- CATEGORIES ---
+  // --- CATEGORIES (View is assignable; Add/Edit/Delete are Owner/Manager only) ---
   {
     key: PERMISSIONS.CATEGORIES_VIEW,
-    label: 'عرض التصنيفات',
-    description: 'استعراض التصنيفات الرياضية المتاحة',
+    label: 'عرض التصنيفات الرياضية',
+    description: 'استعراض التصنيفات الرياضية لتحديد تصنيف الخبر المناسب',
     section: 'CATEGORIES',
     sectionLabel: 'التصنيفات الرياضية',
   },
   {
     key: PERMISSIONS.CATEGORIES_ADD,
-    label: 'إضافة تصنيف',
+    label: 'إضافة تصنيف (خاص بمدير ومالك النظام)',
     description: 'إنشاء تصنيف رياضي جديد للأخبار والمحتوى',
     section: 'CATEGORIES',
     sectionLabel: 'التصنيفات الرياضية',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.CATEGORIES_EDIT,
-    label: 'تعديل التصنيفات',
+    label: 'تعديل التصنيفات (خاص بمدير ومالك النظام)',
     description: 'تعديل مسميات والروابط اللطيفة للتصنيفات',
     section: 'CATEGORIES',
     sectionLabel: 'التصنيفات الرياضية',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.CATEGORIES_DELETE,
-    label: 'حذف التصنيفات',
+    label: 'حذف التصنيفات (خاص بمدير ومالك النظام)',
     description: 'إزالة التصنيفات الرياضية غير المستخدمة',
     section: 'CATEGORIES',
     sectionLabel: 'التصنيفات الرياضية',
+    isOwnerManagerOnly: true,
   },
 
-  // --- MATCHES ---
+  // --- MATCHES (Owner/Manager only) ---
   {
     key: PERMISSIONS.MATCHES_VIEW,
-    label: 'عرض المباريات',
+    label: 'عرض المباريات (خاص بمدير ومالك النظام)',
     description: 'استعراض جدول المباريات والمواعيد والنتائج',
     section: 'MATCHES',
     sectionLabel: 'المباريات والمزامنة',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.MATCHES_MANAGE,
-    label: 'إدارة المباريات الشاملة',
+    label: 'إدارة المباريات الشاملة (خاص بمدير ومالك النظام)',
     description: 'إدارة وتخصيص بيانات المباريات والفرق والدوريات',
     section: 'MATCHES',
     sectionLabel: 'المباريات والمزامنة',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.MATCHES_EDIT,
-    label: 'تعديل المباريات',
+    label: 'تعديل المباريات (خاص بمدير ومالك النظام)',
     description: 'تعديل مواعيد وتفاصيل وحالة المباريات القائمة',
     section: 'MATCHES',
     sectionLabel: 'المباريات والمزامنة',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.MATCHES_SYNC,
-    label: 'مزامنة المباريات',
+    label: 'مزامنة المباريات (خاص بمدير ومالك النظام)',
     description: 'تشغيل المزامنة الفورية وتحديث المباريات من مزودي البيانات',
     section: 'MATCHES',
     sectionLabel: 'المباريات والمزامنة',
+    isOwnerManagerOnly: true,
   },
 
-  // --- PREDICTIONS ---
+  // --- PREDICTIONS (Assignable to Admins) ---
   {
     key: PERMISSIONS.PREDICTIONS_VIEW,
     label: 'عرض التوقعات والمسابقات',
@@ -291,105 +333,125 @@ export const ALL_PERMISSIONS_DEFINITIONS: PermissionDefinition[] = [
     sectionLabel: 'مسابقة التوقعات',
   },
 
-  // --- USERS ---
+  // --- USERS (Owner/Manager only) ---
   {
     key: PERMISSIONS.USERS_VIEW,
-    label: 'استعراض المستخدمين',
+    label: 'استعراض المستخدمين (خاص بمدير ومالك النظام)',
     description: 'مشاهدة قائمة مستخدمي المنصة وسجلاتهم وبياناتهم',
     section: 'USERS',
     sectionLabel: 'المستخدمون والاشتراكات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.USERS_MANAGE,
-    label: 'إدارة المستخدمين',
+    label: 'إدارة المستخدمين (خاص بمدير ومالك النظام)',
     description: 'تعديل بيانات الحسابات العادية وحذف الحسابات',
     section: 'USERS',
     sectionLabel: 'المستخدمون والاشتراكات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.USERS_ACTIVATE,
-    label: 'تفعيل حسابات المستخدمين',
+    label: 'تفعيل حسابات المستخدمين (خاص بمدير ومالك النظام)',
     description: 'إلغاء حظر وإعادة تنشيط الحسابات المعطلة',
     section: 'USERS',
     sectionLabel: 'المستخدمون والاشتراكات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.USERS_DEACTIVATE,
-    label: 'تعطيل وحظر المستخدمين',
+    label: 'تعطيل وحظر المستخدمين (خاص بمدير ومالك النظام)',
     description: 'إيقاف حسابات المستخدمين المخالفين ومنعهم من الدخول',
     section: 'USERS',
     sectionLabel: 'المستخدمون والاشتراكات',
+    isOwnerManagerOnly: true,
   },
 
-  // --- ADMINS ---
+  // --- ADMINS (Owner/Manager only) ---
   {
     key: PERMISSIONS.ADMINS_VIEW,
-    label: 'استعراض المشرفين',
+    label: 'استعراض المشرفين (خاص بمدير ومالك النظام)',
     description: 'مشاهدة قائمة المشرفين والإداريين ومستوياتهم',
     section: 'ADMINS',
     sectionLabel: 'المشرفون والصلاحيات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.ADMINS_ADD,
-    label: 'إضافة / ترقية مشرف',
+    label: 'إضافة / ترقية مشرف (خاص بمدير ومالك النظام)',
     description: 'ترقية مستخدم عادي إلى رتبة مشرف (Admin)',
     section: 'ADMINS',
     sectionLabel: 'المشرفون والصلاحيات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.ADMINS_EDIT,
-    label: 'تعديل بيانات المشرفين',
+    label: 'تعديل بيانات المشرفين (خاص بمدير ومالك النظام)',
     description: 'تحديث بيانات وحسابات المشرفين القائمة',
     section: 'ADMINS',
     sectionLabel: 'المشرفون والصلاحيات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.ADMINS_REMOVE,
-    label: 'سحب رتبة المشرف',
+    label: 'سحب رتبة المشرف (خاص بمدير ومالك النظام)',
     description: 'تخفيض رتبة المشرف إلى مستخدم عادي أو حذف حسابه الإداري',
     section: 'ADMINS',
     sectionLabel: 'المشرفون والصلاحيات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.ADMINS_PERMISSIONS_MANAGE,
-    label: 'إدارة صلاحيات المشرفين',
+    label: 'إدارة صلاحيات المشرفين (خاص بمدير ومالك النظام)',
     description: 'تخصيص وتحديد قائمة الصلاحيات الممنوحة لكل مشرف بدقة',
     section: 'ADMINS',
     sectionLabel: 'المشرفون والصلاحيات',
+    isOwnerManagerOnly: true,
   },
 
   // --- SYSTEM ---
   {
     key: PERMISSIONS.SYSTEM_SETTINGS,
-    label: 'إعدادات النظام العامة',
+    label: 'إعدادات النظام العامة (خاص بمدير ومالك النظام)',
     description: 'التحكم بإعدادات الموقع، الخيارات العامة، والإحصائيات الحيوية',
     section: 'SYSTEM',
     sectionLabel: 'النظام وسجل العمليات',
+    isOwnerManagerOnly: true,
   },
   {
     key: PERMISSIONS.ACTIVITY_LOGS_VIEW,
-    label: 'عرض سجل العمليات (Audit Logs)',
+    label: 'عرض سجل العمليات الإدارية (Audit Logs)',
     description: 'متابعة وفحص سجل التغييرات والنشاطات الإدارية في النظام',
     section: 'SYSTEM',
     sectionLabel: 'النظام وسجل العمليات',
   },
   {
     key: PERMISSIONS.ERROR_LOGS_VIEW,
-    label: 'عرض سجل الأخطاء (Error Logs)',
+    label: 'عرض سجل الأخطاء (Error Logs) (خاص بمدير ومالك النظام)',
     description: 'متابعة ورصد أخطاء الخادم والواجهة وتصدير تقارير الأخطاء',
     section: 'SYSTEM',
     sectionLabel: 'النظام وسجل العمليات',
+    isOwnerManagerOnly: true,
   },
 ];
 
 /**
- * Quick assignment presets for Admin modal
+ * Filtered list of permissions that can be granted to regular Admins.
+ */
+export const ASSIGNABLE_ADMIN_PERMISSIONS: PermissionDefinition[] = ALL_PERMISSIONS_DEFINITIONS.filter(
+  (p) => !p.isOwnerManagerOnly && !OWNER_MANAGER_ONLY_PERMISSIONS.includes(p.key)
+);
+
+export const ASSIGNABLE_ADMIN_PERMISSION_KEYS: string[] = ASSIGNABLE_ADMIN_PERMISSIONS.map((p) => p.key);
+
+/**
+ * Quick assignment presets for Admin modal (Exclusively with allowed Admin permissions)
  */
 export const PERMISSION_PRESETS = [
   {
     id: 'news_editor',
     label: 'محرر أخبار كامل',
-    description: 'صلاحيات كاملة لتحرير ونشر الأخبار والتصنيفات',
+    description: 'صلاحيات كاملة لتحرير ونشر الأخبار واستعراض التصنيفات',
     permissions: [
       PERMISSIONS.NEWS_VIEW,
       PERMISSIONS.NEWS_ADD,
@@ -400,14 +462,12 @@ export const PERMISSION_PRESETS = [
       PERMISSIONS.NEWS_FEATURE,
       PERMISSIONS.NEWS_BREAKING,
       PERMISSIONS.CATEGORIES_VIEW,
-      PERMISSIONS.CATEGORIES_ADD,
-      PERMISSIONS.CATEGORIES_EDIT,
     ],
   },
   {
     id: 'predictions_manager',
-    label: 'مدير مسابقة التوقعات',
-    description: 'جدولة المباريات، قبول المتسابقين، واعتماد النتائج والنقاط',
+    label: 'مشرف مسابقة التوقعات',
+    description: 'جدولة مباريات التوقع، إدارة المتسابقين، واعتماد النتائج والنقاط',
     permissions: [
       PERMISSIONS.PREDICTIONS_VIEW,
       PERMISSIONS.PREDICTIONS_MANAGE,
@@ -419,37 +479,14 @@ export const PERMISSION_PRESETS = [
       PERMISSIONS.PREDICTIONS_POINTS_MANAGE,
       PERMISSIONS.PREDICTIONS_CONTEST_CREATE,
       PERMISSIONS.PREDICTIONS_CONTEST_END,
-      PERMISSIONS.MATCHES_VIEW,
-      PERMISSIONS.MATCHES_MANAGE,
-    ],
-  },
-  {
-    id: 'matches_officer',
-    label: 'مسؤول المباريات والمزامنة',
-    description: 'متابعة جدول المباريات ومزامنة البيانات وتحديث المواعيد',
-    permissions: [
-      PERMISSIONS.MATCHES_VIEW,
-      PERMISSIONS.MATCHES_MANAGE,
-      PERMISSIONS.MATCHES_EDIT,
-      PERMISSIONS.MATCHES_SYNC,
-    ],
-  },
-  {
-    id: 'user_support',
-    label: 'دعم المستخدمين',
-    description: 'استعراض المستخدمين وإدارة تفعيل أو تعطيل الحسابات',
-    permissions: [
-      PERMISSIONS.USERS_VIEW,
-      PERMISSIONS.USERS_MANAGE,
-      PERMISSIONS.USERS_ACTIVATE,
-      PERMISSIONS.USERS_DEACTIVATE,
+      PERMISSIONS.PREDICTIONS_CONTEST_DELETE,
     ],
   },
   {
     id: 'all',
-    label: 'شامل كل الصلاحيات',
-    description: 'منح جميع الصلاحيات الإدارية والتشغيلية',
-    permissions: ALL_PERMISSIONS_DEFINITIONS.map((p) => p.key),
+    label: 'شامل كافة صلاحيات المشرف',
+    description: 'منح جميع الصلاحيات الإدارية المتاحة للمشرف (أخبار + توقعات + سجل العمليات)',
+    permissions: ASSIGNABLE_ADMIN_PERMISSION_KEYS,
   },
   {
     id: 'clear',
@@ -481,45 +518,36 @@ export function checkUserHasPermission(
     return true;
   }
 
-  // 3. Regular Admin: Must have permission in their explicit permissions array
+  // 3. Regular Admin: Must have permission in their explicit permissions array (and CANNOT possess owner/manager only permissions)
   if (role === 'admin' || user.isAdmin === true) {
+    // Hard security block: Owner and Manager only permissions are NEVER accessible by regular Admins
+    if (OWNER_MANAGER_ONLY_PERMISSIONS.includes(permission)) {
+      return false;
+    }
+
     const perms: string[] = Array.isArray(user.permissions) ? user.permissions : [];
     if (perms.includes(permission)) return true;
 
-    // Backward-compatibility and logical inheritance:
+    // Backward-compatibility and logical inheritance for allowed admin permissions:
     // News parent permissions
     if (permission === PERMISSIONS.NEWS_VIEW && (perms.includes(PERMISSIONS.NEWS_ADD) || perms.includes(PERMISSIONS.NEWS_EDIT) || perms.includes(PERMISSIONS.NEWS_DELETE))) return true;
     if (permission === PERMISSIONS.NEWS_UNPUBLISH && perms.includes(PERMISSIONS.NEWS_PUBLISH)) return true;
     if (permission === PERMISSIONS.NEWS_FEATURE && (perms.includes('news_featured') || perms.includes(PERMISSIONS.NEWS_EDIT))) return true;
     if (permission === PERMISSIONS.NEWS_BREAKING && perms.includes(PERMISSIONS.NEWS_EDIT)) return true;
 
-    // Categories inheritance
-    if (permission === PERMISSIONS.CATEGORIES_VIEW && (perms.includes('categories_manage') || perms.includes(PERMISSIONS.CATEGORIES_ADD) || perms.includes(PERMISSIONS.NEWS_ADD))) return true;
-    if ((permission === PERMISSIONS.CATEGORIES_ADD || permission === PERMISSIONS.CATEGORIES_EDIT || permission === PERMISSIONS.CATEGORIES_DELETE) && perms.includes('categories_manage')) return true;
-
-    // Matches inheritance
-    if (permission === PERMISSIONS.MATCHES_VIEW && perms.includes(PERMISSIONS.MATCHES_MANAGE)) return true;
-    if ((permission === PERMISSIONS.MATCHES_EDIT || permission === PERMISSIONS.MATCHES_SYNC) && perms.includes(PERMISSIONS.MATCHES_MANAGE)) return true;
+    // Categories inheritance (only view is allowed for admins)
+    if (permission === PERMISSIONS.CATEGORIES_VIEW && (perms.includes('categories_manage') || perms.includes(PERMISSIONS.NEWS_ADD) || perms.includes(PERMISSIONS.NEWS_EDIT))) return true;
 
     // Predictions inheritance
     if (perms.includes(PERMISSIONS.PREDICTIONS_MANAGE) || perms.includes('contests_manage')) {
-      if (
-        permission.startsWith('predictions_') ||
-        permission === PERMISSIONS.MATCHES_VIEW ||
-        permission === PERMISSIONS.MATCHES_MANAGE
-      ) {
+      if (permission.startsWith('predictions_')) {
         return true;
       }
     }
-    if (permission === PERMISSIONS.PREDICTIONS_VIEW && perms.some(p => p.startsWith('predictions_'))) return true;
+    if (permission === PERMISSIONS.PREDICTIONS_VIEW && perms.some((p) => p.startsWith('predictions_'))) return true;
 
-    // Users & Admins inheritance
-    if (permission === PERMISSIONS.USERS_VIEW && (perms.includes(PERMISSIONS.USERS_MANAGE) || perms.includes('admins_manage') || perms.includes(PERMISSIONS.ADMINS_VIEW))) return true;
-    if ((permission === PERMISSIONS.USERS_ACTIVATE || permission === PERMISSIONS.USERS_DEACTIVATE) && perms.includes(PERMISSIONS.USERS_MANAGE)) return true;
-    if ((permission === PERMISSIONS.ADMINS_ADD || permission === PERMISSIONS.ADMINS_EDIT || permission === PERMISSIONS.ADMINS_REMOVE || permission === PERMISSIONS.ADMINS_PERMISSIONS_MANAGE) && perms.includes('admins_manage')) return true;
-
-    // System Logs
-    if (permission === PERMISSIONS.ACTIVITY_LOGS_VIEW && (perms.includes('logs_view') || perms.includes(PERMISSIONS.SYSTEM_SETTINGS))) return true;
+    // System Activity Logs
+    if (permission === PERMISSIONS.ACTIVITY_LOGS_VIEW && perms.includes('logs_view')) return true;
 
     return false;
   }

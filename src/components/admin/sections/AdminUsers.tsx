@@ -9,26 +9,19 @@ import ConfirmModal from '../../common/ConfirmModal';
 import { useAuth } from '../../../contexts/AuthContext';
 import { getRoleBadgeInfo, isSystemOwner, isSystemManager } from '../../../utils/authHelpers';
 import { UserRole, PermissionKey } from '../../../types';
-import { ALL_PERMISSIONS_DEFINITIONS, PERMISSION_PRESETS, PERMISSION_SECTIONS, checkUserHasPermission, PERMISSIONS } from '../../../constants/permissions';
+import { 
+  ALL_PERMISSIONS_DEFINITIONS, 
+  PERMISSION_PRESETS, 
+  PERMISSION_SECTIONS, 
+  checkUserHasPermission, 
+  PERMISSIONS,
+  OWNER_MANAGER_ONLY_PERMISSIONS,
+  ASSIGNABLE_ADMIN_PERMISSIONS,
+  ASSIGNABLE_ADMIN_PERMISSION_KEYS
+} from '../../../constants/permissions';
 
-// 5 Clean functional groups for admin permissions
+// Clean functional groups strictly for assignable admin permissions
 const MODAL_PERMISSION_GROUPS = [
-  {
-    id: 'users',
-    title: 'المستخدمون والمشرفون',
-    icon: Users,
-    keys: [
-      PERMISSIONS.USERS_VIEW,
-      PERMISSIONS.USERS_MANAGE,
-      PERMISSIONS.USERS_ACTIVATE,
-      PERMISSIONS.USERS_DEACTIVATE,
-      PERMISSIONS.ADMINS_VIEW,
-      PERMISSIONS.ADMINS_ADD,
-      PERMISSIONS.ADMINS_EDIT,
-      PERMISSIONS.ADMINS_REMOVE,
-      PERMISSIONS.ADMINS_PERMISSIONS_MANAGE,
-    ],
-  },
   {
     id: 'news',
     title: 'المحتوى والأخبار والتصنيفات',
@@ -43,20 +36,6 @@ const MODAL_PERMISSION_GROUPS = [
       PERMISSIONS.NEWS_FEATURE,
       PERMISSIONS.NEWS_BREAKING,
       PERMISSIONS.CATEGORIES_VIEW,
-      PERMISSIONS.CATEGORIES_ADD,
-      PERMISSIONS.CATEGORIES_EDIT,
-      PERMISSIONS.CATEGORIES_DELETE,
-    ],
-  },
-  {
-    id: 'matches',
-    title: 'المباريات وجداول اللعب',
-    icon: Target,
-    keys: [
-      PERMISSIONS.MATCHES_VIEW,
-      PERMISSIONS.MATCHES_MANAGE,
-      PERMISSIONS.MATCHES_EDIT,
-      PERMISSIONS.MATCHES_SYNC,
     ],
   },
   {
@@ -79,12 +58,10 @@ const MODAL_PERMISSION_GROUPS = [
   },
   {
     id: 'system',
-    title: 'النظام وسجل العمليات',
+    title: 'سجل العمليات والأنشطة',
     icon: ShieldCheck,
     keys: [
-      PERMISSIONS.SYSTEM_SETTINGS,
       PERMISSIONS.ACTIVITY_LOGS_VIEW,
-      PERMISSIONS.ERROR_LOGS_VIEW,
     ],
   },
 ];
@@ -763,11 +740,10 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
                           type="button"
                           onClick={() => {
                             const existingPerms = Array.isArray(editingUser.permissions) && editingUser.permissions.length > 0
-                              ? editingUser.permissions
+                              ? editingUser.permissions.filter((p: string) => !OWNER_MANAGER_ONLY_PERMISSIONS.includes(p))
                               : [
-                                  PERMISSIONS.NEWS_VIEW, PERMISSIONS.NEWS_ADD, PERMISSIONS.NEWS_EDIT, PERMISSIONS.NEWS_DELETE, PERMISSIONS.NEWS_PUBLISH,
-                                  PERMISSIONS.CATEGORIES_VIEW, PERMISSIONS.CATEGORIES_ADD,
-                                  PERMISSIONS.MATCHES_VIEW, PERMISSIONS.MATCHES_MANAGE,
+                                  PERMISSIONS.NEWS_VIEW, PERMISSIONS.NEWS_ADD, PERMISSIONS.NEWS_EDIT, PERMISSIONS.NEWS_PUBLISH,
+                                  PERMISSIONS.CATEGORIES_VIEW,
                                   PERMISSIONS.PREDICTIONS_VIEW, PERMISSIONS.PREDICTIONS_MANAGE
                                 ];
                             setEditingUser({ ...editingUser, role: 'admin', permissions: existingPerms, isAdmin: true });
@@ -857,8 +833,16 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
                     {/* Role-Specific Permissions View */}
                     {editingUser.role === 'admin' ? (
                       <div className="space-y-3 pt-1">
+                        {/* Security Policy Badge */}
+                        <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50 text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed">
+                          <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                          <span>
+                            <strong>حماية النظام:</strong> صلاحيات إدارة المستخدمين والمشرفين، وهيكلة التصنيفات، والمباريات والمزامنة، وسجل الأخطاء محصورة حصرياً لمالك ومدير النظام فقط.
+                          </span>
+                        </div>
+
                         {/* Quick Presets Toolbar */}
-                        <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
                             <Sliders className="w-3.5 h-3.5 text-blue-600" />
                             <span>تخصيص الصلاحيات:</span>
@@ -883,7 +867,7 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
                           </div>
                         </div>
 
-                        {/* 5 Organized Functional Sections */}
+                        {/* Organized Functional Sections */}
                         {MODAL_PERMISSION_GROUPS.map((group) => {
                           const groupPerms = ALL_PERMISSIONS_DEFINITIONS.filter(p => (group.keys as string[]).includes(p.key));
                           if (groupPerms.length === 0) return null;
