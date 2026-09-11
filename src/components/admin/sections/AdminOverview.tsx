@@ -90,7 +90,7 @@ interface MatchItem {
 
 interface AdminOverviewProps {
   token: string | null;
-  onNavigateTab?: (tab: 'overview' | 'news' | 'predictions_contests' | 'predictions_matches' | 'predictions_participants' | 'users' | 'logs') => void;
+  onNavigateTab?: (tab: 'overview' | 'news' | 'predictions_contests' | 'predictions_matches' | 'predictions_participants' | 'users' | 'logs' | 'error_logs') => void;
   isSuperAdmin?: boolean;
 }
 

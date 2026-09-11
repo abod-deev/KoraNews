@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Link, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSEO } from '../hooks/useSEO';
 import { PERMISSIONS } from '../constants/permissions';
@@ -33,10 +33,24 @@ import AdminPredictionsManager from '../components/admin/AdminPredictionsManager
 
 type AdminTab = 'overview' | 'news' | 'predictions_contests' | 'predictions_matches' | 'predictions_participants' | 'users' | 'logs' | 'error_logs';
 
+const VALID_TABS: readonly AdminTab[] = [
+  'overview',
+  'news',
+  'predictions_contests',
+  'predictions_matches',
+  'predictions_participants',
+  'users',
+  'logs',
+  'error_logs',
+] as const;
+
 export default function Admin() {
   useSEO('لوحة التحكم', 'إدارة الموقع والمحتوى الرياضي لمنصة KoraNews');
   const { user, token, loading: authLoading, isOwner, isManager, isAdmin, hasPermission, hasAnyPermission, roleBadge } = useAuth();
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -45,6 +59,52 @@ export default function Admin() {
   const canManageUsers = hasAnyPermission(PERMISSIONS.USERS_VIEW, PERMISSIONS.ADMINS_VIEW);
   const canViewLogs = hasPermission(PERMISSIONS.ACTIVITY_LOGS_VIEW);
   const canViewErrorLogs = isOwner || isManager;
+
+  // Derive active tab from URL query param (?tab=...) with permission validation
+  const activeTab = useMemo<AdminTab>(() => {
+    const tabParam = searchParams.get('tab');
+    if (!tabParam || !VALID_TABS.includes(tabParam as AdminTab)) {
+      return 'overview';
+    }
+
+    const candidate = tabParam as AdminTab;
+
+    // Verify permission for the requested tab
+    switch (candidate) {
+      case 'overview':
+        return 'overview';
+      case 'news':
+        return canManageNews ? 'news' : 'overview';
+      case 'predictions_contests':
+      case 'predictions_matches':
+      case 'predictions_participants':
+        return canManagePredictions ? candidate : 'overview';
+      case 'users':
+        return canManageUsers ? 'users' : 'overview';
+      case 'logs':
+        return canViewLogs ? 'logs' : 'overview';
+      case 'error_logs':
+        return canViewErrorLogs ? 'error_logs' : 'overview';
+      default:
+        return 'overview';
+    }
+  }, [searchParams, canManageNews, canManagePredictions, canManageUsers, canViewLogs, canViewErrorLogs]);
+
+  // Navigate to tab with standard browser history push (creates a new history entry)
+  const navigateToTab = useCallback((newTab: AdminTab) => {
+    setIsSidebarOpen(false);
+
+    // If already on the requested tab, avoid duplicate history entries
+    if (activeTab === newTab) {
+      return;
+    }
+
+    if (newTab === 'overview') {
+      navigate('/admin');
+    } else {
+      navigate(`/admin?tab=${newTab}`);
+    }
+  }, [activeTab, navigate]);
 
   const showMsg = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
@@ -104,7 +164,12 @@ export default function Admin() {
       >
         {/* Sidebar Brand Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            onClick={() => navigateToTab('overview')}
+            className="flex items-center gap-2.5 min-w-0 text-right cursor-pointer"
+            title="الانتقال إلى نظرة عامة"
+          >
             <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
               {isOwner ? <Crown className="w-5 h-5 text-amber-300" /> : isManager ? <Zap className="w-5 h-5 text-purple-200" /> : <Shield className="w-5 h-5" />}
             </div>
@@ -117,7 +182,7 @@ export default function Admin() {
               </div>
               <div className="text-[11px] text-slate-400 font-medium truncate">لوحة الإدارة الموحدة</div>
             </div>
-          </div>
+          </button>
           <button
             type="button"
             onClick={() => setIsSidebarOpen(false)}
@@ -139,7 +204,7 @@ export default function Admin() {
             <div className="space-y-1">
               <button
                 type="button"
-                onClick={() => { setActiveTab('overview'); setIsSidebarOpen(false); }}
+                onClick={() => navigateToTab('overview')}
                 className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'overview'
                     ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -161,7 +226,7 @@ export default function Admin() {
               <div className="space-y-1">
                 <button
                   type="button"
-                  onClick={() => { setActiveTab('news'); setIsSidebarOpen(false); }}
+                  onClick={() => navigateToTab('news')}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'news'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -184,7 +249,7 @@ export default function Admin() {
               <div className="space-y-1">
                 <button
                   type="button"
-                  onClick={() => { setActiveTab('predictions_contests'); setIsSidebarOpen(false); }}
+                  onClick={() => navigateToTab('predictions_contests')}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'predictions_contests'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -196,7 +261,7 @@ export default function Admin() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setActiveTab('predictions_matches'); setIsSidebarOpen(false); }}
+                  onClick={() => navigateToTab('predictions_matches')}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'predictions_matches'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -208,7 +273,7 @@ export default function Admin() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setActiveTab('predictions_participants'); setIsSidebarOpen(false); }}
+                  onClick={() => navigateToTab('predictions_participants')}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'predictions_participants'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -242,7 +307,7 @@ export default function Admin() {
                 {canManageUsers && (
                   <button
                     type="button"
-                    onClick={() => { setActiveTab('users'); setIsSidebarOpen(false); }}
+                    onClick={() => navigateToTab('users')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'users'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -256,7 +321,7 @@ export default function Admin() {
                 {canViewLogs && (
                   <button
                     type="button"
-                    onClick={() => { setActiveTab('logs'); setIsSidebarOpen(false); }}
+                    onClick={() => navigateToTab('logs')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'logs'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -270,7 +335,7 @@ export default function Admin() {
                 {canViewErrorLogs && (
                   <button
                     type="button"
-                    onClick={() => { setActiveTab('error_logs'); setIsSidebarOpen(false); }}
+                    onClick={() => navigateToTab('error_logs')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'error_logs'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -325,7 +390,13 @@ export default function Admin() {
             </button>
 
             <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm min-w-0 truncate">
-              <span className="font-bold text-slate-400 hidden sm:inline shrink-0">لوحة التحكم</span>
+              <button
+                type="button"
+                onClick={() => navigateToTab('overview')}
+                className="font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hidden sm:inline shrink-0 cursor-pointer"
+              >
+                لوحة التحكم
+              </button>
               <span className="text-slate-300 dark:text-slate-700 hidden sm:inline shrink-0">/</span>
               <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-white truncate">
                 <CurrentIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
@@ -402,7 +473,7 @@ export default function Admin() {
           {activeTab === 'overview' && (
             <AdminOverview
               token={token}
-              onNavigateTab={(tab) => setActiveTab(tab)}
+              onNavigateTab={(tab) => navigateToTab(tab)}
               isSuperAdmin={isOwner}
             />
           )}
