@@ -89,7 +89,7 @@ export default function Admin() {
           }}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 lg:hidden transition-opacity cursor-pointer"
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-40 lg:hidden transition-opacity cursor-pointer animate-in fade-in duration-200"
           aria-hidden="true"
         />
       )}
@@ -98,14 +98,14 @@ export default function Admin() {
       <aside
         role="dialog"
         aria-label="القائمة الجانبية للوحة التحكم"
-        className={`fixed lg:sticky top-0 lg:top-16 right-0 h-full lg:h-[calc(100vh-4rem)] w-[84vw] sm:w-72 max-w-xs bg-white dark:bg-slate-900 border-l border-slate-200/80 dark:border-slate-800 z-50 transform transition-transform duration-300 shadow-2xl lg:shadow-none flex flex-col ${
+        className={`fixed lg:sticky top-0 lg:top-16 right-0 h-full lg:h-[calc(100vh-4rem)] w-[86vw] sm:w-72 max-w-xs bg-white dark:bg-slate-900 border-l border-slate-200/80 dark:border-slate-800 z-50 transform transition-transform duration-300 ease-out shadow-2xl lg:shadow-none flex flex-col ${
           isSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
         }`}
       >
         {/* Sidebar Brand Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
               {isOwner ? <Crown className="w-5 h-5 text-amber-300" /> : isManager ? <Zap className="w-5 h-5 text-purple-200" /> : <Shield className="w-5 h-5" />}
             </div>
             <div className="min-w-0">
@@ -129,7 +129,7 @@ export default function Admin() {
         </div>
 
         {/* Sidebar Menu Items */}
-        <div className="p-3.5 flex-1 overflow-y-auto space-y-5">
+        <div className="p-3 sm:p-3.5 flex-1 overflow-y-auto space-y-5">
           
           {/* Group 1: الرئيسية */}
           <div>
@@ -140,7 +140,7 @@ export default function Admin() {
               <button
                 type="button"
                 onClick={() => { setActiveTab('overview'); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                   activeTab === 'overview'
                     ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -162,7 +162,7 @@ export default function Admin() {
                 <button
                   type="button"
                   onClick={() => { setActiveTab('news'); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'news'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -185,7 +185,7 @@ export default function Admin() {
                 <button
                   type="button"
                   onClick={() => { setActiveTab('predictions_contests'); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'predictions_contests'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -197,7 +197,7 @@ export default function Admin() {
                 <button
                   type="button"
                   onClick={() => { setActiveTab('predictions_matches'); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'predictions_matches'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -209,7 +209,7 @@ export default function Admin() {
                 <button
                   type="button"
                   onClick={() => { setActiveTab('predictions_participants'); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'predictions_participants'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -220,7 +220,7 @@ export default function Admin() {
                 </button>
                 <Link
                   to="/predictions/leaderboard"
-                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-all"
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-all"
                 >
                   <div className="flex items-center gap-3">
                     <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
@@ -243,7 +243,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => { setActiveTab('users'); setIsSidebarOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'users'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -257,7 +257,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => { setActiveTab('logs'); setIsSidebarOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'logs'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -271,7 +271,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => { setActiveTab('error_logs'); setIsSidebarOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'error_logs'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
@@ -288,7 +288,7 @@ export default function Admin() {
         </div>
 
         {/* Sidebar Footer User Card */}
-        <div className="p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="p-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center text-xs shrink-0 shadow-2xs">
               {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
@@ -310,7 +310,7 @@ export default function Admin() {
       <main className="flex-1 w-full lg:w-[calc(100%-18rem)] overflow-x-hidden min-h-[calc(100vh-4rem)] flex flex-col">
         
         {/* Top Header Bar for Desktop & Mobile */}
-        <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-6 py-2.5 flex items-center justify-between shadow-2xs h-14">
+        <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-6 py-2 flex items-center justify-between shadow-2xs h-14">
           
           {/* Breadcrumb & Section Name */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -346,7 +346,7 @@ export default function Admin() {
             {/* View Public Site Link */}
             <Link
               to="/"
-              className="inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[44px] px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 border border-slate-200/60 dark:border-slate-700/60 transition-colors shadow-2xs"
+              className="inline-flex items-center gap-1.5 min-h-[40px] px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 border border-slate-200/60 dark:border-slate-700/60 transition-colors shadow-2xs"
               title="معاينة الموقع للجمهور"
             >
               <span className="hidden sm:inline">معاينة الموقع</span>
@@ -354,7 +354,7 @@ export default function Admin() {
             </Link>
 
             {/* Mini User Avatar Chip */}
-            <div className="flex items-center gap-2 ps-2 border-s border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2 ps-1.5 sm:ps-2 border-s border-slate-200 dark:border-slate-800">
               <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-2xs shrink-0">
                 {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
               </div>
@@ -367,7 +367,7 @@ export default function Admin() {
         </header>
 
         {/* Content Container */}
-        <div className="p-3.5 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full flex-1">
+        <div className="p-3 sm:p-5 lg:p-7 max-w-7xl mx-auto w-full flex-1">
           
           {/* Toast / Notification Banner (Fixed Top of Screen) */}
           {message && (
@@ -415,8 +415,7 @@ export default function Admin() {
             <AdminPredictionsManager
               token={token}
               onShowMessage={showMsg}
-              activeSubTab="settings"
-              hideTabs
+              activeSubTab="overview"
             />
           )}
 
@@ -425,7 +424,6 @@ export default function Admin() {
               token={token}
               onShowMessage={showMsg}
               activeSubTab="matches"
-              hideTabs
             />
           )}
 
@@ -434,7 +432,6 @@ export default function Admin() {
               token={token}
               onShowMessage={showMsg}
               activeSubTab="participants"
-              hideTabs
             />
           )}
 

@@ -207,39 +207,39 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
       </div>
 
       {/* KPI Highlights Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-          <div className="text-[11px] font-bold text-slate-400 mb-1">إجمالي المقالات</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="text-[11px] font-bold text-slate-400 mb-0.5">إجمالي المقالات</div>
           <div className="text-xl font-black text-slate-900 dark:text-white">{stats.total}</div>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-          <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mb-1">المقالات المنشورة</div>
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">المقالات المنشورة</div>
           <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">{stats.published}</div>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-          <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mb-1">أخبار عاجلة</div>
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mb-0.5">أخبار عاجلة</div>
           <div className="text-xl font-black text-rose-600 dark:text-rose-400">{stats.breaking}</div>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
-          <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mb-1">أخبار مميزة (سلايدر)</div>
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mb-0.5">أخبار مميزة (سلايدر)</div>
           <div className="text-xl font-black text-amber-600 dark:text-amber-400">{stats.featured}</div>
         </div>
       </div>
 
       {/* Main View: Add/Edit Form OR News Table */}
       {editingNews ? (
-        <div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
           
-          <div className="flex items-center justify-between pb-5 border-b border-slate-100 dark:border-slate-800 mb-6">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200/60 dark:border-emerald-800/40">
-                {editingNews.id ? <Edit2 className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200/60 dark:border-emerald-800/40">
+                {editingNews.id ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               </div>
               <div>
-                <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                   {editingNews.id ? 'تعديل بيانات الخبر' : 'تحرير خبر جديد'}
                 </h2>
-                <div className="text-xs text-slate-400 mt-0.5">
+                <div className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
                   يرجى تعبئة الحقول المطلوبة والتأكد من جودة صياغة العنوان والتفاصيل
                 </div>
               </div>
@@ -247,7 +247,7 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
 
             <button
               onClick={() => setEditingNews(null)}
-              className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -433,10 +433,10 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
         </div>
       ) : (
         /* News List Table & Filtering */
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
           
           {/* Filters Strip */}
-          <div className="p-4 sm:p-5 border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col md:flex-row gap-3">
+          <div className="p-3 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col md:flex-row gap-2.5 sm:gap-3">
             
             {/* Search Input */}
             <div className="relative flex-1">

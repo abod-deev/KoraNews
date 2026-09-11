@@ -40,7 +40,7 @@ import ConfirmModal from '../common/ConfirmModal';
 interface AdminPredictionsManagerProps {
   token: string | null;
   onShowMessage: (type: 'success' | 'error', text: string) => void;
-  activeSubTab?: 'matches' | 'add_match' | 'participants' | 'settings';
+  activeSubTab?: 'overview' | 'matches' | 'add_match' | 'participants' | 'settings';
   hideTabs?: boolean;
 }
 
@@ -116,7 +116,7 @@ export default function AdminPredictionsManager({
   hideTabs = false
 }: AdminPredictionsManagerProps) {
   // Sub-tabs inside Predictions Admin
-  const [subTab, setSubTab] = useState<'matches' | 'add_match' | 'participants' | 'settings'>('matches');
+  const [subTab, setSubTab] = useState<'overview' | 'matches' | 'add_match' | 'participants' | 'settings'>(activeSubTab || 'overview');
 
   useEffect(() => {
     if (activeSubTab) {
@@ -1438,31 +1438,27 @@ export default function AdminPredictionsManager({
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* 0. CONTEST MANAGEMENT SECTION (إدارة المسابقة) */}
-      {(!hideTabs || subTab === 'settings') && (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 mb-4 border-b border-gray-100 dark:border-gray-800">
+  const hasActiveContest = Boolean(activeContest && activeContest.status === 'active');
+
+  // If there is NO active contest: only display empty state & completed archive + create modal
+  // Strictly prevent displaying participants, matches, settings button, or end contest button
+  if (!hasActiveContest) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-400 flex items-center justify-center shrink-0">
                 <Trophy className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base sm:text-lg font-black text-gray-900 dark:text-white">
-                    إدارة المسابقة
+                    مسابقة التوقعات
                   </h2>
-                  {activeContest && activeContest.status === 'active' ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      نشطة
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                      غير نشطة
-                    </span>
-                  )}
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                    لا توجد مسابقة نشطة
+                  </span>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">
                   التحكم المباشر في دورة حياة مسابقات التوقعات، تتبع الإحصائيات، والإنهاء اليدوي.
@@ -1470,145 +1466,36 @@ export default function AdminPredictionsManager({
               </div>
             </div>
 
-            {/* Action Button */}
-            <div className="flex items-center gap-2 self-stretch sm:self-auto">
-              {activeContest && activeContest.status === 'active' ? (
-                <button
-                  type="button"
-                  onClick={handleCompleteContest}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-                >
-                  <Ban className="w-4 h-4" />
-                  <span>إنهاء المسابقة</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsCreateContestModalOpen(true)}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>+ إنشاء مسابقة</span>
-                </button>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsCreateContestModalOpen(true)}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ إنشاء مسابقة جديدة</span>
+            </button>
           </div>
 
-          {/* ACTIVE CONTEST VIEW */}
-          {activeContest && activeContest.status === 'active' ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Contest Name & Description */}
-                <div className="md:col-span-2 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800 space-y-2">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="text-xs font-bold text-gray-400">اسم المسابقة:</span>
-                    <span className="text-sm font-black text-gray-900 dark:text-white">
-                      {activeContest.name}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed font-medium">
-                    <span className="text-gray-400 font-bold ml-1">الوصف:</span>
-                    {activeContest.description || 'لا يوجد وصف محدد للمسابقة'}
-                  </div>
-                  <div className="pt-2 flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400 border-t border-gray-200/60 dark:border-gray-700/60">
-                    <span className="flex items-center gap-1">
-                      الحالة: <strong className="text-emerald-600 dark:text-emerald-400 font-black">نشطة</strong>
-                    </span>
-                    <span>•</span>
-                    <span>
-                      معرف المسابقة: <strong className="font-mono text-gray-700 dark:text-gray-300">#{activeContest.id}</strong>
-                    </span>
-                  </div>
-                </div>
-
-                {/* Quick Stats Grid */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-blue-600 dark:text-blue-400">
-                      <span className="text-[11px] font-bold">عدد المشاركين</span>
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div className="text-2xl font-black text-blue-700 dark:text-blue-300 mt-2">
-                      {activeContest.participantsCount ?? participants.length}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-purple-600 dark:text-purple-400">
-                      <span className="text-[11px] font-bold">مباريات التوقعات</span>
-                      <Trophy className="w-4 h-4" />
-                    </div>
-                    <div className="text-2xl font-black text-purple-700 dark:text-purple-300 mt-2">
-                      {activeContest.matchesCount ?? predictionMatches.length}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Active Contest Interactive Controls Panel */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50/30 dark:from-slate-800/60 dark:to-blue-950/20 border border-slate-200/80 dark:border-slate-700 space-y-3">
-                <div className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  إجراءات سريعة للمسابقة النشطة:
-                </div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setSubTab('participants')}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>عرض المشاركين في المسابقة الحالية ({activeContest.participantsCount ?? participants.length})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSubTab('matches')}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
-                  >
-                    <Trophy className="w-4 h-4" />
-                    <span>عرض المباريات الخاصة بالمسابقة الحالية ({activeContest.matchesCount ?? predictionMatches.length})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSubTab('settings')}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
-                  >
-                    <Settings className="w-4 h-4" />
-                    <span>إعدادات المسابقة الحالية</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Prevention Notice */}
-              <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-2.5">
-                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>توجد مسابقة حالية نشطة. يجب إنهاؤها أولًا قبل إمكانية إنشاء مسابقة جديدة.</span>
-              </div>
+          {/* EMPTY CONTEST VIEW */}
+          <div className="text-center py-10 px-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-dashed border-gray-200 dark:border-gray-800 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-400 flex items-center justify-center mx-auto shadow-inner">
+              <Trophy className="w-6 h-6" />
             </div>
-          ) : (
-            /* EMPTY CONTEST VIEW */
-            <div className="text-center py-8 px-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-dashed border-gray-200 dark:border-gray-800 space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-800 text-gray-400 flex items-center justify-center mx-auto">
-                <Trophy className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-gray-900 dark:text-white">لا توجد مسابقة حالية</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
-                  يمكنك الآن إنشاء مسابقة توقعات جديدة لبدء استقبال التوقعات من المشتركين وإضافة المباريات.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCreateContestModalOpen(true)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs shadow-xs transition-all cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ إنشاء مسابقة</span>
-              </button>
+            <div>
+              <h3 className="text-sm font-black text-gray-900 dark:text-white">لا توجد مسابقة حالية نشطة</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto leading-relaxed">
+                لا يمكن عرض المشاركين، مباريات المسابقة، أو إعدادات المسابقة إلا عند وجود مسابقة نشطة. يمكنك الآن إنشاء مسابقة جديدة لبدء التوقعات.
+              </p>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => setIsCreateContestModalOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs shadow-xs transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ إنشاء مسابقة جديدة الآن</span>
+            </button>
+          </div>
 
           {/* COMPLETED CONTESTS LIST */}
           {allContests.filter((c) => c.status === 'completed').length > 0 && (
@@ -1660,22 +1547,104 @@ export default function AdminPredictionsManager({
             </div>
           )}
         </div>
-      )}
 
-      {/* 1. Sub-Tabs Bar */}
+        {/* CREATE CONTEST MODAL */}
+        {isCreateContestModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 max-w-md w-full shadow-xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+                <h3 className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-brand" />
+                  <span>إنشاء مسابقة توقعات جديدة</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateContestModalOpen(false)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateContest} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    اسم المسابقة <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newContestName}
+                    onChange={(e) => setNewContestName(e.target.value)}
+                    placeholder="مثال: مسابقة الدوري الإسباني 2026"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-brand"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    الوصف (اختياري)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={newContestDescription}
+                    onChange={(e) => setNewContestDescription(e.target.value)}
+                    placeholder="وصف مختصر لمسابقة التوقعات والجوائز..."
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs text-gray-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-brand resize-none"
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateContestModalOpen(false)}
+                    disabled={isCreatingContest}
+                    className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCreatingContest || !newContestName.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {isCreatingContest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    <span>إنشاء</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* CONFIRM MODAL */}
+        <ConfirmModal
+          isOpen={confirmModalConfig.isOpen}
+          title={confirmModalConfig.title}
+          message={confirmModalConfig.message}
+          confirmText={confirmModalConfig.confirmText}
+          cancelText={confirmModalConfig.cancelText}
+          variant={confirmModalConfig.variant}
+          isLoading={confirmModalConfig.isLoading}
+          onConfirm={confirmModalConfig.onConfirm}
+          onClose={() => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }))}
+        />
+      </div>
+    );
+  }
+
+  // ACTIVE CONTEST IS PRESENT: Render full active contest management & navigation
+  return (
+    <div className="space-y-6">
+      {/* 1. Sub-Tabs Bar (Mobile-friendly navigation for active contest) */}
       {!hideTabs && (
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap bg-white dark:bg-gray-900 p-1.5 sm:p-2 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xs scrollbar-hide">
           {[
-            { id: 'matches', label: 'مباريات التوقعات واعتماد النتائج', mobileLabel: 'مباريات التوقعات', icon: Trophy, count: predictionMatches.length },
-            { id: 'add_match', label: 'إضافة مباريات (اليوم / الغد / دوري خارجي)', mobileLabel: 'إضافة مباريات', icon: Plus },
-            {
-              id: 'participants',
-              label: 'المتسابقون وطلبات الاشتراك',
-              mobileLabel: 'المتسابقين',
-              icon: Users,
-              badge: pendingParticipantsCount > 0 ? pendingParticipantsCount : undefined,
-            },
-            { id: 'settings', label: 'إعدادات المسابقة', mobileLabel: 'إعدادات', icon: Settings },
+            { id: 'overview', label: 'نظرة عامة على المسابقة', mobileLabel: 'نظرة عامة', icon: Trophy },
+            { id: 'participants', label: 'المشاركون في المسابقة الحالية', mobileLabel: 'المشاركون', icon: Users, count: participants.length, badge: pendingParticipantsCount > 0 ? pendingParticipantsCount : undefined },
+            { id: 'matches', label: 'المباريات الخاصة بالمسابقة', mobileLabel: 'المباريات', icon: Calendar, count: predictionMatches.length },
+            { id: 'add_match', label: 'إضافة مباريات', mobileLabel: 'إضافة مباراة', icon: Plus },
+            { id: 'settings', label: 'إعدادات المسابقة', mobileLabel: 'الإعدادات', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = subTab === tab.id;
@@ -1684,7 +1653,7 @@ export default function AdminPredictionsManager({
                 key={tab.id}
                 type="button"
                 onClick={() => setSubTab(tab.id as any)}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-4 sm:py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   active
                     ? 'bg-brand text-white shadow-xs'
                     : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-100 dark:border-gray-800'
@@ -1710,6 +1679,143 @@ export default function AdminPredictionsManager({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* OVERVIEW / ACTIVE CONTEST HERO DASHBOARD */}
+      {(subTab === 'overview' || !subTab) && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 shadow-xs space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-brand/10 text-brand flex items-center justify-center shrink-0 shadow-inner">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base sm:text-xl font-black text-gray-900 dark:text-white">
+                      {activeContest.name}
+                    </h2>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      مسابقة نشطة
+                    </span>
+                    <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-bold border border-gray-200 dark:border-gray-700">
+                      #{activeContest.id}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-1">
+                    {activeContest.description || 'المسابقة الحالية مفتوحة لاستقبال توقعات المشتركين وإضافة المباريات واحتساب النتائج.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                <button
+                  type="button"
+                  onClick={handleCompleteContest}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+                >
+                  <Ban className="w-4 h-4" />
+                  <span>إنهاء المسابقة</span>
+                </button>
+              </div>
+            </div>
+
+            {/* THE 3 CORE USER-REQUESTED CONTROLS FOR ACTIVE CONTEST */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 1. إمكانية عرض المشاركين في المسابقة الحالية */}
+              <div
+                onClick={() => setSubTab('participants')}
+                className="p-5 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50/40 dark:from-blue-950/30 dark:to-indigo-950/20 border border-blue-100 dark:border-blue-900/40 hover:border-blue-300 dark:hover:border-blue-700/60 transition-all cursor-pointer flex flex-col justify-between group shadow-2xs hover:shadow-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-blue-900 dark:text-blue-300">المشاركون في المسابقة الحالية</span>
+                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-3xl font-black text-blue-700 dark:text-blue-200">
+                    {activeContest.participantsCount ?? participants.length}
+                  </div>
+                  <p className="text-[11px] text-blue-800/70 dark:text-blue-300/70 mt-1 font-medium">
+                    عرض وتتبع قائمة المتسابقين، طلبات الاشتراك، والترتيب المباشر.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
+                  <span className="text-xs font-black text-blue-700 dark:text-blue-300">عرض المشاركين</span>
+                  <ChevronLeft className="w-4 h-4 text-blue-700 dark:text-blue-300 group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* 2. إمكانية عرض المباريات الخاصة بالمسابقة الحالية */}
+              <div
+                onClick={() => setSubTab('matches')}
+                className="p-5 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50/40 dark:from-purple-950/30 dark:to-pink-950/20 border border-purple-100 dark:border-purple-900/40 hover:border-purple-300 dark:hover:border-purple-700/60 transition-all cursor-pointer flex flex-col justify-between group shadow-2xs hover:shadow-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-purple-900 dark:text-purple-300">المباريات الخاصة بالمسابقة الحالية</span>
+                    <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+                      <Trophy className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-3xl font-black text-purple-700 dark:text-purple-200">
+                    {activeContest.matchesCount ?? predictionMatches.length}
+                  </div>
+                  <p className="text-[11px] text-purple-800/70 dark:text-purple-300/70 mt-1 font-medium">
+                    مباريات التوقعات، فتح وإغلاق التوقع، واعتماد النتائج النهائية.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-purple-100 dark:border-purple-900/40 flex items-center justify-between">
+                  <span className="text-xs font-black text-purple-700 dark:text-purple-300">عرض المباريات</span>
+                  <ChevronLeft className="w-4 h-4 text-purple-700 dark:text-purple-300 group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* 3. زر للدخول إلى إعدادات المسابقة الحالية */}
+              <div
+                onClick={() => setSubTab('settings')}
+                className="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-gray-100/60 dark:from-slate-800/60 dark:to-gray-800/40 border border-slate-200/80 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-all cursor-pointer flex flex-col justify-between group shadow-2xs hover:shadow-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-900 dark:text-white">إعدادات المسابقة الحالية</span>
+                    <div className="w-9 h-9 rounded-xl bg-slate-800 dark:bg-slate-700 text-white flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+                      <Settings className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="mt-3 text-sm font-black text-slate-800 dark:text-slate-200">
+                    قواعد ونقاط التوقع
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 font-medium">
+                    تعديل القواعد والنقاط، والوصول إلى زر إنهاء المسابقة الحالية.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800 dark:text-slate-200">الدخول إلى الإعدادات</span>
+                  <ChevronLeft className="w-4 h-4 text-slate-800 dark:text-slate-200 group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Add Match Link */}
+            <div className="p-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-gray-300 font-bold">
+                <Plus className="w-4 h-4 text-brand" />
+                <span>هل ترغب في جدولة وإضافة مباريات جديدة للمسابقة الحالية؟</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSubTab('add_match')}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-brand text-white text-xs font-black hover:bg-brand/90 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>إضافة مباريات الآن</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

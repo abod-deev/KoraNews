@@ -320,52 +320,52 @@ export default function AdminErrorLogs({ token }: AdminErrorLogsProps) {
       )}
 
       {/* Header & Stats Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
         
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-xs">
-          <div className="flex items-center justify-between mb-2">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">إجمالي الأخطاء</span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300">
-              <Bug className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300">
+              <Bug className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 dark:text-white">
+          <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
             {stats.total.toLocaleString('ar-SA')}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">حرجة / قاتلة (Fatal)</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400">
-              <ShieldAlert className="w-4 h-4" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">حرجة (Fatal)</span>
+            <div className="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400">
+              <ShieldAlert className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-black text-rose-600 dark:text-rose-400">
+          <div className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400">
             {stats.fatal.toLocaleString('ar-SA')}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">قيد الانتظار (لم تحل)</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <Clock className="w-4 h-4" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">قيد الانتظار</span>
+            <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-600 dark:text-amber-400">
+              <Clock className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-black text-amber-600 dark:text-amber-400">
+          <div className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400">
             {stats.unresolved.toLocaleString('ar-SA')}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-xs">
-          <div className="flex items-center justify-between mb-2">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3 rounded-xl shadow-xs">
+          <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">أخطاء اليوم</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-              <AlertTriangle className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+              <AlertTriangle className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+          <div className="text-xl sm:text-2xl font-black text-indigo-600 dark:text-indigo-400">
             {stats.today.toLocaleString('ar-SA')}
           </div>
         </div>
@@ -373,7 +373,7 @@ export default function AdminErrorLogs({ token }: AdminErrorLogsProps) {
       </div>
 
       {/* Main Filter & Action Toolbar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3 sm:p-4 shadow-xs space-y-3">
         
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           
@@ -515,7 +515,7 @@ export default function AdminErrorLogs({ token }: AdminErrorLogsProps) {
       </div>
 
       {/* Logs Table / Card List */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
         
         {isLoading ? (
           <div className="py-24 flex flex-col items-center justify-center gap-3">

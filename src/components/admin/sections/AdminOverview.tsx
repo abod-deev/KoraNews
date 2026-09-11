@@ -239,40 +239,40 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
+    <div className="space-y-6 sm:space-y-8 animate-in fade-in duration-300">
       
       {/* 1. Header & Live System Status */}
-      <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-7 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+      <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 sm:p-7 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-5">
           <div className="space-y-1.5">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
               <span className="text-xs font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">نظام التشغيل نشط</span>
-              <span className="text-slate-300 dark:text-slate-700">•</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <span className="text-slate-300 dark:text-slate-700 hidden xs:inline">•</span>
+              <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
                 آخر تحديث: {lastRefreshedAt.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
               لوحة التحكم الرئيسية
             </h1>
-            <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed font-normal">
-              مركز العمليات المؤسساتي الموحد لمنصة <strong className="font-semibold text-slate-800 dark:text-slate-200">KoraNews</strong>، لمتابعة مؤشرات المحتوى، مباريات كرة القدم، ونتائج مسابقة التوقعات التفاعلية.
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed font-normal">
+              مركز العمليات الموحد لمنصة <strong className="font-semibold text-slate-800 dark:text-slate-200">KoraNews</strong>، لمتابعة مؤشرات المحتوى، مباريات كرة القدم، ونتائج مسابقة التوقعات.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 self-start md:self-center">
+          <div className="flex items-center gap-2.5 self-stretch sm:self-start md:self-center flex-wrap sm:flex-nowrap">
             <button
               onClick={() => fetchAllData(true)}
               disabled={isRefreshing}
-              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-bold transition-all border border-slate-200/60 dark:border-slate-700/60 disabled:opacity-50 cursor-pointer shadow-2xs"
+              className="flex-1 sm:flex-initial min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-bold transition-all border border-slate-200/60 dark:border-slate-700/60 disabled:opacity-50 cursor-pointer shadow-2xs active:scale-98"
             >
               <RefreshCw className={`w-4 h-4 text-emerald-600 dark:text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span>تحديث المؤشرات</span>
             </button>
             <Link
               to="/"
-              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs"
+              className="flex-1 sm:flex-initial min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-98"
             >
               <span>معاينة الموقع</span>
               <ArrowUpRight className="w-4 h-4" />
@@ -289,26 +289,26 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
       </div>
 
       {/* 2. Core Operational KPI Cards (Grid) */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-4">
         
         {/* Card 1: News Count */}
         <div 
           onClick={() => onNavigateTab?.('news')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
               المحتوى الإخباري
             </span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
-              <FileText className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center shrink-0 transition-colors">
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+          <div className="mt-2.5 sm:mt-3">
+            <div className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {stats?.newsCount ?? 0}
             </div>
-            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               <span className="text-emerald-600 dark:text-emerald-400 font-bold">{stats?.publishedCount ?? 0}</span> منشور • {stats?.draftsCount ?? 0} مسودة
             </div>
           </div>
@@ -317,23 +317,23 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 2: Users Count */}
         <div 
           onClick={() => isSuperAdmin && onNavigateTab?.('users')}
-          className={`group bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
+          className={`group bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
             isSuperAdmin ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
           }`}
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
               المستخدمون
             </span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
-              <Users className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center shrink-0 transition-colors">
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+          <div className="mt-2.5 sm:mt-3">
+            <div className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {stats?.usersCount ?? 0}
             </div>
-            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               <span className="text-blue-600 dark:text-blue-400 font-bold">{stats?.adminsCount ?? 0}</span> مسؤولين بالنظام
             </div>
           </div>
@@ -342,21 +342,21 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 3: Active Contest */}
         <div 
           onClick={() => onNavigateTab?.('predictions_contests')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between min-w-0 overflow-hidden"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between min-w-0 overflow-hidden"
         >
           <div className="flex items-center justify-between gap-1.5">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
               المسابقة النشطة
             </span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center shrink-0 transition-colors">
-              <Trophy className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center shrink-0 transition-colors">
+              <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3 min-w-0">
+          <div className="mt-2.5 sm:mt-3 min-w-0">
             <div className="text-xs sm:text-base font-black text-slate-900 dark:text-white truncate" title={activeContest?.name || 'لا توجد مسابقة'}>
               {activeContest ? activeContest.name : 'غير محددة'}
             </div>
-            <div className="mt-1.5 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               {activeContest ? (
                 <span className="text-amber-600 dark:text-amber-400 font-bold">{activeContest.participantsCount} مشارك مسجل</span>
               ) : (
@@ -369,21 +369,21 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 4: Prediction Matches */}
         <div 
           onClick={() => onNavigateTab?.('predictions_matches')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
               مباريات التوقع
             </span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
-              <Target className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center shrink-0 transition-colors">
+              <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+          <div className="mt-2.5 sm:mt-3">
+            <div className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {predictionStats?.totalMatches ?? activeContest?.matchesCount ?? 0}
             </div>
-            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               <span className="text-purple-600 dark:text-purple-400 font-bold">{predictionStats?.evaluatedMatches ?? 0}</span> محسوبة ومعتمدة
             </div>
           </div>
@@ -392,41 +392,41 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
         {/* Card 5: Total Predictions */}
         <div 
           onClick={() => onNavigateTab?.('predictions_participants')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
+          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
               إجمالي التوقعات
             </span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center transition-colors">
-              <Activity className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 flex items-center justify-center shrink-0 transition-colors">
+              <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+          <div className="mt-2.5 sm:mt-3">
+            <div className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {predictionStats?.totalPredictions ?? 0}
             </div>
-            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               دقة: <span className="text-rose-600 dark:text-rose-400 font-bold">{predictionStats?.successRate ?? 0}%</span> • {predictionStats?.correctPredictions ?? 0} صحيح
             </div>
           </div>
         </div>
 
         {/* Card 6: Scheduled Matches */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+        <div className="bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 truncate">
               مباريات الكرة
             </span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
-              <Calendar className="w-4 h-4" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+          <div className="mt-2.5 sm:mt-3">
+            <div className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
               {matches.length}
             </div>
-            <div className="mt-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+            <div className="mt-1 text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
               <span className="text-blue-600 dark:text-blue-400 font-bold">{todayMatches.length}</span> مباراة مسجلة اليوم
             </div>
           </div>
@@ -434,117 +434,78 @@ export default function AdminOverview({ token, onNavigateTab, isSuperAdmin }: Ad
 
       </div>
 
-      {/* 3. Quick Administrative Actions */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-2xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+      {/* 3. Quick Administrative Actions Toolbar */}
+      <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-3 sm:p-4 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pb-2.5 mb-2.5 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
               العمليات والإجراءات السريعة
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-              الوصول الفوري لأهم أقسام الإدارة والتحرير وإعدادات المسابقات
-            </p>
+            </span>
           </div>
+          <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium">
+            الوصول المباشر للأقسام التشغيلية
+          </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Standard Button Toolbar */}
+        <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
+          {/* Primary Action Button */}
           <button
             type="button"
             onClick={() => onNavigateTab?.('news')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
+            className="min-h-[36px] px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
           >
-            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
-              <FileEdit className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                إدارة الأخبار
-              </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">إضافة وتعديل المقالات</div>
-            </div>
+            <FileEdit className="w-3.5 h-3.5" />
+            <span>إدارة الأخبار</span>
+          </button>
+
+          {/* Secondary Action Buttons */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.('predictions_matches')}
+            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+          >
+            <Target className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+            <span>مباريات التوقع</span>
           </button>
 
           <button
             type="button"
             onClick={() => onNavigateTab?.('predictions_contests')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
+            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
           >
-            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
-              <Trophy className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                إعدادات المسابقات
-              </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">الجوائز ونظام النقاط</div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onNavigateTab?.('predictions_matches')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
-          >
-            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
-              <Target className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                مباريات التوقع
-              </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">جدولة واحتساب النتائج</div>
-            </div>
+            <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>إعدادات المسابقات</span>
           </button>
 
           <button
             type="button"
             onClick={() => onNavigateTab?.('predictions_participants')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
+            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
           >
-            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
-              <UserCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                المشاركون بالمسابقة
-              </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">مراجعة طلبات الانضمام</div>
-            </div>
+            <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>المشاركون</span>
           </button>
 
           {isSuperAdmin && (
             <button
               type="button"
               onClick={() => onNavigateTab?.('users')}
-              className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
+              className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
             >
-              <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
-                <Shield className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                  إدارة المستخدمين
-                </div>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">الصلاحيات والوصول</div>
-              </div>
+              <Shield className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>إدارة المستخدمين</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={() => onNavigateTab?.('logs')}
-            className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-right transition-all flex flex-col justify-between group min-h-[90px] cursor-pointer"
+            className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
           >
-            <div className="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-slate-900 transition-colors">
-              <Clock className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                سجل العمليات
-              </div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">تتبع أحداث وتغييرات النظام</div>
-            </div>
+            <Clock className="w-3.5 h-3.5 text-slate-500" />
+            <span>سجل العمليات</span>
           </button>
         </div>
       </div>
