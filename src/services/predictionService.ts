@@ -12,7 +12,8 @@ import {
 } from '../db/schema.ts';
 import { eq, and, sql, desc, asc, count, sum, inArray, or, ne } from 'drizzle-orm';
 import { seedSaudiAndNationalTeams } from './seedSaudiAndNationalTeams.ts';
-import { matchTeamFromCatalog, matchLeagueFromCatalog } from './knownTeamsAndLeagues.ts';
+import { matchTeamFromCatalog, matchLeagueFromCatalog, normalizeSportsName } from './knownTeamsAndLeagues.ts';
+import { getArabicTeamName } from '../utils/teamTranslations.ts';
 
 export function normalizeArabicText(str: string): string {
   return (str || '')
@@ -2844,67 +2845,89 @@ export async function createAdminLeague(name: string, logo?: string | null) {
   return await getOrCreateLeague(cleanName, logo);
 }
 
-export async function getOrCreateTeam(name: string, logo?: string | null, leagueContext?: string) {
+/**
+ * Resolves a verified team strictly from the existing DB `teams` table,
+ * leveraging the full catalog recognition engine, league context, aliases, and translations.
+ * Returns the DB team record (with its verified teams.logo and apiTeamId) or null if not found.
+ */
+export async function findVerifiedTeam(name: string, leagueContext?: string) {
   const cleanName = name?.trim();
-  if (!cleanName) throw new Error('اسم الفريق مطلوب');
+  if (!cleanName) return null;
   const normClean = normalizeArabicText(cleanName);
+  const normSports = normalizeSportsName(cleanName);
+  const translatedAr = getArabicTeamName(cleanName);
 
-  // Check known catalog for verified teams and logos with league context
-  const catalogMatch = matchTeamFromCatalog(cleanName, leagueContext);
+  // 1. Identify team via catalog using league context & aliases
+  const catalogMatch =
+    matchTeamFromCatalog(cleanName, leagueContext) ||
+    (translatedAr && translatedAr !== cleanName ? matchTeamFromCatalog(translatedAr, leagueContext) : null);
 
   const allTeams = await db.select().from(teams);
-  let found = allTeams.find(
-    (t) =>
-      normalizeArabicText(t.name) === normClean ||
-      t.name.trim().toLowerCase() === cleanName.toLowerCase() ||
-      t.id.toLowerCase() === cleanName.toLowerCase() ||
-      (catalogMatch && (t.id.toLowerCase() === catalogMatch.id.toLowerCase() || normalizeArabicText(t.name) === normalizeArabicText(catalogMatch.name)))
-  );
 
-  // Special match for national teams: e.g. "مصر" matching "منتخب مصر" or vice versa
+  // 2. Lookup candidate in the DB teams table
+  let found = allTeams.find((t) => {
+    if (catalogMatch) {
+      if (t.id.toLowerCase() === catalogMatch.id.toLowerCase()) return true;
+      if (normalizeSportsName(t.name) === normalizeSportsName(catalogMatch.name)) return true;
+      if (normalizeArabicText(t.name) === normalizeArabicText(catalogMatch.name)) return true;
+      if (
+        catalogMatch.aliases &&
+        catalogMatch.aliases.some(
+          (a) => normalizeSportsName(t.name) === normalizeSportsName(a) || normalizeArabicText(t.name) === normalizeArabicText(a)
+        )
+      ) {
+        return true;
+      }
+    }
+    return (
+      t.id.toLowerCase() === cleanName.toLowerCase() ||
+      t.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+      normalizeArabicText(t.name) === normClean ||
+      normalizeSportsName(t.name) === normSports ||
+      (translatedAr &&
+        (normalizeArabicText(t.name) === normalizeArabicText(translatedAr) ||
+          normalizeSportsName(t.name) === normalizeSportsName(translatedAr)))
+    );
+  });
+
+  // 3. Special match for national teams: e.g. "مصر" vs "منتخب مصر"
   if (!found) {
     const withoutMontakhab = normClean.replace(/^منتخب\s+/, '');
+    const withoutMontakhabSports = normSports.replace(/^منتخب\s+/, '');
     found = allTeams.find((t) => {
       const normT = normalizeArabicText(t.name);
+      const sportsT = normalizeSportsName(t.name);
       return (
         normT === withoutMontakhab ||
         normT === `منتخب ${withoutMontakhab}` ||
-        normT.replace(/^منتخب\s+/, '') === withoutMontakhab
+        normT.replace(/^منتخب\s+/, '') === withoutMontakhab ||
+        sportsT === withoutMontakhabSports ||
+        sportsT === `منتخب ${withoutMontakhabSports}` ||
+        sportsT.replace(/^منتخب\s+/, '') === withoutMontakhabSports
       );
     });
   }
 
-  // Alias fuzzy check if not found
-  if (!found && catalogMatch) {
-    for (const alias of catalogMatch.aliases) {
-      const normAlias = normalizeArabicText(alias);
-      found = allTeams.find((t) => normalizeArabicText(t.name) === normAlias);
-      if (found) break;
-    }
+  return found || null;
+}
+
+export async function getOrCreateTeam(name: string, logo?: string | null, leagueContext?: string) {
+  const cleanName = name?.trim();
+  if (!cleanName) throw new Error('اسم الفريق مطلوب');
+
+  const verified = await findVerifiedTeam(cleanName, leagueContext);
+  if (verified) {
+    return verified;
   }
+
+  const normClean = normalizeArabicText(cleanName);
+  const catalogMatch = matchTeamFromCatalog(cleanName, leagueContext);
 
   const providedLogo =
     logo && logo.trim() && !logo.includes('placeholder') && !logo.includes('ui-avatars') ? logo.trim() : null;
 
-  const effectiveLogo =
-    providedLogo ||
-    catalogMatch?.logo ||
-    (found?.logo && !found.logo.includes('placeholder') && !found.logo.includes('ui-avatars') ? found.logo : null);
-
-  if (found) {
-    // If the caller explicitly passed a valid new logo that differs from found, update the team in the database!
-    if (providedLogo && providedLogo !== found.logo) {
-      await db.update(teams).set({ logo: providedLogo }).where(eq(teams.id, found.id)).catch(() => null);
-      found.logo = providedLogo;
-    } else if (effectiveLogo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
-      await db.update(teams).set({ logo: effectiveLogo }).where(eq(teams.id, found.id)).catch(() => null);
-      found.logo = effectiveLogo;
-    }
-    return found;
-  }
-
   const targetId = catalogMatch?.id || `ext_t_${cleanName.toLowerCase().replace(/[^\w\u0621-\u064A\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 24) || 'cust'}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-  const finalLogo = effectiveLogo || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=10b981&color=fff&size=128`;
+  const finalLogo = providedLogo || null;
 
   const inserted = await db
     .insert(teams)
@@ -3040,12 +3063,25 @@ export async function addCustomExternalMatchToPredictions(data: {
 
     const points = typeof data.pointsPerMatch === 'number' && data.pointsPerMatch >= 1 && data.pointsPerMatch <= 20 ? data.pointsPerMatch : 2;
 
-    // 1. Get or create league and teams in existing DB tables
-    const leagueRec = await getOrCreateLeague(data.leagueName, data.leagueLogo);
-    const homeTeamRec = await getOrCreateTeam(data.homeTeamName, data.homeTeamLogo, data.leagueName);
-    const awayTeamRec = await getOrCreateTeam(data.awayTeamName, data.awayTeamLogo, data.leagueName);
+    // 1. Identify and verify Home & Away teams in the DB
+    const homeTeamRec = await findVerifiedTeam(data.homeTeamName, data.leagueName);
+    if (!homeTeamRec) {
+      throw new Error(`لم يتم العثور على فريق موثق بهذا الاسم (${data.homeTeamName}). يرجى التحقق من اسم الفريق أو إضافته إلى قاعدة الفرق.`);
+    }
 
-    // 2. Insert into relational matches table
+    const awayTeamRec = await findVerifiedTeam(data.awayTeamName, data.leagueName);
+    if (!awayTeamRec) {
+      throw new Error(`لم يتم العثور على فريق موثق بهذا الاسم (${data.awayTeamName}). يرجى التحقق من اسم الفريق أو إضافته إلى قاعدة الفرق.`);
+    }
+
+    // 2. Get or create league
+    const leagueRec = await getOrCreateLeague(data.leagueName, data.leagueLogo);
+
+    // 3. Resolve logos strictly from verified teams.logo in DB (or manual picker if provided when logo is null)
+    const customHomeLogo = homeTeamRec.logo || (data.homeTeamLogo && !data.homeTeamLogo.includes('placeholder') && !data.homeTeamLogo.includes('ui-avatars') ? data.homeTeamLogo : null);
+    const customAwayLogo = awayTeamRec.logo || (data.awayTeamLogo && !data.awayTeamLogo.includes('placeholder') && !data.awayTeamLogo.includes('ui-avatars') ? data.awayTeamLogo : null);
+
+    // 4. Insert into relational matches table
     const newMatchId = data.externalMatchId?.trim() || `m_custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const matchTimeStr = parsedDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
 
@@ -3061,7 +3097,7 @@ export async function addCustomExternalMatchToPredictions(data: {
       updatedAt: new Date(),
     }).onConflictDoNothing();
 
-    // 3. Insert into predictionMatches table linked to matches.id
+    // 5. Insert into predictionMatches table linked to matches.id
     const inserted = await db
       .insert(predictionMatches)
       .values({
@@ -3071,10 +3107,10 @@ export async function addCustomExternalMatchToPredictions(data: {
         externalMatchId: data.externalMatchId || null,
         customLeagueName: leagueRec.name,
         customLeagueLogo: leagueRec.logo,
-        customHomeName: homeTeamRec.name,
-        customHomeLogo: homeTeamRec.logo,
-        customAwayName: awayTeamRec.name,
-        customAwayLogo: awayTeamRec.logo,
+        customHomeName: data.homeTeamName.trim(),
+        customHomeLogo: customHomeLogo,
+        customAwayName: data.awayTeamName.trim(),
+        customAwayLogo: customAwayLogo,
         customMatchDate: parsedDate,
         customStatus: 'SCHEDULED',
         pointsPerMatch: points,
@@ -3086,6 +3122,18 @@ export async function addCustomExternalMatchToPredictions(data: {
       message: 'تمت إضافة مباراة الدوري الخارجي إلى مسابقة التوقعات بنجاح وربطها بقاعدة البيانات',
       id: inserted[0].id,
       predictionMatch: inserted[0],
+      homeTeam: {
+        id: homeTeamRec.id,
+        name: homeTeamRec.name,
+        apiTeamId: homeTeamRec.apiTeamId,
+        logo: customHomeLogo,
+      },
+      awayTeam: {
+        id: awayTeamRec.id,
+        name: awayTeamRec.name,
+        apiTeamId: awayTeamRec.apiTeamId,
+        logo: customAwayLogo,
+      },
     };
   });
 }

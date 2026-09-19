@@ -104,6 +104,7 @@ export const teams = pgTable('teams', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   logo: text('logo'),
+  apiTeamId: integer('api_team_id'),
 });
 
 export const matches = pgTable('matches', {

@@ -66,6 +66,21 @@ export default function TeamLogoPickerModal({
 
   const currentTab = activeTab === 'suggested' && suggestedTeamsData.length === 0 ? 'saudi' : activeTab;
 
+  // Map DB logos from existingTeams
+  const dbLogoMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (existingTeams) {
+      for (const t of existingTeams) {
+        if (t.logo) {
+          if (t.id) map.set(String(t.id).toLowerCase(), t.logo);
+          map.set(t.name.trim().toLowerCase(), t.logo);
+          map.set(normalizeSportsName(t.name), t.logo);
+        }
+      }
+    }
+    return map;
+  }, [existingTeams]);
+
   // Filtered teams list based on active tab and search query
   const displayedTeams = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -105,16 +120,27 @@ export default function TeamLogoPickerModal({
       }
     }
 
-    if (!q) return baseList;
+    const resolvedList = baseList.map((team) => {
+      const dbLogo =
+        dbLogoMap.get(team.id.toLowerCase()) ||
+        dbLogoMap.get(team.name.trim().toLowerCase()) ||
+        dbLogoMap.get(normalizeSportsName(team.name));
+      if (dbLogo && dbLogo !== team.logo) {
+        return { ...team, logo: dbLogo };
+      }
+      return team;
+    });
 
-    return baseList.filter((team) => {
+    if (!q) return resolvedList;
+
+    return resolvedList.filter((team) => {
       const nameMatch = team.name.toLowerCase().includes(q) || normalizeSportsName(team.name).includes(qNorm);
       const aliasMatch = team.aliases.some(
         (a) => a.toLowerCase().includes(q) || normalizeSportsName(a).includes(qNorm)
       );
       return nameMatch || aliasMatch;
     });
-  }, [searchQuery, currentTab, suggestedTeamsData, existingTeams]);
+  }, [searchQuery, currentTab, suggestedTeamsData, existingTeams, dbLogoMap]);
 
   if (!isOpen) return null;
 

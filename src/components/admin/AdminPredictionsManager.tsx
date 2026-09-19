@@ -2706,14 +2706,15 @@ export default function AdminPredictionsManager({
                         const catalogMatch = matchTeamFromCatalog(val, customMatch.leagueName);
                         const matchTeam = existingData.teams.find(
                           (t) =>
+                            (catalogMatch && t.id.toLowerCase() === catalogMatch.id.toLowerCase()) ||
                             t.name.toLowerCase() === val.trim().toLowerCase() ||
                             normalizeSportsName(t.name) === normalizeSportsName(val)
                         );
-                        const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || customMatch.homeTeamLogo;
+                        const resolvedLogo = matchTeam?.logo || null;
                         setCustomMatch({
                           ...customMatch,
                           homeTeamName: val,
-                          homeTeamLogo: resolvedLogo,
+                          homeTeamLogo: resolvedLogo || '',
                         });
                       }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
@@ -2727,33 +2728,43 @@ export default function AdminPredictionsManager({
                         return (
                           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                             <span className="text-[10px] text-gray-400 font-bold">تأكيد النادي:</span>
-                            {suggs.map((t) => (
-                              <button
-                                key={`h_sugg_${t.id}`}
-                                type="button"
-                                onClick={() => {
-                                  setCustomMatch((prev) => ({
-                                    ...prev,
-                                    homeTeamName: t.name,
-                                    homeTeamLogo: t.logo,
-                                  }));
-                                  setHomeTeamConfirmed(true);
-                                }}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] font-black text-purple-900 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900 transition-all cursor-pointer shadow-2xs hover:scale-[1.02]"
-                                title={`تأكيد واختيار ${t.name}`}
-                              >
-                                <img
-                                  src={t.logo}
-                                  alt=""
-                                  className="w-4 h-4 object-contain"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
+                            {suggs.map((t) => {
+                              const dbTeam = existingData.teams.find(
+                                (dt) =>
+                                  dt.id.toLowerCase() === t.id.toLowerCase() ||
+                                  normalizeSportsName(dt.name) === normalizeSportsName(t.name)
+                              );
+                              const officialLogo = dbTeam?.logo || null;
+                              return (
+                                <button
+                                  key={`h_sugg_${t.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomMatch((prev) => ({
+                                      ...prev,
+                                      homeTeamName: t.name,
+                                      homeTeamLogo: officialLogo || '',
+                                    }));
+                                    setHomeTeamConfirmed(true);
                                   }}
-                                />
-                                <span>{t.name}</span>
-                                <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                              </button>
-                            ))}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] font-black text-purple-900 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900 transition-all cursor-pointer shadow-2xs hover:scale-[1.02]"
+                                  title={`تأكيد واختيار ${t.name}`}
+                                >
+                                  {officialLogo && (
+                                    <img
+                                      src={officialLogo}
+                                      alt=""
+                                      className="w-4 h-4 object-contain"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                  <span>{t.name}</span>
+                                  <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                </button>
+                              );
+                            })}
                           </div>
                         );
                       })()
@@ -2932,14 +2943,15 @@ export default function AdminPredictionsManager({
                         const catalogMatch = matchTeamFromCatalog(val, customMatch.leagueName);
                         const matchTeam = existingData.teams.find(
                           (t) =>
+                            (catalogMatch && t.id.toLowerCase() === catalogMatch.id.toLowerCase()) ||
                             t.name.toLowerCase() === val.trim().toLowerCase() ||
                             normalizeSportsName(t.name) === normalizeSportsName(val)
                         );
-                        const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || customMatch.awayTeamLogo;
+                        const resolvedLogo = matchTeam?.logo || null;
                         setCustomMatch({
                           ...customMatch,
                           awayTeamName: val,
-                          awayTeamLogo: resolvedLogo,
+                          awayTeamLogo: resolvedLogo || '',
                         });
                       }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
@@ -2953,33 +2965,43 @@ export default function AdminPredictionsManager({
                         return (
                           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                             <span className="text-[10px] text-gray-400 font-bold">تأكيد النادي:</span>
-                            {suggs.map((t) => (
-                              <button
-                                key={`a_sugg_${t.id}`}
-                                type="button"
-                                onClick={() => {
-                                  setCustomMatch((prev) => ({
-                                    ...prev,
-                                    awayTeamName: t.name,
-                                    awayTeamLogo: t.logo,
-                                  }));
-                                  setAwayTeamConfirmed(true);
-                                }}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] font-black text-purple-900 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900 transition-all cursor-pointer shadow-2xs hover:scale-[1.02]"
-                                title={`تأكيد واختيار ${t.name}`}
-                              >
-                                <img
-                                  src={t.logo}
-                                  alt=""
-                                  className="w-4 h-4 object-contain"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
+                            {suggs.map((t) => {
+                              const dbTeam = existingData.teams.find(
+                                (dt) =>
+                                  dt.id.toLowerCase() === t.id.toLowerCase() ||
+                                  normalizeSportsName(dt.name) === normalizeSportsName(t.name)
+                              );
+                              const officialLogo = dbTeam?.logo || null;
+                              return (
+                                <button
+                                  key={`a_sugg_${t.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomMatch((prev) => ({
+                                      ...prev,
+                                      awayTeamName: t.name,
+                                      awayTeamLogo: officialLogo || '',
+                                    }));
+                                    setAwayTeamConfirmed(true);
                                   }}
-                                />
-                                <span>{t.name}</span>
-                                <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                              </button>
-                            ))}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] font-black text-purple-900 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900 transition-all cursor-pointer shadow-2xs hover:scale-[1.02]"
+                                  title={`تأكيد واختيار ${t.name}`}
+                                >
+                                  {officialLogo && (
+                                    <img
+                                      src={officialLogo}
+                                      alt=""
+                                      className="w-4 h-4 object-contain"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                  <span>{t.name}</span>
+                                  <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                </button>
+                              );
+                            })}
                           </div>
                         );
                       })()
@@ -4697,14 +4719,15 @@ export default function AdminPredictionsManager({
                           const catalogMatch = matchTeamFromCatalog(val, editingMatchForm.leagueName);
                           const matchTeam = existingData.teams.find(
                             (t) =>
+                              (catalogMatch && t.id.toLowerCase() === catalogMatch.id.toLowerCase()) ||
                               t.name.toLowerCase() === val.trim().toLowerCase() ||
                               normalizeSportsName(t.name) === normalizeSportsName(val)
                           );
-                          const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || editingMatchForm.homeTeamLogo;
+                          const resolvedLogo = matchTeam?.logo || null;
                           setEditingMatchForm({
                             ...editingMatchForm,
                             homeTeamName: val,
-                            homeTeamLogo: resolvedLogo,
+                            homeTeamLogo: resolvedLogo || '',
                           });
                         }}
                         className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
@@ -4720,23 +4743,40 @@ export default function AdminPredictionsManager({
                         return (
                           <div className="flex flex-wrap items-center gap-1">
                             <span className="text-[9px] text-gray-400 font-bold">تأكيد:</span>
-                            {suggs.map((t) => (
-                              <button
-                                key={`edit_h_sug_${t.id}`}
-                                type="button"
-                                onClick={() => {
-                                  setEditingMatchForm((prev) => ({
-                                    ...prev,
-                                    homeTeamName: t.name,
-                                    homeTeamLogo: t.logo,
-                                  }));
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[10px] font-bold text-purple-900 dark:text-purple-200 hover:bg-purple-100 cursor-pointer"
-                              >
-                                <img src={t.logo} alt="" className="w-3.5 h-3.5 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
-                                <span>{t.name}</span>
-                              </button>
-                            ))}
+                            {suggs.map((t) => {
+                              const dbTeam = existingData.teams.find(
+                                (dt) =>
+                                  dt.id.toLowerCase() === t.id.toLowerCase() ||
+                                  normalizeSportsName(dt.name) === normalizeSportsName(t.name)
+                              );
+                              const officialLogo = dbTeam?.logo || null;
+                              return (
+                                <button
+                                  key={`edit_h_sug_${t.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMatchForm((prev) => ({
+                                      ...prev,
+                                      homeTeamName: t.name,
+                                      homeTeamLogo: officialLogo || '',
+                                    }));
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[10px] font-bold text-purple-900 dark:text-purple-200 hover:bg-purple-100 cursor-pointer"
+                                >
+                                  {officialLogo && (
+                                    <img
+                                      src={officialLogo}
+                                      alt=""
+                                      className="w-3.5 h-3.5 object-contain"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                  <span>{t.name}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         );
                       })()
@@ -4817,14 +4857,15 @@ export default function AdminPredictionsManager({
                           const catalogMatch = matchTeamFromCatalog(val, editingMatchForm.leagueName);
                           const matchTeam = existingData.teams.find(
                             (t) =>
+                              (catalogMatch && t.id.toLowerCase() === catalogMatch.id.toLowerCase()) ||
                               t.name.toLowerCase() === val.trim().toLowerCase() ||
                               normalizeSportsName(t.name) === normalizeSportsName(val)
                           );
-                          const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || editingMatchForm.awayTeamLogo;
+                          const resolvedLogo = matchTeam?.logo || null;
                           setEditingMatchForm({
                             ...editingMatchForm,
                             awayTeamName: val,
-                            awayTeamLogo: resolvedLogo,
+                            awayTeamLogo: resolvedLogo || '',
                           });
                         }}
                         className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
@@ -4840,23 +4881,40 @@ export default function AdminPredictionsManager({
                         return (
                           <div className="flex flex-wrap items-center gap-1">
                             <span className="text-[9px] text-gray-400 font-bold">تأكيد:</span>
-                            {suggs.map((t) => (
-                              <button
-                                key={`edit_a_sug_${t.id}`}
-                                type="button"
-                                onClick={() => {
-                                  setEditingMatchForm((prev) => ({
-                                    ...prev,
-                                    awayTeamName: t.name,
-                                    awayTeamLogo: t.logo,
-                                  }));
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[10px] font-bold text-purple-900 dark:text-purple-200 hover:bg-purple-100 cursor-pointer"
-                              >
-                                <img src={t.logo} alt="" className="w-3.5 h-3.5 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
-                                <span>{t.name}</span>
-                              </button>
-                            ))}
+                            {suggs.map((t) => {
+                              const dbTeam = existingData.teams.find(
+                                (dt) =>
+                                  dt.id.toLowerCase() === t.id.toLowerCase() ||
+                                  normalizeSportsName(dt.name) === normalizeSportsName(t.name)
+                              );
+                              const officialLogo = dbTeam?.logo || null;
+                              return (
+                                <button
+                                  key={`edit_a_sug_${t.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMatchForm((prev) => ({
+                                      ...prev,
+                                      awayTeamName: t.name,
+                                      awayTeamLogo: officialLogo || '',
+                                    }));
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[10px] font-bold text-purple-900 dark:text-purple-200 hover:bg-purple-100 cursor-pointer"
+                                >
+                                  {officialLogo && (
+                                    <img
+                                      src={officialLogo}
+                                      alt=""
+                                      className="w-3.5 h-3.5 object-contain"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                  <span>{t.name}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         );
                       })()

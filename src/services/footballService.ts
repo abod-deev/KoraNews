@@ -202,7 +202,7 @@ export async function initFootballDb() {
             await db.insert(teams).values({
               id: item.team.id,
               name: item.team.name,
-              logo: item.team.logo,
+              logo: null,
             }).catch(() => null);
           }
         }
@@ -534,10 +534,10 @@ async function processAndStoreMatches(apiMatches: any[]) {
         await db.insert(teams).values({
           id: norm.homeTeam.id,
           name: norm.homeTeam.name,
-          logo: norm.homeTeam.logo,
+          logo: null,
         }).catch(() => null);
       } else {
-        await db.update(teams).set({ name: norm.homeTeam.name, logo: norm.homeTeam.logo }).where(eq(teams.id, norm.homeTeam.id)).catch(() => null);
+        await db.update(teams).set({ name: norm.homeTeam.name }).where(eq(teams.id, norm.homeTeam.id)).catch(() => null);
       }
 
       // 3. Upsert Away Team
@@ -546,10 +546,10 @@ async function processAndStoreMatches(apiMatches: any[]) {
         await db.insert(teams).values({
           id: norm.awayTeam.id,
           name: norm.awayTeam.name,
-          logo: norm.awayTeam.logo,
+          logo: null,
         }).catch(() => null);
       } else {
-        await db.update(teams).set({ name: norm.awayTeam.name, logo: norm.awayTeam.logo }).where(eq(teams.id, norm.awayTeam.id)).catch(() => null);
+        await db.update(teams).set({ name: norm.awayTeam.name }).where(eq(teams.id, norm.awayTeam.id)).catch(() => null);
       }
 
       // 4. Upsert Match & Prevent duplicates (ID check or composite team+date check)

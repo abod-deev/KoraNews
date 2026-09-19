@@ -359,6 +359,9 @@ export default function PredictionMatchCard({
                   alt={m.homeTeam.name}
                   className="max-w-full max-h-full object-contain"
                   loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
                 />
               ) : (
                 <Shield className="w-6 h-6 sm:w-7 sm:h-7 text-slate-300 dark:text-slate-600" />
@@ -442,6 +445,9 @@ export default function PredictionMatchCard({
                   alt={m.awayTeam.name}
                   className="max-w-full max-h-full object-contain"
                   loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
                 />
               ) : (
                 <Shield className="w-6 h-6 sm:w-7 sm:h-7 text-slate-300 dark:text-slate-600" />

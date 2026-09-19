@@ -189,6 +189,9 @@ export default function MyPredictionsList({
                         alt=""
                         className="max-w-full max-h-full object-contain"
                         loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                       />
                     ) : (
                       <Shield className="w-4 h-4 text-slate-300" />
@@ -230,6 +233,9 @@ export default function MyPredictionsList({
                         alt=""
                         className="max-w-full max-h-full object-contain"
                         loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                       />
                     ) : (
                       <Shield className="w-4 h-4 text-slate-300" />
