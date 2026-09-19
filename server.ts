@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { adminAuth } from './src/lib/firebase-admin.ts';
 import { db, withDbRetry, initializeDatabaseSchema } from './src/db/index.ts';
-import { users, news, categories, comments, emailVerifications, activityLogs, errorLogs, contestParticipants, predictionMatches } from './src/db/schema.ts';
+import { users, news, categories, comments, emailVerifications, activityLogs, errorLogs, contestParticipants, predictionMatches, teams, leagues } from './src/db/schema.ts';
 import { eq, desc, sql, and, or, ilike, lt } from 'drizzle-orm';
 import { checkUserHasPermission } from './src/constants/permissions.ts';
 import {
@@ -88,9 +88,12 @@ import {
   updatePredictionMatchResult,
   createAdminLeague,
   createAdminTeam,
+  updateTeamLogo,
   adminSaveUserPrediction,
   adminUpdateUserPrediction,
   adminDeleteUserPrediction,
+  getAdminParticipantPredictions,
+  recalculateContestPredictions,
 } from './src/services/predictionService.ts';
 import { seedSaudiAndNationalTeams } from './src/services/seedSaudiAndNationalTeams.ts';
 import { runSystemCompatibilityAudit } from './src/services/systemCompatibilityService.ts';
@@ -1614,6 +1617,237 @@ async function startServer() {
   });
 
   /**
+   * GET /api/admin/predictions/participants/:userId/predictions
+   * Admin: Get all predictions of a specific participant with full match & evaluation details.
+   */
+  app.get('/api/admin/predictions/participants/:userId/predictions', requirePermission('predictions_participants_manage'), async (req: AuthRequest, res) => {
+    try {
+      const uidCheck = validatePositiveId(req.params.userId, 'معرف المستخدم');
+      if (!uidCheck.valid || uidCheck.value === undefined) {
+        return res.status(400).json({ error: uidCheck.error || 'معرف غير صحيح' });
+      }
+      const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+      const data = await getAdminParticipantPredictions(uidCheck.value, isNaN(contestId as number) ? undefined : contestId);
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error fetching participant predictions:', error);
+      return res.status(500).json({ error: 'فشل في جلب توقعات المشترك' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/recalculate-all
+   * Admin: Audit and recalculate all points across the contest matches atomically.
+   */
+  app.post('/api/admin/predictions/recalculate-all', requirePermission('predictions_results_manage'), async (req: AuthRequest, res) => {
+    try {
+      const contestId = req.body.contestId ? parseInt(req.body.contestId as string, 10) : undefined;
+      const result = await recalculateContestPredictions(req.dbUser.id, isNaN(contestId as number) ? undefined : contestId);
+      await logActivity(req.dbUser.id, 'RECALCULATE_POINTS', 'PREDICTIONS_CONTEST', String(contestId || 'active'), {
+        evaluatedMatchesCount: result.evaluatedMatchesCount,
+        totalPointsRecalculated: result.totalPointsRecalculated,
+      });
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Error recalculating contest predictions:', error);
+      return res.status(400).json({ error: error.message || 'فشل في إعادة احتساب النقاط' });
+    }
+  });
+
+  // ==========================================
+  // TEAMS & LOGOS MANAGEMENT ROUTES
+  // ==========================================
+
+  /**
+   * GET /api/admin/teams
+   * Fetch all teams from database with search and filtering.
+   */
+  app.get('/api/admin/teams', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const search = (req.query.search as string || '').trim().toLowerCase();
+      const allTeams = await db.select().from(teams);
+
+      let filtered = allTeams;
+      if (search) {
+        filtered = allTeams.filter((t) =>
+          t.name.toLowerCase().includes(search) || t.id.toLowerCase().includes(search)
+        );
+      }
+
+      // Sort alphabetically by name
+      filtered.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
+      return res.json({
+        total: allTeams.length,
+        filteredCount: filtered.length,
+        teams: filtered,
+      });
+    } catch (error: any) {
+      console.error('Error fetching teams:', error);
+      return res.status(500).json({ error: 'فشل في جلب قائمة الأندية' });
+    }
+  });
+
+  /**
+   * POST /api/admin/teams
+   * Add a new team manually to the database.
+   */
+  app.post('/api/admin/teams', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const { id, name, logo } = req.body;
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'اسم النادي مطلوب' });
+      }
+
+      const teamId = (id && id.trim())
+        ? id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')
+        : `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+      const cleanName = name.trim();
+      const cleanLogo = logo && logo.trim() ? logo.trim() : null;
+
+      // Check if team already exists
+      const existing = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
+      if (existing.length > 0) {
+        return res.status(400).json({ error: 'معرف النادي موجود بالفعل' });
+      }
+
+      await db.insert(teams).values({
+        id: teamId,
+        name: cleanName,
+        logo: cleanLogo,
+      });
+
+      await logActivity(req.dbUser.id, 'CREATE_TEAM', 'TEAMS', teamId, { name: cleanName, logo: cleanLogo });
+
+      return res.status(201).json({
+        success: true,
+        message: 'تمت إضافة النادي بنجاح',
+        team: { id: teamId, name: cleanName, logo: cleanLogo },
+      });
+    } catch (error: any) {
+      console.error('Error creating team:', error);
+      return res.status(500).json({ error: 'فشل في إضافة النادي' });
+    }
+  });
+
+  /**
+   * PUT /api/admin/teams/:id
+   * Update team name and/or logo URL in the database, with optional sync to prediction matches.
+   */
+  app.put('/api/admin/teams/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const teamId = String(req.params.id || '');
+      const { name, logo, syncMatches } = req.body;
+
+      if (!teamId) {
+        return res.status(400).json({ error: 'معرف النادي مطلوب' });
+      }
+
+      const existing = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
+      if (existing.length === 0) {
+        return res.status(404).json({ error: 'النادي غير موجود في قاعدة البيانات' });
+      }
+
+      const currentTeam = existing[0];
+      const newName = name !== undefined ? name.trim() : currentTeam.name;
+      const newLogo = logo !== undefined ? (logo.trim() || null) : currentTeam.logo;
+
+      await db
+        .update(teams)
+        .set({
+          name: newName,
+          logo: newLogo,
+        })
+        .where(eq(teams.id, teamId));
+
+      let matchesUpdated = 0;
+      if (syncMatches && newLogo) {
+        // Update all prediction_matches where this team name is used
+        const resHome = await db
+          .update(predictionMatches)
+          .set({ customHomeLogo: newLogo })
+          .where(eq(predictionMatches.customHomeName, currentTeam.name));
+
+        const resAway = await db
+          .update(predictionMatches)
+          .set({ customAwayLogo: newLogo })
+          .where(eq(predictionMatches.customAwayName, currentTeam.name));
+
+        if (newName !== currentTeam.name) {
+          await db
+            .update(predictionMatches)
+            .set({ customHomeName: newName, customHomeLogo: newLogo })
+            .where(eq(predictionMatches.customHomeName, currentTeam.name));
+
+          await db
+            .update(predictionMatches)
+            .set({ customAwayName: newName, customAwayLogo: newLogo })
+            .where(eq(predictionMatches.customAwayName, currentTeam.name));
+        }
+      }
+
+      await logActivity(req.dbUser.id, 'UPDATE_TEAM', 'TEAMS', teamId, {
+        oldName: currentTeam.name,
+        newName,
+        oldLogo: currentTeam.logo,
+        newLogo,
+        syncMatches: !!syncMatches,
+      });
+
+      return res.json({
+        success: true,
+        message: 'تم تحديث بيانات وشعار النادي بنجاح',
+        team: { id: teamId, name: newName, logo: newLogo },
+      });
+    } catch (error: any) {
+      console.error('Error updating team:', error);
+      return res.status(500).json({ error: 'فشل في تحديث بيانات النادي' });
+    }
+  });
+
+  /**
+   * DELETE /api/admin/teams/:id
+   * Delete a custom team from the database.
+   */
+  app.delete('/api/admin/teams/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const teamId = String(req.params.id || '');
+      if (!teamId) {
+        return res.status(400).json({ error: 'معرف النادي مطلوب' });
+      }
+
+      await db.delete(teams).where(eq(teams.id, teamId));
+      await logActivity(req.dbUser.id, 'DELETE_TEAM', 'TEAMS', teamId);
+
+      return res.json({ success: true, message: 'تم حذف النادي بنجاح' });
+    } catch (error: any) {
+      console.error('Error deleting team:', error);
+      return res.status(500).json({ error: 'فشل في حذف النادي' });
+    }
+  });
+
+  /**
+   * POST /api/admin/teams/sync-official-logos
+   * Admin: One-click sync and repair of all team logos and match icons across the entire database!
+   */
+  app.post('/api/admin/teams/sync-official-logos', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
+    try {
+      const result = await seedSaudiAndNationalTeams(true);
+      await logActivity(req.dbUser.id, 'SYNC_OFFICIAL_LOGOS', 'TEAMS', 'ALL', result);
+
+      return res.json({
+        success: true,
+        message: 'تمت مزامنة وتصحيح جميع شعارات الأندية والمباريات بنجاح!',
+        ...result,
+      });
+    } catch (error: any) {
+      console.error('Error syncing official logos:', error);
+      return res.status(500).json({ error: 'فشل في مزامنة الشعارات الرسمية' });
+    }
+  });
+
+  /**
    * GET /api/predictions
    * Fetch all active prediction matches (with user prediction if logged in).
    */
@@ -2203,6 +2437,27 @@ async function startServer() {
       return res.json({ success: true, team: newTeam });
     } catch (error: any) {
       return res.status(400).json({ error: error.message || 'فشل في إضافة الفريق' });
+    }
+  });
+
+  /**
+   * POST /api/admin/predictions/teams/update-logo
+   * Admin: Update the logo of a team or national team explicitly.
+   */
+  app.post('/api/admin/predictions/teams/update-logo', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
+    try {
+      const { name, logo } = req.body;
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'اسم الفريق أو المنتخب مطلوب' });
+      }
+      if (!logo || typeof logo !== 'string' || !logo.trim()) {
+        return res.status(400).json({ error: 'رابط الشعار الجديد مطلوب' });
+      }
+      const updated = await updateTeamLogo(name.trim(), logo.trim());
+      await logActivity(req.dbUser.id, 'UPDATE', 'TEAM', updated.id, { name: updated.name, logo: updated.logo });
+      return res.json({ success: true, team: updated });
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message || 'فشل في تحديث شعار الفريق' });
     }
   });
 

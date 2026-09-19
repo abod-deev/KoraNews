@@ -25,39 +25,11 @@ import {
   Target,
   Sparkles,
   Award,
-  History,
 } from 'lucide-react';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { motion } from 'motion/react';
 
 const DEFAULT_AVATAR = '/default-avatar.svg';
-
-interface PredictionHistoryItem {
-  id: number;
-  predictionMatchId: number;
-  pointsPerMatch: number;
-  homeScore: number;
-  awayScore: number;
-  pointsEarned: number;
-  isEvaluated: boolean;
-  isGolden: boolean;
-  goldenPoints: number;
-  createdAt: string;
-  displayStatus: 'upcoming' | 'predicted' | 'live' | 'pending_confirmation' | 'finished_correct' | 'finished_wrong';
-  matchState: string;
-  match: {
-    id: string;
-    leagueName: string;
-    leagueLogo?: string;
-    homeTeam: { name: string; logo?: string };
-    awayTeam: { name: string; logo?: string };
-    homeScore: number | null;
-    awayScore: number | null;
-    status: string;
-    matchTime: string;
-    matchDate: string;
-  };
-}
 
 interface UserPredictionStats {
   rank: number;
@@ -85,8 +57,6 @@ export default function Profile() {
 
   const [profileStats, setProfileStats] = useState<{ newsCount: number; createdAt?: string } | null>(null);
   const [predStats, setPredStats] = useState<UserPredictionStats | null>(null);
-  const [predHistory, setPredHistory] = useState<PredictionHistoryItem[]>([]);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -146,18 +116,8 @@ export default function Profile() {
           const statsData = await resStats.json();
           setPredStats(statsData);
         }
-
-        // 3. Fetch Prediction History
-        setIsHistoryLoading(true);
-        const resHistory = await fetch('/api/predictions/my', { headers });
-        if (resHistory.ok) {
-          const historyData = await resHistory.json();
-          setPredHistory(Array.isArray(historyData) ? historyData : []);
-        }
       } catch (err) {
-        console.error('Failed to fetch profile stats or prediction history:', err);
-      } finally {
-        setIsHistoryLoading(false);
+        console.error('Failed to fetch profile stats:', err);
       }
     };
 
@@ -577,153 +537,7 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* 3. Prediction History Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <History className="w-5 h-5 text-emerald-500" />
-            <span>سجل توقعاتي السابق</span>
-          </h2>
-          <span className="text-xs font-bold text-slate-400">
-            إجمالي التوقعات: {predHistory.length}
-          </span>
-        </div>
-
-        {isHistoryLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((n) => (
-              <div key={n} className="h-20 bg-slate-100 dark:bg-slate-800/40 rounded-3xl animate-pulse" />
-            ))}
-          </div>
-        ) : predHistory.length === 0 ? (
-          <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
-            <Target className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
-            <h3 className="text-base font-black text-slate-700 dark:text-slate-300">
-              لم تقم بإجراء أي توقعات بعد
-            </h3>
-            <p className="text-xs text-slate-500 font-bold max-w-sm mx-auto">
-              شارك في توقع نتائج المباريات القادمة لاكتساب النقاط وتصدر الترتيب العام!
-            </p>
-            <Link
-              to="/predictions"
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs transition-all shadow-xs"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>توقع المباريات الآن</span>
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {predHistory.map((item) => (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white dark:bg-slate-900 rounded-3xl p-4 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3"
-              >
-                {/* Header: League & Status */}
-                <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-2 font-bold text-slate-500 dark:text-slate-400">
-                    {item.match.leagueLogo && (
-                      <img loading="lazy" src={item.match.leagueLogo} alt="" className="w-4 h-4 object-contain" />
-                    )}
-                    <span>{item.match.leagueName}</span>
-                  </div>
-
-                  {/* Status Badges */}
-                  <div className="flex items-center gap-1.5">
-                    {item.isGolden && (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-black border border-amber-500/30 flex items-center gap-1">
-                        <Crown className="w-3 h-3 text-amber-500" />
-                        <span>ذهبية</span>
-                      </span>
-                    )}
-
-                    {item.displayStatus === 'finished_correct' && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black border border-emerald-500/20">
-                        ⭐ توقع صحيح (+{item.pointsEarned} نقطة)
-                      </span>
-                    )}
-
-                    {item.displayStatus === 'finished_wrong' && (
-                      <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 text-[10px] font-black border border-red-500/20">
-                        ❌ توقع خاطئ (0 نقطة)
-                      </span>
-                    )}
-
-                    {item.displayStatus === 'pending_confirmation' && (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-black border border-amber-500/20">
-                        ⏳ بانتظار التأكيد
-                      </span>
-                    )}
-
-                    {(item.displayStatus === 'predicted' || item.displayStatus === 'upcoming') && (
-                      <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-black border border-blue-500/20">
-                        🎯 تم التوقع
-                      </span>
-                    )}
-
-                    {item.displayStatus === 'live' && (
-                      <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-black animate-pulse">
-                        LIVE جارية
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Match Teams & Prediction Comparison */}
-                <div className="flex items-center justify-between gap-2">
-                  {/* Home Team */}
-                  <div className="flex-1 flex items-center gap-2 justify-start min-w-0">
-                    <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                      {item.match.homeTeam.logo ? (
-                        <img loading="lazy" src={item.match.homeTeam.logo} alt="" className="w-5 h-5 object-contain" />
-                      ) : (
-                        <span className="text-[10px] font-bold">{item.match.homeTeam.name.charAt(0)}</span>
-                      )}
-                    </div>
-                    <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate">
-                      {item.match.homeTeam.name}
-                    </span>
-                  </div>
-
-                  {/* Prediction vs Actual Score Display */}
-                  <div className="flex flex-col items-center shrink-0 px-2">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-black text-sm sm:text-base">
-                        {item.homeScore} - {item.awayScore}
-                      </span>
-                    </div>
-                    <span className="text-[9px] font-extrabold text-slate-400 mt-0.5">توقعك</span>
-
-                    {item.match.homeScore !== null && item.match.awayScore !== null && (
-                      <div className="text-[10px] font-black text-slate-500 dark:text-slate-400 mt-1">
-                        النتيجة الفعلية: {item.match.homeScore} - {item.match.awayScore}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Away Team */}
-                  <div className="flex-1 flex items-center gap-2 justify-end min-w-0">
-                    <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate text-left">
-                      {item.match.awayTeam.name}
-                    </span>
-                    <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                      {item.match.awayTeam.logo ? (
-                        <img loading="lazy" src={item.match.awayTeam.logo} alt="" className="w-5 h-5 object-contain" />
-                      ) : (
-                        <span className="text-[10px] font-bold">{item.match.awayTeam.name.charAt(0)}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 4. Account Action Buttons (Logout & Delete) */}
+      {/* Account Action Buttons (Logout & Delete) */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <button
           type="button"

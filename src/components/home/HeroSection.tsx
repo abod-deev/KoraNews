@@ -34,14 +34,14 @@ export default function HeroSection() {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 select-none">
-        <div className="lg:col-span-2 h-[220px] sm:h-[360px] lg:h-[420px] rounded-2xl sm:rounded-3xl bg-slate-200 dark:bg-slate-800 animate-pulse p-4 sm:p-6 flex flex-col justify-end gap-3">
+        <div className="lg:col-span-2 h-[170px] sm:h-[260px] lg:h-[320px] rounded-2xl sm:rounded-3xl bg-slate-200 dark:bg-slate-800 animate-pulse p-4 sm:p-6 flex flex-col justify-end gap-3">
           <div className="w-24 h-5 bg-slate-300 dark:bg-slate-700 rounded-md" />
           <div className="w-3/4 h-8 bg-slate-300 dark:bg-slate-700 rounded-lg" />
           <div className="w-1/2 h-4 bg-slate-300 dark:bg-slate-700 rounded-md" />
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 sm:gap-4">
-          <div className="h-[120px] sm:h-[170px] lg:h-[200px] rounded-2xl sm:rounded-3xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
-          <div className="h-[120px] sm:h-[170px] lg:h-[200px] rounded-2xl sm:rounded-3xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+          <div className="h-[90px] sm:h-[125px] lg:h-[152px] rounded-2xl sm:rounded-3xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+          <div className="h-[90px] sm:h-[125px] lg:h-[152px] rounded-2xl sm:rounded-3xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
         </div>
       </div>
     );
@@ -50,28 +50,28 @@ export default function HeroSection() {
   // Error State or Empty State Fallback Hero
   if (hasError || featuredNews.length === 0) {
     return (
-      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden min-h-[220px] sm:min-h-[340px] bg-gradient-to-br from-slate-900 via-sky-950 to-slate-950 flex items-center p-4 sm:p-10 text-white border border-slate-800 shadow-xl">
+      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden min-h-[170px] sm:min-h-[260px] bg-gradient-to-br from-slate-900 via-sky-950 to-slate-950 flex items-center p-4 sm:p-8 text-white border border-slate-800 shadow-xl">
         <div className="relative z-10 max-w-2xl">
-          <span className="bg-sky-600 text-white text-[10px] sm:text-xs font-black px-2.5 py-1 rounded-lg mb-3 inline-flex items-center gap-1.5 shadow-xs">
+          <span className="bg-sky-600 text-white text-[10px] sm:text-xs font-black px-2.5 py-1 rounded-lg mb-2 inline-flex items-center gap-1.5 shadow-xs">
             <Flame className="w-3.5 h-3.5" />
             <span>KoraNews • كورة نيوز</span>
           </span>
-          <h1 className="text-lg sm:text-3xl lg:text-4xl font-extrabold mb-2 leading-snug sm:leading-tight">
-            تغطية رياضية شاطحة ومباشرة لأبرز الأحداث العالمية
+          <h1 className="text-base sm:text-2xl lg:text-3xl font-extrabold mb-2 leading-snug sm:leading-tight">
+            تغطية رياضية شاملة ومباشرة لأبرز الأحداث العالمية
           </h1>
-          <p className="text-slate-300 text-xs sm:text-base font-medium mb-4 line-clamp-2 sm:line-clamp-none">
+          <p className="text-slate-300 text-xs sm:text-sm font-medium mb-3 line-clamp-2">
             تابع نتائج المباريات لحظة بلحظة، جدول الترتيب، وأحدث الأخبار الحصرية بأسلوب احترافي.
           </p>
           <div className="flex items-center gap-2.5">
             <Link
               to="/matches"
-              className="bg-sky-600 hover:bg-sky-700 text-white font-black text-xs sm:text-sm px-4 py-2 sm:px-6 sm:py-3 rounded-xl transition-all shadow-xs"
+              className="bg-sky-600 hover:bg-sky-700 text-white font-black text-xs sm:text-sm px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-xl transition-all shadow-xs"
             >
               جدول المباريات اليوم
             </Link>
             <Link
               to="/news"
-              className="bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs sm:text-sm px-4 py-2 sm:px-6 sm:py-3 rounded-xl transition-all border border-white/15"
+              className="bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs sm:text-sm px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-xl transition-all border border-white/15"
             >
               الأخبار الرياضية
             </Link>
@@ -91,7 +91,7 @@ export default function HeroSection() {
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative rounded-2xl sm:rounded-3xl overflow-hidden h-[200px] sm:h-[370px] lg:h-[430px] cursor-pointer shadow-md hover:shadow-xl transition-all duration-500 border border-slate-200/50 dark:border-slate-800/80"
+          className="relative rounded-2xl sm:rounded-3xl overflow-hidden h-[170px] sm:h-[260px] lg:h-[320px] cursor-pointer shadow-md hover:shadow-xl transition-all duration-500 border border-slate-200/50 dark:border-slate-800/80"
         >
           <img
             loading="lazy"
@@ -105,12 +105,12 @@ export default function HeroSection() {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent opacity-95"></div>
           
-          <div className="absolute bottom-0 p-3 sm:p-7 w-full flex flex-col items-start justify-end">
-            <span className="bg-sky-600 text-white text-[10px] sm:text-xs font-black px-2.5 py-0.5 rounded-lg mb-2 inline-flex items-center gap-1 shadow-xs">
+          <div className="absolute bottom-0 p-3 sm:p-5 w-full flex flex-col items-start justify-end">
+            <span className="bg-sky-600 text-white text-[10px] sm:text-xs font-black px-2.5 py-0.5 rounded-lg mb-1.5 inline-flex items-center gap-1 shadow-xs">
               <Flame className="w-3 h-3 text-amber-300" />
               <span>أبرز الأخبار</span>
             </span>
-            <h2 className="text-base sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 leading-snug sm:leading-tight group-hover:text-sky-400 transition-colors drop-shadow-md line-clamp-2">
+            <h2 className="text-sm sm:text-xl lg:text-2xl font-extrabold text-white mb-1.5 leading-snug sm:leading-tight group-hover:text-sky-400 transition-colors drop-shadow-md line-clamp-2">
               {mainArticle.title}
             </h2>
             <div className="flex items-center gap-3 text-slate-300 text-[11px] sm:text-xs font-bold">
@@ -132,7 +132,7 @@ export default function HeroSection() {
       {/* Side Articles */}
       <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 sm:gap-4">
         {sideArticles.map((article, index) => (
-          <Link to={`/news/${article.id}`} key={article.id} className="block group h-[125px] sm:h-[180px] lg:h-[calc(50%-0.5rem)]">
+          <Link to={`/news/${article.id}`} key={article.id} className="block group h-[90px] sm:h-[125px] lg:h-[calc(50%-0.5rem)]">
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
@@ -151,12 +151,12 @@ export default function HeroSection() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent opacity-95"></div>
               
-              <div className="absolute bottom-0 p-3 sm:p-4 w-full flex flex-col items-start justify-end">
-                <span className="text-[9px] sm:text-[10px] font-black text-sky-400 mb-1 flex items-center gap-1">
+              <div className="absolute bottom-0 p-2.5 sm:p-3.5 w-full flex flex-col items-start justify-end">
+                <span className="text-[9px] sm:text-[10px] font-black text-sky-400 mb-0.5 flex items-center gap-1">
                   <Newspaper className="w-3 h-3" />
                   <span>خبر هام</span>
                 </span>
-                <h3 className="text-xs sm:text-sm lg:text-base font-extrabold text-white leading-snug group-hover:text-sky-300 transition-colors line-clamp-2 drop-shadow-sm">
+                <h3 className="text-xs sm:text-xs lg:text-sm font-extrabold text-white leading-tight group-hover:text-sky-300 transition-colors line-clamp-2 drop-shadow-sm">
                   {article.title}
                 </h3>
               </div>

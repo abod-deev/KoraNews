@@ -111,16 +111,16 @@ export default function MatchesWidget() {
       </div>
 
       {/* League Selection Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-4 no-scrollbar border-b border-slate-100 dark:border-slate-800/80 -mx-1 px-1 sm:mx-0 sm:px-0">
+      <div className="flex items-center gap-2 overflow-x-auto pb-2.5 mb-4 no-scrollbar border-b border-slate-100 dark:border-slate-800/80 -mx-1 px-1 sm:mx-0 sm:px-0">
         {LEAGUE_TABS.map((tab) => {
           const isActive = selectedLeague === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => setSelectedLeague(tab.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0 ${
                 isActive
-                  ? 'bg-sky-600 text-white shadow-xs scale-105'
+                  ? 'bg-sky-600 text-white shadow-xs ring-2 ring-sky-500/30'
                   : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >

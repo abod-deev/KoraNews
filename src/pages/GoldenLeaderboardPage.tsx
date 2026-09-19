@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSEO } from '../hooks/useSEO';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   RotateCw,
@@ -17,6 +17,8 @@ import {
   Medal,
   AlertCircle,
   RefreshCw,
+  Archive,
+  FolderArchive,
 } from 'lucide-react';
 
 export interface GoldenLeaderboardUser {
@@ -40,6 +42,15 @@ export default function GoldenLeaderboardPage() {
     'ترتيب المتسابقين الحاصلين على التوقعات الذهبية في مسابقة KoraNews'
   );
   const { token } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const urlContestId = searchParams.get('contestId') ? parseInt(searchParams.get('contestId')!, 10) : null;
+  const [selectedContestId, setSelectedContestId] = useState<number | null>(
+    urlContestId && !isNaN(urlContestId) ? urlContestId : null
+  );
+
+  const [allContests, setAllContests] = useState<any[]>([]);
+  const [currentContest, setCurrentContest] = useState<any>(null);
 
   const [leaderboard, setLeaderboard] = useState<GoldenLeaderboardUser[]>([]);
   const [currentUserRank, setCurrentUserRank] = useState<GoldenLeaderboardUser | null>(null);
@@ -49,7 +60,27 @@ export default function GoldenLeaderboardPage() {
   const [copiedShare, setCopiedShare] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchGoldenLeaderboard = async (isManualRefresh = false) => {
+  // Keep selectedContestId synchronized with searchParams
+  useEffect(() => {
+    const pId = searchParams.get('contestId') ? parseInt(searchParams.get('contestId')!, 10) : null;
+    if (pId && !isNaN(pId)) {
+      setSelectedContestId(pId);
+    } else {
+      setSelectedContestId(null);
+    }
+  }, [searchParams]);
+
+  const fetchContests = async () => {
+    try {
+      const res = await fetch('/api/predictions/contests');
+      if (res.ok) {
+        const data = await res.json();
+        setAllContests(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {}
+  };
+
+  const fetchGoldenLeaderboard = async (isManualRefresh = false, targetContestId = selectedContestId) => {
     if (isManualRefresh) setIsRefreshing(true);
     else setIsLoading(true);
     setError(null);
@@ -57,7 +88,10 @@ export default function GoldenLeaderboardPage() {
     try {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch('/api/predictions/leaderboard/golden', { headers });
+      const url = targetContestId
+        ? `/api/predictions/leaderboard/golden?contestId=${targetContestId}`
+        : '/api/predictions/leaderboard/golden';
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setLeaderboard(data.leaderboard || []);
@@ -75,8 +109,36 @@ export default function GoldenLeaderboardPage() {
   };
 
   useEffect(() => {
-    fetchGoldenLeaderboard();
-  }, [token]);
+    fetchContests();
+  }, []);
+
+  useEffect(() => {
+    fetchGoldenLeaderboard(false, selectedContestId);
+  }, [token, selectedContestId]);
+
+  useEffect(() => {
+    if (selectedContestId && allContests.length > 0) {
+      const found = allContests.find((c) => c.id === selectedContestId);
+      setCurrentContest(found || null);
+    } else if (allContests.length > 0) {
+      const active = allContests.find((c) => c.status === 'active');
+      setCurrentContest(active || allContests[0] || null);
+    }
+  }, [selectedContestId, allContests]);
+
+  const handleContestChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (!val) {
+      setSelectedContestId(null);
+      setSearchParams({});
+    } else {
+      const id = parseInt(val, 10);
+      setSelectedContestId(id);
+      setSearchParams({ contestId: String(id) });
+    }
+  };
+
+  const isArchived = currentContest?.status === 'completed';
 
   const handleShare = async () => {
     let text = `👑 لائحة التوقعات الذهبية — مسابقة KoraNews\n\n`;
@@ -134,14 +196,14 @@ export default function GoldenLeaderboardPage() {
             {/* Breadcrumb */}
             <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs font-bold text-slate-400 dark:text-slate-500">
               <Link
-                to="/predictions"
+                to={selectedContestId ? `/predictions?contestId=${selectedContestId}` : '/predictions'}
                 className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors inline-flex items-center gap-1"
               >
                 <span>مسابقة التوقعات</span>
                 <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
               </Link>
               <Link
-                to="/predictions/leaderboard"
+                to={selectedContestId ? `/predictions/leaderboard?contestId=${selectedContestId}` : '/predictions/leaderboard'}
                 className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors inline-flex items-center gap-1"
               >
                 <span>ترتيب التوقعات</span>
@@ -158,22 +220,52 @@ export default function GoldenLeaderboardPage() {
                 <Crown className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                  <span>الترتيب الذهبي</span>
-                  <Sparkles className="w-4 h-4 text-amber-500 inline" />
-                </h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                    <span>الترتيب الذهبي</span>
+                    <Sparkles className="w-4 h-4 text-amber-500 inline" />
+                  </h1>
+                  {isArchived && (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 flex items-center gap-1">
+                      <Archive className="w-3 h-3" />
+                      <span>أرشيف مكتمل</span>
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                  سجل الشرف الخاص بالمتسابقين الذين انفردوا دون غيرهم بالتوقع الصحيح لنتائج المباريات.
+                  {currentContest
+                    ? `سجل التوقعات الذهبية في: ${currentContest.name}`
+                    : 'سجل الشرف الخاص بالمتسابقين الذين انفردوا دون غيرهم بالتوقع الصحيح لنتائج المباريات.'}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Secondary Actions (Share, Refresh) & Navigation */}
+          {/* Secondary Actions (Contest Selector, Share, Refresh) & Navigation */}
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {allContests.length > 1 && (
+              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                <FolderArchive className="w-4 h-4 text-slate-400 ml-1" />
+                <select
+                  value={selectedContestId ? String(selectedContestId) : ''}
+                  onChange={handleContestChange}
+                  className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer py-1"
+                >
+                  <option value="" className="dark:bg-slate-800">
+                    المسابقة النشطة (الافتراضية)
+                  </option>
+                  {allContests.map((c) => (
+                    <option key={c.id} value={c.id} className="dark:bg-slate-800">
+                      {c.name} {c.status === 'completed' ? '(منتهية)' : '(جارية)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* العودة للترتيب العام */}
             <Link
-              to="/predictions/leaderboard"
+              to={selectedContestId ? `/predictions/leaderboard?contestId=${selectedContestId}` : '/predictions/leaderboard'}
               className="min-h-[44px] px-3.5 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
             >
               <Trophy className="w-4 h-4 text-slate-500" />
@@ -204,7 +296,7 @@ export default function GoldenLeaderboardPage() {
             {/* Refresh / تحديث (Secondary Action أنيق) */}
             <button
               type="button"
-              onClick={() => fetchGoldenLeaderboard(true)}
+              onClick={() => fetchGoldenLeaderboard(true, selectedContestId)}
               disabled={isRefreshing || isLoading}
               className="min-h-[44px] min-w-[44px] p-2.5 sm:px-3 sm:py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
               title="تحديث الترتيب الذهبي"
@@ -216,11 +308,11 @@ export default function GoldenLeaderboardPage() {
 
             {/* التوقع الآن */}
             <Link
-              to="/predictions"
+              to={selectedContestId ? `/predictions?contestId=${selectedContestId}` : '/predictions'}
               className="min-h-[44px] px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
             >
               <Target className="w-4 h-4" />
-              <span>توقع الآن</span>
+              <span>المباريات والتوقعات</span>
             </Link>
           </div>
         </div>

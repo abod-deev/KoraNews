@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Trophy,
   Plus,
@@ -6,6 +6,7 @@ import {
   Loader2,
   RotateCw,
   Eye,
+  CheckCircle,
   CheckCircle2,
   XCircle,
   Clock,
@@ -33,14 +34,45 @@ import {
   X,
   Shield,
   PlusCircle,
+  ArrowUpDown,
+  ArrowDown,
+  ArrowUp,
+  History,
+  RefreshCw,
+  BarChart3,
+  ListOrdered,
+  Calculator,
+  TrendingUp,
+  ExternalLink,
+  Layers,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ConfirmModal from '../common/ConfirmModal';
+import TeamLogoPickerModal from './TeamLogoPickerModal';
+import AdminAccessDenied from './AdminAccessDenied';
+import { useAuth } from '../../contexts/AuthContext';
+import { PERMISSIONS } from '../../constants/permissions';
+import {
+  matchTeamFromCatalog,
+  searchTeamsFromCatalog,
+  matchLeagueFromCatalog,
+  SAUDI_TEAMS,
+  SAUDI_LEAGUES,
+  NATIONAL_TEAMS,
+  ARAB_AND_GLOBAL_CLUBS,
+  ALL_KNOWN_TEAMS,
+  ALL_KNOWN_LEAGUES,
+  normalizeSportsName,
+  isNationalTournament,
+  isSaudiTournament,
+  isNationalTeam,
+  getSuggestedTeamsForLeague,
+} from '../../services/knownTeamsAndLeagues';
 
 interface AdminPredictionsManagerProps {
   token: string | null;
   onShowMessage: (type: 'success' | 'error', text: string) => void;
-  activeSubTab?: 'overview' | 'matches' | 'add_match' | 'participants' | 'settings';
+  activeSubTab?: 'matches' | 'add_match' | 'participants' | 'settings' | 'completed_contests';
   hideTabs?: boolean;
 }
 
@@ -115,14 +147,51 @@ export default function AdminPredictionsManager({
   activeSubTab,
   hideTabs = false
 }: AdminPredictionsManagerProps) {
+  const { isOwner, isManager, hasPermission, hasAnyPermission } = useAuth();
+
+  const canViewPredictions = isOwner || isManager || hasAnyPermission(
+    PERMISSIONS.PREDICTIONS_VIEW,
+    PERMISSIONS.PREDICTIONS_MANAGE,
+    PERMISSIONS.PREDICTIONS_MATCH_ADD,
+    PERMISSIONS.PREDICTIONS_MATCH_EDIT,
+    PERMISSIONS.PREDICTIONS_MATCH_DELETE,
+    PERMISSIONS.PREDICTIONS_PARTICIPANTS_MANAGE,
+    PERMISSIONS.PREDICTIONS_RESULTS_MANAGE,
+    PERMISSIONS.PREDICTIONS_POINTS_MANAGE,
+    PERMISSIONS.PREDICTIONS_CONTEST_CREATE,
+    PERMISSIONS.PREDICTIONS_CONTEST_END,
+    PERMISSIONS.PREDICTIONS_CONTEST_DELETE,
+    PERMISSIONS.MATCHES_VIEW,
+    PERMISSIONS.MATCHES_MANAGE
+  );
+  const canAddMatch = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_MATCH_ADD);
+  const canEditMatch = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_MATCH_EDIT);
+  const canDeleteMatch = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_MATCH_DELETE);
+  const canManageResults = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_RESULTS_MANAGE);
+  const canManagePoints = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_POINTS_MANAGE);
+  const canManageParticipants = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_PARTICIPANTS_MANAGE);
+  const canManageContest = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_MANAGE);
+  const canCreateContest = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_CONTEST_CREATE);
+  const canEndContest = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_CONTEST_END);
+  const canDeleteContest = isOwner || isManager || hasPermission(PERMISSIONS.PREDICTIONS_CONTEST_DELETE);
+  const canSyncMatches = isOwner || isManager;
+
   // Sub-tabs inside Predictions Admin
-  const [subTab, setSubTab] = useState<'overview' | 'matches' | 'add_match' | 'participants' | 'settings'>(activeSubTab || 'overview');
+  const [subTab, setSubTab] = useState<'matches' | 'add_match' | 'participants' | 'completed_contests' | 'settings'>(activeSubTab || 'matches');
 
   useEffect(() => {
     if (activeSubTab) {
-      setSubTab(activeSubTab);
+      setSubTab(activeSubTab as any);
     }
   }, [activeSubTab]);
+
+  useEffect(() => {
+    if (subTab === 'add_match' && !canAddMatch) {
+      setSubTab('matches');
+    } else if (subTab === 'settings' && !canManageContest) {
+      setSubTab('matches');
+    }
+  }, [subTab, canAddMatch, canManageContest]);
 
   // Matches Data
   const [predictionMatches, setPredictionMatches] = useState<PredictionMatchItem[]>([]);
@@ -184,10 +253,18 @@ export default function AdminPredictionsManager({
     pointsPerMatch: 2,
   });
 
-  // Participants Data
+  // Participants Data & Advanced Sorting
   const [participants, setParticipants] = useState<any[]>([]);
   const [participantFilter, setParticipantFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'blocked'>('all');
   const [participantSearch, setParticipantSearch] = useState('');
+  const [participantSortBy, setParticipantSortBy] = useState<'points' | 'correct' | 'incorrect' | 'golden' | 'accuracy' | 'total' | 'date' | 'name'>('points');
+  const [participantSortDir, setParticipantSortDir] = useState<'desc' | 'asc'>('desc');
+
+  // Participant Predictions History Modal State
+  const [inspectingUser, setInspectingUser] = useState<{ id: number; name: string; email?: string; avatar?: string | null } | null>(null);
+  const [inspectingUserPredictions, setInspectingUserPredictions] = useState<any[]>([]);
+  const [isLoadingUserHistory, setIsLoadingUserHistory] = useState(false);
+  const [isRecalculatingAll, setIsRecalculatingAll] = useState(false);
 
   // Active Contest Management Data
   const [activeContest, setActiveContest] = useState<{
@@ -199,6 +276,7 @@ export default function AdminPredictionsManager({
     matchesCount: number;
     createdAt?: string;
   } | null>(null);
+  const [selectedAdminContestId, setSelectedAdminContestId] = useState<number | null>(null);
   const [allContests, setAllContests] = useState<
     Array<{
       id: number;
@@ -311,6 +389,57 @@ export default function AdminPredictionsManager({
   const [editPredAwayScore, setEditPredAwayScore] = useState('');
   const [isUpdatingUserPred, setIsUpdatingUserPred] = useState(false);
 
+  // Visual Team Logo Picker Modal State
+  const [logoPickerModal, setLogoPickerModal] = useState<{
+    isOpen: boolean;
+    target: 'home' | 'away' | 'edit_home' | 'edit_away' | null;
+    title: string;
+    currentLogo: string;
+    currentTeamName: string;
+    leagueName: string;
+  }>({
+    isOpen: false,
+    target: null,
+    title: '',
+    currentLogo: '',
+    currentTeamName: '',
+    leagueName: '',
+  });
+
+  // Track if user explicitly confirmed/selected a team to prevent accidental override
+  const [homeTeamConfirmed, setHomeTeamConfirmed] = useState(false);
+  const [awayTeamConfirmed, setAwayTeamConfirmed] = useState(false);
+
+  const handleSelectLogoFromModal = (logoUrl: string, selectedTeamName?: string) => {
+    if (logoPickerModal.target === 'home') {
+      setCustomMatch((prev) => ({
+        ...prev,
+        homeTeamLogo: logoUrl,
+        homeTeamName: prev.homeTeamName.trim() ? prev.homeTeamName : (selectedTeamName || prev.homeTeamName),
+      }));
+      setHomeTeamConfirmed(true);
+    } else if (logoPickerModal.target === 'away') {
+      setCustomMatch((prev) => ({
+        ...prev,
+        awayTeamLogo: logoUrl,
+        awayTeamName: prev.awayTeamName.trim() ? prev.awayTeamName : (selectedTeamName || prev.awayTeamName),
+      }));
+      setAwayTeamConfirmed(true);
+    } else if (logoPickerModal.target === 'edit_home') {
+      setEditingMatchForm((prev) => ({
+        ...prev,
+        homeTeamLogo: logoUrl,
+        homeTeamName: prev.homeTeamName.trim() ? prev.homeTeamName : (selectedTeamName || prev.homeTeamName),
+      }));
+    } else if (logoPickerModal.target === 'edit_away') {
+      setEditingMatchForm((prev) => ({
+        ...prev,
+        awayTeamLogo: logoUrl,
+        awayTeamName: prev.awayTeamName.trim() ? prev.awayTeamName : (selectedTeamName || prev.awayTeamName),
+      }));
+    }
+  };
+
   // UI / Action loading states
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -340,9 +469,11 @@ export default function AdminPredictionsManager({
   };
 
   // Fetch prediction matches from Backend
-  const fetchPredictionMatches = async () => {
+  const fetchPredictionMatches = async (targetContestId?: number) => {
     if (!token) return;
-    const data = await safeFetchJson('/api/admin/predictions', {
+    const cid = targetContestId !== undefined ? targetContestId : selectedAdminContestId;
+    const url = cid ? `/api/admin/predictions?contestId=${cid}` : '/api/admin/predictions';
+    const data = await safeFetchJson(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (data && Array.isArray(data)) {
@@ -362,9 +493,11 @@ export default function AdminPredictionsManager({
   };
 
   // Fetch contest participants
-  const fetchParticipants = async () => {
+  const fetchParticipants = async (targetContestId?: number) => {
     if (!token) return;
-    const data = await safeFetchJson('/api/admin/predictions/participants', {
+    const cid = targetContestId !== undefined ? targetContestId : selectedAdminContestId;
+    const url = cid ? `/api/admin/predictions/participants?contestId=${cid}` : '/api/admin/predictions/participants';
+    const data = await safeFetchJson(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (data && Array.isArray(data)) {
@@ -587,7 +720,7 @@ export default function AdminPredictionsManager({
             onShowMessage('error', data.error || 'فشل في إضافة المباراة الخاصة');
             await loadAll();
           } else {
-            onShowMessage('success', `تمت إضافة مباراة الدوري الخاص للتوقعات بنجاح (${pts} نقاط)!`);
+            onShowMessage('success', `تمت إضافة المباراة وتحديث شعارات الفرق المعتمدة بنجاح (${pts} نقاط)!`);
             setCustomMatch({
               leagueName: '',
               leagueLogo: '',
@@ -598,7 +731,7 @@ export default function AdminPredictionsManager({
               matchDate: new Date().toISOString().slice(0, 16),
               pointsPerMatch: 2,
             });
-            await Promise.all([fetchPredictionMatches(), fetchActiveContest()]);
+            await Promise.all([fetchPredictionMatches(), fetchActiveContest(), fetchExistingTeamsAndLeagues()]);
             setSubTab('matches');
           }
         } catch (e: any) {
@@ -1339,6 +1472,61 @@ export default function AdminPredictionsManager({
     });
   };
 
+  // Inspect Participant Predictions History
+  const handleInspectUserHistory = async (userId: number, userName: string, userEmail?: string, userAvatar?: string | null) => {
+    setInspectingUser({ id: userId, name: userName, email: userEmail, avatar: userAvatar });
+    setIsLoadingUserHistory(true);
+    try {
+      const data = await safeFetchJson(`/api/admin/predictions/participants/${userId}/predictions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (data && Array.isArray(data.predictions)) {
+        setInspectingUserPredictions(data.predictions);
+      } else {
+        setInspectingUserPredictions([]);
+      }
+    } catch (err: any) {
+      onShowMessage('error', err.message || 'فشل في تحميل سجل توقعات المتسابق');
+    } finally {
+      setIsLoadingUserHistory(false);
+    }
+  };
+
+  // Recalculate and audit all points for active contest
+  const handleRecalculateAllPoints = () => {
+    requestConfirmation({
+      title: 'تدقيق وإعادة احتساب نقاط المسابقة بالكامل',
+      message:
+        'سيقوم النظام بفحص جميع المباريات المعتمدة وإعادة تقييم كافة توقعات المشتركين وتحديث النقاط والترتيب العام تلقائياً لمنع أي تكرار أو احتساب نقاط وهمية أو غير دقيقة.\n\nهل ترغب في بدء عملية التدقيق الشامل؟',
+      confirmText: 'بدء التدقيق واحتساب النقاط',
+      variant: 'warning',
+      onConfirm: async () => {
+        setIsRecalculatingAll(true);
+        try {
+          const res = await fetch('/api/admin/predictions/recalculate-all', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const data = await res.json();
+          if (res.ok) {
+            onShowMessage('success', data.message || 'تم تدقيق وإعادة احتساب نقاط جميع المشتركين بنجاح!');
+            await Promise.all([fetchParticipants(), fetchPredictionMatches(), fetchActiveContest()]);
+          } else {
+            onShowMessage('error', data.error || 'فشل في إعادة احتساب النقاط');
+          }
+        } catch (err: any) {
+          onShowMessage('error', err.message || 'حدث خطأ أثناء تدقيق النقاط');
+        } finally {
+          setIsRecalculatingAll(false);
+        }
+      },
+    });
+  };
+
   // Date strings for comparison in UTC format
   const now = new Date();
   const todayDateStr = now.toISOString().slice(0, 10);
@@ -1411,6 +1599,57 @@ export default function AdminPredictionsManager({
       return matchesStatus && matchesSearch;
     });
 
+  // Advanced Sorting of Participants
+  const sortedParticipants = useMemo(() => {
+    return [...filteredParticipants].sort((a, b) => {
+      let aVal: any = 0;
+      let bVal: any = 0;
+
+      switch (participantSortBy) {
+        case 'points':
+          aVal = Number(a.stats?.totalPoints ?? a.user?.totalPoints ?? 0);
+          bVal = Number(b.stats?.totalPoints ?? b.user?.totalPoints ?? 0);
+          break;
+        case 'correct':
+          aVal = Number(a.stats?.correctPredictions ?? 0);
+          bVal = Number(b.stats?.correctPredictions ?? 0);
+          break;
+        case 'incorrect':
+          aVal = Number(a.stats?.incorrectPredictions ?? 0);
+          bVal = Number(b.stats?.incorrectPredictions ?? 0);
+          break;
+        case 'golden':
+          aVal = Number(a.stats?.goldenPredictions ?? 0);
+          bVal = Number(b.stats?.goldenPredictions ?? 0);
+          break;
+        case 'accuracy':
+          aVal = Number(a.stats?.accuracy ?? 0);
+          bVal = Number(b.stats?.accuracy ?? 0);
+          break;
+        case 'total':
+          aVal = Number(a.stats?.totalPredictions ?? 0);
+          bVal = Number(b.stats?.totalPredictions ?? 0);
+          break;
+        case 'name':
+          aVal = (a.user?.name || '').toLowerCase();
+          bVal = (b.user?.name || '').toLowerCase();
+          if (participantSortDir === 'asc') return aVal.localeCompare(bVal, 'ar');
+          return bVal.localeCompare(aVal, 'ar');
+        case 'date':
+        default:
+          aVal = new Date(a.appliedAt || 0).getTime();
+          bVal = new Date(b.appliedAt || 0).getTime();
+          break;
+      }
+
+      if (participantSortDir === 'asc') {
+        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      } else {
+        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+      }
+    });
+  }, [filteredParticipants, participantSortBy, participantSortDir]);
+
   const pendingParticipantsCount = participants.filter((p) => p.status === 'pending').length;
 
   // Filter predictions inside the Viewing Predictions Modal
@@ -1429,6 +1668,49 @@ export default function AdminPredictionsManager({
       return uName.includes(q) || uEmail.includes(q);
     });
 
+  const hasActiveContest = Boolean(activeContest && activeContest.status === 'active');
+  const currentViewingContest = useMemo(() => {
+    if (selectedAdminContestId) {
+      return allContests.find((c) => c.id === selectedAdminContestId) || activeContest;
+    }
+    return activeContest;
+  }, [selectedAdminContestId, allContests, activeContest]);
+
+  const isBrowsingArchivedContest = Boolean(currentViewingContest && currentViewingContest.status === 'completed');
+
+  const handleSelectContestToBrowse = async (contestId: number) => {
+    setSelectedAdminContestId(contestId);
+    setSubTab('matches');
+    setIsLoading(true);
+    await Promise.all([
+      fetchPredictionMatches(contestId),
+      fetchParticipants(contestId),
+    ]);
+    setIsLoading(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleReturnToActiveContest = async () => {
+    setSelectedAdminContestId(null);
+    setSubTab('matches');
+    setIsLoading(true);
+    await Promise.all([
+      fetchPredictionMatches(undefined),
+      fetchParticipants(undefined),
+    ]);
+    setIsLoading(false);
+  };
+
+  if (!canViewPredictions) {
+    return (
+      <AdminAccessDenied
+        title="غير مصرح لك بالوصول إلى إدارة التوقعات"
+        sectionTitle="مسابقة التوقعات وإدارة المباريات"
+        message="هذا القسم يتطلب صلاحية استعراض التوقعات أو إدارة المباريات للمتابعة والتحكم."
+      />
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -1438,11 +1720,8 @@ export default function AdminPredictionsManager({
     );
   }
 
-  const hasActiveContest = Boolean(activeContest && activeContest.status === 'active');
-
-  // If there is NO active contest: only display empty state & completed archive + create modal
-  // Strictly prevent displaying participants, matches, settings button, or end contest button
-  if (!hasActiveContest) {
+  // If there is NO active contest and no contest selected for browsing: only display empty state & completed archive + create modal
+  if (!hasActiveContest && !selectedAdminContestId && subTab !== 'completed_contests') {
     return (
       <div className="space-y-6">
         <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 shadow-xs space-y-6">
@@ -1466,14 +1745,16 @@ export default function AdminPredictionsManager({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsCreateContestModalOpen(true)}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ إنشاء مسابقة جديدة</span>
-            </button>
+            {canCreateContest && (
+              <button
+                type="button"
+                onClick={() => setIsCreateContestModalOpen(true)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ إنشاء مسابقة جديدة</span>
+              </button>
+            )}
           </div>
 
           {/* EMPTY CONTEST VIEW */}
@@ -1484,17 +1765,19 @@ export default function AdminPredictionsManager({
             <div>
               <h3 className="text-sm font-black text-gray-900 dark:text-white">لا توجد مسابقة حالية نشطة</h3>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto leading-relaxed">
-                لا يمكن عرض المشاركين، مباريات المسابقة، أو إعدادات المسابقة إلا عند وجود مسابقة نشطة. يمكنك الآن إنشاء مسابقة جديدة لبدء التوقعات.
+                لا توجد مسابقة جارية في الوقت الحالي. يمكنك إنشاء مسابقة جديدة الآن، أو تصفح بيانات المسابقات المنتهية السابقة من الأرشيف أدناه.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsCreateContestModalOpen(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs shadow-xs transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ إنشاء مسابقة جديدة الآن</span>
-            </button>
+            {canCreateContest && (
+              <button
+                type="button"
+                onClick={() => setIsCreateContestModalOpen(true)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs shadow-xs transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ إنشاء مسابقة جديدة الآن</span>
+              </button>
+            )}
           </div>
 
           {/* COMPLETED CONTESTS LIST */}
@@ -1502,7 +1785,7 @@ export default function AdminPredictionsManager({
             <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-black text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-                  <Archive className="w-3.5 h-3.5 text-gray-400" />
+                  <Archive className="w-3.5 h-3.5 text-amber-500" />
                   المسابقات المنتهية والأرشيف ({allContests.filter((c) => c.status === 'completed').length})
                 </h4>
               </div>
@@ -1513,14 +1796,14 @@ export default function AdminPredictionsManager({
                   .map((contest) => (
                     <div
                       key={contest.id}
-                      className="p-3.5 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 border border-gray-200/80 dark:border-gray-700/60 flex items-center justify-between gap-3"
+                      className="p-4 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 border border-gray-200/80 dark:border-gray-700/60 flex flex-col justify-between gap-3"
                     >
                       <div className="space-y-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-gray-900 dark:text-white truncate">
                             {contest.name}
                           </span>
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 shrink-0">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 shrink-0">
                             منتهية
                           </span>
                         </div>
@@ -1532,15 +1815,28 @@ export default function AdminPredictionsManager({
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteContest(contest.id, contest.name)}
-                        className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 font-black text-xs flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
-                        title="حذف المسابقة المنتهية"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>حذف المسابقة</span>
-                      </button>
+                      <div className="pt-2 border-t border-gray-200/60 dark:border-gray-700/60 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectContestToBrowse(contest.id)}
+                          className="px-3.5 py-1.5 rounded-xl bg-brand hover:bg-brand/90 text-white font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>تصفح بيانات ومباريات المسابقة باللوحة</span>
+                        </button>
+
+                        {canDeleteContest && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteContest(contest.id, contest.name)}
+                            className="px-2.5 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 font-black text-xs flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
+                            title="حذف المسابقة"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>حذف</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
               </div>
@@ -1633,19 +1929,62 @@ export default function AdminPredictionsManager({
     );
   }
 
-  // ACTIVE CONTEST IS PRESENT: Render full active contest management & navigation
+  // ACTIVE CONTEST OR SELECTED ARCHIVED CONTEST: Render full contest management & navigation
   return (
     <div className="space-y-6">
-      {/* 1. Sub-Tabs Bar (Mobile-friendly navigation for active contest) */}
+      {/* 0. Top Context Banner: When viewing an archived contest */}
+      {isBrowsingArchivedContest && currentViewingContest && (
+        <div className="p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200 shadow-xs animate-in fade-in duration-150">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+              <Archive className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black">أنت تتصفح حالياً أرشيف المسابقة:</span>
+                <span className="text-xs font-black underline decoration-amber-500">{currentViewingContest.name}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 font-black">منتهية (#{currentViewingContest.id})</span>
+              </div>
+              <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 font-medium mt-0.5">
+                تصفح واستعراض لكافة مباريات المسابقة، النتائج المحتسبة، وقائمة المشاركين والتوقعات المسجلة.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            {hasActiveContest && (
+              <button
+                type="button"
+                onClick={handleReturnToActiveContest}
+                className="px-4 py-2 rounded-xl bg-brand hover:bg-brand/90 text-white text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <span>العودة للمسابقة النشطة</span>
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSubTab('completed_contests')}
+              className="px-3.5 py-2 rounded-xl bg-amber-200/70 dark:bg-amber-900/60 hover:bg-amber-200 text-amber-900 dark:text-amber-200 text-xs font-bold transition-all cursor-pointer"
+            >
+              <span>قائمة الأرشيف</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 1. Sub-Tabs Bar */}
       {!hideTabs && (
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap bg-white dark:bg-gray-900 p-1.5 sm:p-2 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xs scrollbar-hide">
           {[
-            { id: 'overview', label: 'نظرة عامة على المسابقة', mobileLabel: 'نظرة عامة', icon: Trophy },
-            { id: 'participants', label: 'المشاركون في المسابقة الحالية', mobileLabel: 'المشاركون', icon: Users, count: participants.length, badge: pendingParticipantsCount > 0 ? pendingParticipantsCount : undefined },
-            { id: 'matches', label: 'المباريات الخاصة بالمسابقة', mobileLabel: 'المباريات', icon: Calendar, count: predictionMatches.length },
-            { id: 'add_match', label: 'إضافة مباريات', mobileLabel: 'إضافة مباراة', icon: Plus },
-            { id: 'settings', label: 'إعدادات المسابقة', mobileLabel: 'الإعدادات', icon: Settings },
-          ].map((tab) => {
+            { id: 'matches', label: isBrowsingArchivedContest ? 'مباريات المسابقة المؤرشفة' : 'المباريات الخاصة بالمسابقة', mobileLabel: 'المباريات', icon: Calendar, count: predictionMatches.length, show: true },
+            { id: 'participants', label: isBrowsingArchivedContest ? 'المشاركون والنتائج' : 'المشاركون والإحصائيات', mobileLabel: 'المشاركون', icon: Users, count: participants.length, badge: pendingParticipantsCount > 0 ? pendingParticipantsCount : undefined, show: true },
+            { id: 'add_match', label: 'إضافة مباريات', mobileLabel: 'إضافة مباراة', icon: Plus, show: canAddMatch && !isBrowsingArchivedContest },
+            { id: 'completed_contests', label: 'المسابقات المنتهية والأرشيف', mobileLabel: 'الأرشيف', icon: Archive, count: allContests.filter((c) => c.status === 'completed').length, show: true },
+            { id: 'settings', label: 'إعدادات المسابقة والنقاط', mobileLabel: 'الإعدادات', icon: Settings, show: canManageContest && !isBrowsingArchivedContest },
+          ]
+            .filter((tab) => tab.show)
+            .map((tab) => {
             const Icon = tab.icon;
             const active = subTab === tab.id;
             return (
@@ -1682,143 +2021,6 @@ export default function AdminPredictionsManager({
         </div>
       )}
 
-      {/* OVERVIEW / ACTIVE CONTEST HERO DASHBOARD */}
-      {(subTab === 'overview' || !subTab) && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 sm:p-6 shadow-xs space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-brand/10 text-brand flex items-center justify-center shrink-0 shadow-inner">
-                  <Trophy className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base sm:text-xl font-black text-gray-900 dark:text-white">
-                      {activeContest.name}
-                    </h2>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      مسابقة نشطة
-                    </span>
-                    <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-bold border border-gray-200 dark:border-gray-700">
-                      #{activeContest.id}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-1">
-                    {activeContest.description || 'المسابقة الحالية مفتوحة لاستقبال توقعات المشتركين وإضافة المباريات واحتساب النتائج.'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-stretch sm:self-auto">
-                <button
-                  type="button"
-                  onClick={handleCompleteContest}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-                >
-                  <Ban className="w-4 h-4" />
-                  <span>إنهاء المسابقة</span>
-                </button>
-              </div>
-            </div>
-
-            {/* THE 3 CORE USER-REQUESTED CONTROLS FOR ACTIVE CONTEST */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* 1. إمكانية عرض المشاركين في المسابقة الحالية */}
-              <div
-                onClick={() => setSubTab('participants')}
-                className="p-5 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50/40 dark:from-blue-950/30 dark:to-indigo-950/20 border border-blue-100 dark:border-blue-900/40 hover:border-blue-300 dark:hover:border-blue-700/60 transition-all cursor-pointer flex flex-col justify-between group shadow-2xs hover:shadow-xs"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-blue-900 dark:text-blue-300">المشاركون في المسابقة الحالية</span>
-                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
-                      <Users className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="mt-3 text-3xl font-black text-blue-700 dark:text-blue-200">
-                    {activeContest.participantsCount ?? participants.length}
-                  </div>
-                  <p className="text-[11px] text-blue-800/70 dark:text-blue-300/70 mt-1 font-medium">
-                    عرض وتتبع قائمة المتسابقين، طلبات الاشتراك، والترتيب المباشر.
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
-                  <span className="text-xs font-black text-blue-700 dark:text-blue-300">عرض المشاركين</span>
-                  <ChevronLeft className="w-4 h-4 text-blue-700 dark:text-blue-300 group-hover:-translate-x-1 transition-transform" />
-                </div>
-              </div>
-
-              {/* 2. إمكانية عرض المباريات الخاصة بالمسابقة الحالية */}
-              <div
-                onClick={() => setSubTab('matches')}
-                className="p-5 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50/40 dark:from-purple-950/30 dark:to-pink-950/20 border border-purple-100 dark:border-purple-900/40 hover:border-purple-300 dark:hover:border-purple-700/60 transition-all cursor-pointer flex flex-col justify-between group shadow-2xs hover:shadow-xs"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-purple-900 dark:text-purple-300">المباريات الخاصة بالمسابقة الحالية</span>
-                    <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
-                      <Trophy className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="mt-3 text-3xl font-black text-purple-700 dark:text-purple-200">
-                    {activeContest.matchesCount ?? predictionMatches.length}
-                  </div>
-                  <p className="text-[11px] text-purple-800/70 dark:text-purple-300/70 mt-1 font-medium">
-                    مباريات التوقعات، فتح وإغلاق التوقع، واعتماد النتائج النهائية.
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-purple-100 dark:border-purple-900/40 flex items-center justify-between">
-                  <span className="text-xs font-black text-purple-700 dark:text-purple-300">عرض المباريات</span>
-                  <ChevronLeft className="w-4 h-4 text-purple-700 dark:text-purple-300 group-hover:-translate-x-1 transition-transform" />
-                </div>
-              </div>
-
-              {/* 3. زر للدخول إلى إعدادات المسابقة الحالية */}
-              <div
-                onClick={() => setSubTab('settings')}
-                className="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-gray-100/60 dark:from-slate-800/60 dark:to-gray-800/40 border border-slate-200/80 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-all cursor-pointer flex flex-col justify-between group shadow-2xs hover:shadow-xs"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-900 dark:text-white">إعدادات المسابقة الحالية</span>
-                    <div className="w-9 h-9 rounded-xl bg-slate-800 dark:bg-slate-700 text-white flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
-                      <Settings className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="mt-3 text-sm font-black text-slate-800 dark:text-slate-200">
-                    قواعد ونقاط التوقع
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 font-medium">
-                    تعديل القواعد والنقاط، والوصول إلى زر إنهاء المسابقة الحالية.
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-800 dark:text-slate-200">الدخول إلى الإعدادات</span>
-                  <ChevronLeft className="w-4 h-4 text-slate-800 dark:text-slate-200 group-hover:-translate-x-1 transition-transform" />
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Add Match Link */}
-            <div className="p-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-gray-300 font-bold">
-                <Plus className="w-4 h-4 text-brand" />
-                <span>هل ترغب في جدولة وإضافة مباريات جديدة للمسابقة الحالية؟</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSubTab('add_match')}
-                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-brand text-white text-xs font-black hover:bg-brand/90 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>إضافة مباريات الآن</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 2. SUB-TAB 1: MATCHES LIST & MANUAL EVALUATION */}
       {subTab === 'matches' && (
         <div className="space-y-6">
@@ -1834,6 +2036,20 @@ export default function AdminPredictionsManager({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+              {/* Recalculate all predictions trigger */}
+              {canManagePoints && (
+                <button
+                  type="button"
+                  onClick={handleRecalculateAllPoints}
+                  disabled={isRecalculatingAll}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700/60 text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  title="تدقيق ومطابقة واحتساب جميع نقاط التوقعات لمنع أي احتساب خاطئ أو مكرر"
+                >
+                  <Calculator className={`w-3.5 h-3.5 ${isRecalculatingAll ? 'animate-spin' : ''}`} />
+                  <span>{isRecalculatingAll ? 'جاري التدقيق...' : 'تدقيق واحتساب النقاط'}</span>
+                </button>
+              )}
+
               {/* Search in main matches */}
               <div className="relative flex-1 md:w-48">
                 <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -1886,14 +2102,16 @@ export default function AdminPredictionsManager({
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSubTab('add_match')}
-                className="px-3.5 py-1.5 rounded-xl bg-brand text-white font-black text-xs hover:bg-emerald-600 flex items-center gap-1.5 shadow-xs cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>إضافة مباراة</span>
-              </button>
+              {canAddMatch && (
+                <button
+                  type="button"
+                  onClick={() => setSubTab('add_match')}
+                  className="px-3.5 py-1.5 rounded-xl bg-brand text-white font-black text-xs hover:bg-emerald-600 flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إضافة مباراة</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1974,7 +2192,7 @@ export default function AdminPredictionsManager({
                                 <span className="font-black px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs">
                                   {points} نقاط
                                 </span>
-                                {!isEvaluated && (
+                                {!isEvaluated && canManagePoints && (
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2042,54 +2260,62 @@ export default function AdminPredictionsManager({
 
                             {/* Manual Result Confirmation & Points Evaluation Button */}
                             <td className="p-3 sm:p-4 text-center">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setConfirmingMatch(pm);
-                                  setManualHomeScore(m.homeScore ?? 0);
-                                  setManualAwayScore(m.awayScore ?? 0);
-                                  setConfirmingMatchStatus(m.status || 'FINISHED');
-                                }}
-                                className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 mx-auto cursor-pointer ${
-                                  isEvaluated
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-                                    : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs active:scale-95'
-                                }`}
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>{isEvaluated ? 'تعديل النتيجة' : `تأكيد (+${points})`}</span>
-                              </button>
+                              {canManageResults ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setConfirmingMatch(pm);
+                                    setManualHomeScore(m.homeScore ?? 0);
+                                    setManualAwayScore(m.awayScore ?? 0);
+                                    setConfirmingMatchStatus(m.status || 'FINISHED');
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 mx-auto cursor-pointer ${
+                                    isEvaluated
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                                      : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs active:scale-95'
+                                  }`}
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>{isEvaluated ? 'تعديل النتيجة' : `تأكيد (+${points})`}</span>
+                                </button>
+                              ) : (
+                                <span className="text-gray-400 text-xs">-</span>
+                              )}
                             </td>
 
                             {/* Actions & Archive */}
                             <td className="p-3 sm:p-4 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 {/* Edit Prediction Match Details */}
-                                <button
-                                  type="button"
-                                  onClick={() => openEditMatchModal(pm)}
-                                  className="p-2 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-400 transition-colors cursor-pointer"
-                                  title="تعديل بيانات التوقع والمباراة (الفرق، الموعد، البطولة، النتيجة)"
-                                >
-                                  <Edit3 className="w-4 h-4" />
-                                </button>
+                                {canEditMatch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditMatchModal(pm)}
+                                    className="p-2 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-400 transition-colors cursor-pointer"
+                                    title="تعديل بيانات التوقع والمباراة (الفرق، الموعد، البطولة، النتيجة)"
+                                  >
+                                    <Edit3 className="w-4 h-4" />
+                                  </button>
+                                )}
 
                                 {/* Open/Close toggle */}
-                                <button
-                                  type="button"
-                                  disabled={isEvaluated}
-                                  onClick={() => handleToggleActive(pm.id, pm.isActive)}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                                    isEvaluated
-                                      ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
-                                      : pm.isActive
-                                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 hover:bg-emerald-200 cursor-pointer'
-                                      : 'bg-gray-100 text-gray-500 dark:bg-gray-800 hover:bg-gray-200 cursor-pointer'
-                                  }`}
-                                  title={isEvaluated ? 'المباراة معتمدة ومؤرشفة' : 'تغيير حالة فتح التوقع'}
-                                >
-                                  {isEvaluated ? 'مؤرشفة' : pm.isActive ? 'مفتوح' : 'مغلق'}
-                                </button>
+                                {canEditMatch && (
+                                  <button
+                                    type="button"
+                                    disabled={isEvaluated}
+                                    onClick={() => handleToggleActive(pm.id, pm.isActive)}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                      isEvaluated
+                                        ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
+                                        : pm.isActive
+                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 hover:bg-emerald-200 cursor-pointer'
+                                        : 'bg-gray-100 text-gray-500 dark:bg-gray-800 hover:bg-gray-200 cursor-pointer'
+                                    }`}
+                                    title={isEvaluated ? 'المباراة معتمدة ومؤرشفة' : 'تغيير حالة فتح التوقع'}
+                                  >
+                                    {isEvaluated ? 'مؤرشفة' : pm.isActive ? 'مفتوح' : 'مغلق'}
+                                  </button>
+                                )}
 
                                 {/* Archive vs Delete */}
                                 {isEvaluated ? (
@@ -2099,7 +2325,7 @@ export default function AdminPredictionsManager({
                                   >
                                     <Archive className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                   </span>
-                                ) : (
+                                ) : canDeleteMatch ? (
                                   <button
                                     type="button"
                                     onClick={() => handleDeletePrediction(pm)}
@@ -2108,7 +2334,7 @@ export default function AdminPredictionsManager({
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
-                                )}
+                                ) : null}
                               </div>
                             </td>
                           </tr>
@@ -2176,7 +2402,7 @@ export default function AdminPredictionsManager({
                           <span className="font-black px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                             {points} نقاط
                           </span>
-                          {!isEvaluated && (
+                          {!isEvaluated && canManagePoints && (
                             <button
                               type="button"
                               onClick={() => {
@@ -2204,44 +2430,56 @@ export default function AdminPredictionsManager({
                             <span>{pm.participantsCount || pm.predictions?.length || 0}</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setConfirmingMatch(pm);
-                              setManualHomeScore(m.homeScore ?? 0);
-                              setManualAwayScore(m.awayScore ?? 0);
-                              setConfirmingMatchStatus(m.status || 'FINISHED');
-                            }}
-                            className={`flex items-center justify-center gap-1 p-2 rounded-lg font-black text-xs transition-all ${
-                              isEvaluated
-                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                : 'bg-amber-500 text-white'
-                            }`}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{isEvaluated ? 'النتيجة' : 'تأكيد'}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => openEditMatchModal(pm)}
-                            className="flex items-center justify-center gap-1 p-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 font-black text-xs transition-colors border border-blue-200 dark:border-blue-900"
-                            title="تعديل بيانات التوقع"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>تعديل</span>
-                          </button>
-
-                          {!isEvaluated ? (
+                          {canManageResults ? (
                             <button
                               type="button"
-                              onClick={() => handleDeletePrediction(pm)}
-                              className="flex items-center justify-center gap-1 p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400 font-black text-xs transition-colors border border-red-200 dark:border-red-900"
-                              title="حذف المباراة من التوقعات"
+                              onClick={() => {
+                                setConfirmingMatch(pm);
+                                setManualHomeScore(m.homeScore ?? 0);
+                                setManualAwayScore(m.awayScore ?? 0);
+                                setConfirmingMatchStatus(m.status || 'FINISHED');
+                              }}
+                              className={`flex items-center justify-center gap-1 p-2 rounded-lg font-black text-xs transition-all ${
+                                isEvaluated
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                  : 'bg-amber-500 text-white'
+                              }`}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>حذف</span>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>{isEvaluated ? 'النتيجة' : 'تأكيد'}</span>
                             </button>
+                          ) : (
+                            <div className="flex items-center justify-center p-2 text-gray-400 font-bold text-xs">-</div>
+                          )}
+
+                          {canEditMatch ? (
+                            <button
+                              type="button"
+                              onClick={() => openEditMatchModal(pm)}
+                              className="flex items-center justify-center gap-1 p-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 font-black text-xs transition-colors border border-blue-200 dark:border-blue-900"
+                              title="تعديل بيانات التوقع"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>تعديل</span>
+                            </button>
+                          ) : (
+                            <div className="flex items-center justify-center p-2 text-gray-400 font-bold text-xs">-</div>
+                          )}
+
+                          {!isEvaluated ? (
+                            canDeleteMatch ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePrediction(pm)}
+                                className="flex items-center justify-center gap-1 p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400 font-black text-xs transition-colors border border-red-200 dark:border-red-900"
+                                title="حذف المباراة من التوقعات"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف</span>
+                              </button>
+                            ) : (
+                              <div className="flex items-center justify-center p-2 text-gray-400 font-bold text-xs">-</div>
+                            )
                           ) : (
                             <div className="flex items-center justify-center p-2 text-emerald-600 dark:text-emerald-400 font-bold text-[10px]">
                               <Archive className="w-3.5 h-3.5" />
@@ -2387,21 +2625,40 @@ export default function AdminPredictionsManager({
                       type="text"
                       required
                       list="existing-leagues-list"
-                      placeholder="مثال: الدوري العراقي الممتاز، دوري روشن السعودي..."
+                      placeholder="مثال: دوري روشن السعودي، كأس آسيا..."
                       value={customMatch.leagueName}
                       onChange={(e) => {
                         const val = e.target.value;
+                        const catalogMatch = matchLeagueFromCatalog(val);
                         const matchLeague = existingData.leagues.find(
-                          (l) => l.name.toLowerCase() === val.trim().toLowerCase()
+                          (l) =>
+                            l.name.toLowerCase() === val.trim().toLowerCase() ||
+                            normalizeSportsName(l.name) === normalizeSportsName(val)
                         );
+                        const resolvedLogo = catalogMatch?.logo || matchLeague?.logo || customMatch.leagueLogo;
                         setCustomMatch({
                           ...customMatch,
                           leagueName: val,
-                          leagueLogo: matchLeague?.logo || customMatch.leagueLogo,
+                          leagueLogo: resolvedLogo,
                         });
                       }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                     />
+                    {customMatch.leagueLogo && (
+                      <div className="mt-1.5 flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50">
+                        <img
+                          src={customMatch.leagueLogo}
+                          alt="League Logo"
+                          className="w-5 h-5 object-contain"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                        <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                          تم التعرف على شعار البطولة بنجاح
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
@@ -2418,6 +2675,7 @@ export default function AdminPredictionsManager({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Home Team Container */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
@@ -2440,37 +2698,210 @@ export default function AdminPredictionsManager({
                       type="text"
                       required
                       list="existing-teams-list"
-                      placeholder="مثال: القوة الجوية، منتخب السعودية، الهلال..."
+                      placeholder="مثال: الهلال، النصر، الاتحاد، الاتفاق..."
                       value={customMatch.homeTeamName}
                       onChange={(e) => {
                         const val = e.target.value;
+                        setHomeTeamConfirmed(false);
+                        const catalogMatch = matchTeamFromCatalog(val, customMatch.leagueName);
                         const matchTeam = existingData.teams.find(
-                          (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                          (t) =>
+                            t.name.toLowerCase() === val.trim().toLowerCase() ||
+                            normalizeSportsName(t.name) === normalizeSportsName(val)
                         );
+                        const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || customMatch.homeTeamLogo;
                         setCustomMatch({
                           ...customMatch,
                           homeTeamName: val,
-                          homeTeamLogo: matchTeam?.logo || customMatch.homeTeamLogo,
+                          homeTeamLogo: resolvedLogo,
                         });
                       }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                     />
+
+                    {/* Interactive suggestions chips when typing */}
+                    {customMatch.homeTeamName.trim().length >= 2 && !homeTeamConfirmed && (
+                      (() => {
+                        const suggs = searchTeamsFromCatalog(customMatch.homeTeamName, customMatch.leagueName, 4);
+                        if (suggs.length === 0) return null;
+                        return (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] text-gray-400 font-bold">تأكيد النادي:</span>
+                            {suggs.map((t) => (
+                              <button
+                                key={`h_sugg_${t.id}`}
+                                type="button"
+                                onClick={() => {
+                                  setCustomMatch((prev) => ({
+                                    ...prev,
+                                    homeTeamName: t.name,
+                                    homeTeamLogo: t.logo,
+                                  }));
+                                  setHomeTeamConfirmed(true);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] font-black text-purple-900 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900 transition-all cursor-pointer shadow-2xs hover:scale-[1.02]"
+                                title={`تأكيد واختيار ${t.name}`}
+                              >
+                                <img
+                                  src={t.logo}
+                                  alt=""
+                                  className="w-4 h-4 object-contain"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                                <span>{t.name}</span>
+                                <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+
+                    {customMatch.homeTeamLogo && (
+                      <div className="mt-1.5 flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={customMatch.homeTeamLogo}
+                            alt="Home Team Logo"
+                            className="w-5 h-5 object-contain shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate">
+                            {isNationalTournament(customMatch.leagueName)
+                              ? 'تم جلب شعار المنتخب المعتمد'
+                              : 'تم جلب شعار النادي المعتمد'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
+                          معتمد
+                        </span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Home Team Logo Container */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                      شعار الفريق المضيف (اختياري)
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={customMatch.homeTeamLogo}
-                      onChange={(e) => setCustomMatch({ ...customMatch, homeTeamLogo: e.target.value })}
-                      className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                        شعار الفريق المضيف (اضغط لفتح المعرض أو إدخال رابط)
+                      </label>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="url"
+                        placeholder="اضغط لاختيار الشعار بالصور أو أدخل رابطاً: https://..."
+                        value={customMatch.homeTeamLogo}
+                        onChange={(e) => setCustomMatch({ ...customMatch, homeTeamLogo: e.target.value })}
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'home',
+                            title: 'اختيار شعار الفريق المضيف (صاحب الأرض)',
+                            currentLogo: customMatch.homeTeamLogo,
+                            currentTeamName: customMatch.homeTeamName,
+                            leagueName: customMatch.leagueName,
+                          })
+                        }
+                        className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-purple-200 dark:border-purple-800/70 bg-purple-50/20 dark:bg-purple-950/20 text-xs font-bold text-gray-900 dark:text-white cursor-pointer focus:ring-2 focus:ring-purple-500/20 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'home',
+                            title: 'اختيار شعار الفريق المضيف (صاحب الأرض)',
+                            currentLogo: customMatch.homeTeamLogo,
+                            currentTeamName: customMatch.homeTeamName,
+                            leagueName: customMatch.leagueName,
+                          })
+                        }
+                        className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors cursor-pointer"
+                        title="فتح معرض صور الشعارات"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {customMatch.homeTeamLogo ? (
+                      <div className="mt-2 p-2.5 rounded-2xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/50 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700/60 p-1 flex items-center justify-center shrink-0 shadow-2xs">
+                            <img
+                              src={customMatch.homeTeamLogo}
+                              alt="Home Logo Preview"
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                          <div className="text-[11px] leading-tight truncate">
+                            <span className="font-black text-purple-900 dark:text-purple-200 block truncate">
+                              {customMatch.homeTeamName ? `شعار: ${customMatch.homeTeamName}` : 'شعار الفريق المضيف المعتمد'}
+                            </span>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                              <Check className="w-3 h-3" /> تم تأكيد واعتماد الشعار
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLogoPickerModal({
+                                isOpen: true,
+                                target: 'home',
+                                title: 'تغيير شعار الفريق المضيف',
+                                currentLogo: customMatch.homeTeamLogo,
+                                currentTeamName: customMatch.homeTeamName,
+                                leagueName: customMatch.leagueName,
+                              })
+                            }
+                            className="text-[10px] px-2.5 py-1 rounded-lg font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 hover:bg-purple-200 transition-colors cursor-pointer"
+                          >
+                            تغيير الشعار
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomMatch({ ...customMatch, homeTeamLogo: '' })}
+                            className="text-[10px] px-2 py-1 rounded-lg font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                          >
+                            مسح
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'home',
+                            title: 'اختيار شعار الفريق المضيف (صاحب الأرض)',
+                            currentLogo: '',
+                            currentTeamName: customMatch.homeTeamName,
+                            leagueName: customMatch.leagueName,
+                          })
+                        }
+                        className="mt-2 w-full p-2.5 rounded-2xl border border-dashed border-purple-200 dark:border-purple-800/80 bg-purple-50/40 dark:bg-purple-950/20 text-center hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-all cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <Layers className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        <span className="text-xs font-black text-purple-800 dark:text-purple-300">
+                          اضغط لفتح واجهة صور الشعارات واختيار شعار الفريق
+                        </span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Away Team Container */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
@@ -2493,33 +2924,205 @@ export default function AdminPredictionsManager({
                       type="text"
                       required
                       list="existing-teams-list"
-                      placeholder="مثال: الزوراء، منتخب العراق، النصر..."
+                      placeholder="مثال: الأهلي، الشباب، القادسية، التعاون..."
                       value={customMatch.awayTeamName}
                       onChange={(e) => {
                         const val = e.target.value;
+                        setAwayTeamConfirmed(false);
+                        const catalogMatch = matchTeamFromCatalog(val, customMatch.leagueName);
                         const matchTeam = existingData.teams.find(
-                          (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                          (t) =>
+                            t.name.toLowerCase() === val.trim().toLowerCase() ||
+                            normalizeSportsName(t.name) === normalizeSportsName(val)
                         );
+                        const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || customMatch.awayTeamLogo;
                         setCustomMatch({
                           ...customMatch,
                           awayTeamName: val,
-                          awayTeamLogo: matchTeam?.logo || customMatch.awayTeamLogo,
+                          awayTeamLogo: resolvedLogo,
                         });
                       }}
                       className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                     />
+
+                    {/* Interactive suggestions chips when typing */}
+                    {customMatch.awayTeamName.trim().length >= 2 && !awayTeamConfirmed && (
+                      (() => {
+                        const suggs = searchTeamsFromCatalog(customMatch.awayTeamName, customMatch.leagueName, 4);
+                        if (suggs.length === 0) return null;
+                        return (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] text-gray-400 font-bold">تأكيد النادي:</span>
+                            {suggs.map((t) => (
+                              <button
+                                key={`a_sugg_${t.id}`}
+                                type="button"
+                                onClick={() => {
+                                  setCustomMatch((prev) => ({
+                                    ...prev,
+                                    awayTeamName: t.name,
+                                    awayTeamLogo: t.logo,
+                                  }));
+                                  setAwayTeamConfirmed(true);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] font-black text-purple-900 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900 transition-all cursor-pointer shadow-2xs hover:scale-[1.02]"
+                                title={`تأكيد واختيار ${t.name}`}
+                              >
+                                <img
+                                  src={t.logo}
+                                  alt=""
+                                  className="w-4 h-4 object-contain"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                                <span>{t.name}</span>
+                                <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+
+                    {customMatch.awayTeamLogo && (
+                      <div className="mt-1.5 flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={customMatch.awayTeamLogo}
+                            alt="Away Team Logo"
+                            className="w-5 h-5 object-contain shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate">
+                            {isNationalTournament(customMatch.leagueName)
+                              ? 'تم جلب شعار المنتخب المعتمد'
+                              : 'تم جلب شعار النادي المعتمد'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
+                          معتمد
+                        </span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Away Team Logo Container */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                      شعار الفريق الضيف (اختياري)
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={customMatch.awayTeamLogo}
-                      onChange={(e) => setCustomMatch({ ...customMatch, awayTeamLogo: e.target.value })}
-                      className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                        شعار الفريق الضيف (اضغط لفتح المعرض أو إدخال رابط)
+                      </label>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="url"
+                        placeholder="اضغط لاختيار الشعار بالصور أو أدخل رابطاً: https://..."
+                        value={customMatch.awayTeamLogo}
+                        onChange={(e) => setCustomMatch({ ...customMatch, awayTeamLogo: e.target.value })}
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'away',
+                            title: 'اختيار شعار الفريق الضيف',
+                            currentLogo: customMatch.awayTeamLogo,
+                            currentTeamName: customMatch.awayTeamName,
+                            leagueName: customMatch.leagueName,
+                          })
+                        }
+                        className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-purple-200 dark:border-purple-800/70 bg-purple-50/20 dark:bg-purple-950/20 text-xs font-bold text-gray-900 dark:text-white cursor-pointer focus:ring-2 focus:ring-purple-500/20 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'away',
+                            title: 'اختيار شعار الفريق الضيف',
+                            currentLogo: customMatch.awayTeamLogo,
+                            currentTeamName: customMatch.awayTeamName,
+                            leagueName: customMatch.leagueName,
+                          })
+                        }
+                        className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors cursor-pointer"
+                        title="فتح معرض صور الشعارات"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {customMatch.awayTeamLogo ? (
+                      <div className="mt-2 p-2.5 rounded-2xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/50 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700/60 p-1 flex items-center justify-center shrink-0 shadow-2xs">
+                            <img
+                              src={customMatch.awayTeamLogo}
+                              alt="Away Logo Preview"
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                          <div className="text-[11px] leading-tight truncate">
+                            <span className="font-black text-purple-900 dark:text-purple-200 block truncate">
+                              {customMatch.awayTeamName ? `شعار: ${customMatch.awayTeamName}` : 'شعار الفريق الضيف المعتمد'}
+                            </span>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                              <Check className="w-3 h-3" /> تم تأكيد واعتماد الشعار
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLogoPickerModal({
+                                isOpen: true,
+                                target: 'away',
+                                title: 'تغيير شعار الفريق الضيف',
+                                currentLogo: customMatch.awayTeamLogo,
+                                currentTeamName: customMatch.awayTeamName,
+                                leagueName: customMatch.leagueName,
+                              })
+                            }
+                            className="text-[10px] px-2.5 py-1 rounded-lg font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 hover:bg-purple-200 transition-colors cursor-pointer"
+                          >
+                            تغيير الشعار
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomMatch({ ...customMatch, awayTeamLogo: '' })}
+                            className="text-[10px] px-2 py-1 rounded-lg font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                          >
+                            مسح
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'away',
+                            title: 'اختيار شعار الفريق الضيف',
+                            currentLogo: '',
+                            currentTeamName: customMatch.awayTeamName,
+                            leagueName: customMatch.leagueName,
+                          })
+                        }
+                        className="mt-2 w-full p-2.5 rounded-2xl border border-dashed border-purple-200 dark:border-purple-800/80 bg-purple-50/40 dark:bg-purple-950/20 text-center hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-all cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <Layers className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        <span className="text-xs font-black text-purple-800 dark:text-purple-300">
+                          اضغط لفتح واجهة صور الشعارات واختيار شعار الفريق
+                        </span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2765,70 +3368,148 @@ export default function AdminPredictionsManager({
         </div>
       )}
 
-      {/* 4. SUB-TAB 3: PARTICIPANTS MANAGEMENT */}
+      {/* 4. SUB-TAB 3: PARTICIPANTS MANAGEMENT & STATISTICS */}
       {subTab === 'participants' && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          {/* Header & Main Recalculate Trigger */}
+          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-black text-gray-900 dark:text-white flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-brand" />
-                المتسابقون وطلبات الاشتراك ({participants.length})
-              </h2>
-              <p className="text-xs text-gray-400 font-bold mt-0.5">
-                تحكم في قبول أو رفض طلبات الانضمام لمسابقة التوقعات وإدارة حالات الحسابات.
+                <h2 className="text-base font-black text-gray-900 dark:text-white">
+                  المتسابقون وإحصائيات التوقعات ({participants.length})
+                </h2>
+              </div>
+              <p className="text-xs text-gray-400 font-bold mt-1">
+                تدقيق شامل لكافة المتسابقين وفرز التوقعات الصحيحة والخاطئة والذهبية ونسب الدقة لمنع أي احتيال واحتساب النقاط بدقة متناهية.
               </p>
             </div>
 
+            <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+              {canManagePoints && (
+                <button
+                  type="button"
+                  onClick={handleRecalculateAllPoints}
+                  disabled={isRecalculatingAll}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+                  title="إعادة احتساب وتدقيق كافة التوقعات في المسابقة والتأكد من مطابقة النقاط"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRecalculatingAll ? 'animate-spin' : ''}`} />
+                  <span>{isRecalculatingAll ? 'جاري التدقيق واحتساب النقاط...' : 'تدقيق وإعادة احتساب نقاط المسابقة'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+              <span className="text-[11px] font-bold text-gray-400">إجمالي المشتركين</span>
+              <div className="text-xl font-black text-gray-900 dark:text-white mt-0.5">{participants.length}</div>
+            </div>
+            <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">المعتمدون</span>
+              <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                {participants.filter((p) => p.status === 'approved').length}
+              </div>
+            </div>
+            <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">قيد المراجعة</span>
+              <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-0.5">
+                {pendingParticipantsCount}
+              </div>
+            </div>
+            <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xs">
+              <span className="text-[11px] font-bold text-red-600 dark:text-red-400">المحظورون</span>
+              <div className="text-xl font-black text-red-600 dark:text-red-400 mt-0.5">
+                {participants.filter((p) => p.status === 'blocked').length}
+              </div>
+            </div>
+          </div>
+
+          {/* Controls Bar: Filter, Sorting, Direction, and Search */}
+          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-4 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            {/* Status Filter */}
+            <div className="flex items-center gap-1 overflow-x-auto bg-gray-50 dark:bg-gray-800/60 p-1 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-bold scrollbar-hide">
+              <button
+                type="button"
+                onClick={() => setParticipantFilter('all')}
+                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all cursor-pointer ${
+                  participantFilter === 'all' ? 'bg-brand text-white shadow-2xs' : 'text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                الكل ({participants.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setParticipantFilter('approved')}
+                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all cursor-pointer ${
+                  participantFilter === 'approved' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                المعتمدون
+              </button>
+              <button
+                type="button"
+                onClick={() => setParticipantFilter('pending')}
+                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all cursor-pointer ${
+                  participantFilter === 'pending' ? 'bg-amber-500 text-white shadow-2xs' : 'text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                قيد المراجعة ({pendingParticipantsCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setParticipantFilter('blocked')}
+                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all cursor-pointer ${
+                  participantFilter === 'blocked' ? 'bg-red-600 text-white shadow-2xs' : 'text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                المحظورون
+              </button>
+            </div>
+
+            {/* Sorting & Search */}
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Status Filter */}
-              <div className="flex items-center bg-gray-50 dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setParticipantFilter('all')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
-                    participantFilter === 'all' ? 'bg-brand text-white' : 'text-gray-600 dark:text-gray-300'
-                  }`}
+              {/* Sort By Dropdown */}
+              <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800/60 px-2.5 py-1 rounded-xl border border-gray-200 dark:border-gray-700">
+                <ListOrdered className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-[11px] font-bold text-gray-500 hidden sm:inline">فرز حسب:</span>
+                <select
+                  value={participantSortBy}
+                  onChange={(e) => setParticipantSortBy(e.target.value as any)}
+                  className="bg-transparent text-xs font-black text-gray-800 dark:text-gray-200 focus:outline-hidden cursor-pointer"
                 >
-                  الكل
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setParticipantFilter('pending')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
-                    participantFilter === 'pending' ? 'bg-amber-500 text-white' : 'text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  قيد المراجعة ({pendingParticipantsCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setParticipantFilter('approved')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
-                    participantFilter === 'approved' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  المعتمدون
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setParticipantFilter('blocked')}
-                  className={`px-3 py-1 rounded-lg transition-all ${
-                    participantFilter === 'blocked' ? 'bg-red-600 text-white' : 'text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  المحظورون
-                </button>
+                  <option value="points">الأعلى نقاطاً (الترتيب)</option>
+                  <option value="correct">الأكثر توقعات صحيحة</option>
+                  <option value="incorrect">الأكثر توقعات خاطئة</option>
+                  <option value="golden">الأكثر توقعات ذهبية</option>
+                  <option value="accuracy">نسبة الدقة (%)</option>
+                  <option value="total">إجمالي التوقعات</option>
+                  <option value="date">تاريخ الانضمام</option>
+                  <option value="name">الاسم أبجدياً</option>
+                </select>
               </div>
 
+              {/* Sort Direction Toggle */}
+              <button
+                type="button"
+                onClick={() => setParticipantSortDir((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                className="p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 transition-colors cursor-pointer"
+                title={participantSortDir === 'desc' ? 'تنازلي (من الأعلى للأقل)' : 'تصاعدي (من الأقل للأعلى)'}
+              >
+                {participantSortDir === 'desc' ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
+              </button>
+
               {/* Search */}
-              <div className="relative">
+              <div className="relative flex-1 sm:w-52">
                 <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   placeholder="بحث بالاسم أو البريد..."
                   value={participantSearch}
                   onChange={(e) => setParticipantSearch(e.target.value)}
-                  className="pr-8 pl-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold focus:outline-none"
+                  className="w-full pr-8 pl-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold focus:outline-hidden"
                 />
               </div>
             </div>
@@ -2836,131 +3517,209 @@ export default function AdminPredictionsManager({
 
           {/* Participants Table */}
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-xs">
-            {filteredParticipants.length === 0 ? (
+            {sortedParticipants.length === 0 ? (
               <div className="text-center py-14 px-4 text-gray-400 font-bold text-xs">
-                لا يوجد متسابقون يطابقون الفلتر الحالي.
+                لا يوجد متسابقون يطابقون خيارات البحث والفرز الحالية.
               </div>
             ) : (
               <div>
-                <div className="hidden md:block overflow-x-auto">
-                  <table className="w-full text-right text-xs sm:text-sm">
+                {/* Desktop Detailed Table */}
+                <div className="hidden xl:block overflow-x-auto">
+                  <table className="w-full text-right text-xs">
                     <thead>
-                      <tr className="bg-gray-50/70 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 text-[11px] sm:text-xs">
-                        <th className="p-3 sm:p-4 font-black">المتسابق</th>
-                        <th className="p-3 sm:p-4 font-black">البريد الإلكتروني</th>
-                        <th className="p-3 sm:p-4 font-black text-center">الحالة</th>
-                        <th className="p-3 sm:p-4 font-black">تاريخ التقديم</th>
-                        <th className="p-3 sm:p-4 font-black">ملاحظات المتسابق</th>
-                        <th className="p-3 sm:p-4 font-black text-center">إجراءات الاعتماد</th>
+                      <tr className="bg-gray-50/80 dark:bg-gray-800/60 text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-800 text-[11px]">
+                        <th className="p-3.5 font-black text-center w-12">#</th>
+                        <th className="p-3.5 font-black">المتسابق</th>
+                        <th className="p-3.5 font-black">البريد</th>
+                        <th className="p-3.5 font-black text-center">الحالة</th>
+                        <th className="p-3.5 font-black text-center">إجمالي التوقعات</th>
+                        <th className="p-3.5 font-black text-center text-emerald-600 dark:text-emerald-400">صحيحة</th>
+                        <th className="p-3.5 font-black text-center text-red-600 dark:text-red-400">خاطئة</th>
+                        <th className="p-3.5 font-black text-center text-amber-500">ذهبية</th>
+                        <th className="p-3.5 font-black text-center">نسبة الدقة</th>
+                        <th className="p-3.5 font-black text-center text-brand">إجمالي النقاط</th>
+                        <th className="p-3.5 font-black text-center">سجل التوقعات</th>
+                        <th className="p-3.5 font-black text-center">إجراءات الحساب</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {filteredParticipants.map((part) => {
+                      {sortedParticipants.map((part, idx) => {
                         const u = part.user;
                         const status = part.status;
+                        const stats = part.stats || {
+                          totalPredictions: 0,
+                          correctPredictions: 0,
+                          incorrectPredictions: 0,
+                          goldenPredictions: 0,
+                          pendingPredictions: 0,
+                          accuracy: 0,
+                          totalPoints: u?.totalPoints ?? 0,
+                        };
 
                         return (
-                          <tr key={part.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
-                            <td className="p-3 sm:p-4 font-bold">
-                              <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full overflow-hidden bg-brand/10 text-brand flex items-center justify-center font-black text-xs shrink-0">
+                          <tr key={part.id} className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors">
+                            <td className="p-3.5 text-center font-mono font-black text-gray-400 text-xs">
+                              {idx + 1}
+                            </td>
+
+                            <td className="p-3.5 font-bold">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full overflow-hidden bg-brand/10 text-brand flex items-center justify-center font-black text-xs shrink-0 border border-brand/20">
                                   {u?.avatar ? (
                                     <img loading="lazy" src={u.avatar} alt="" className="w-full h-full object-cover" />
                                   ) : (
                                     (u?.name || 'U').charAt(0)
                                   )}
                                 </div>
-                                <span className="text-gray-900 dark:text-white font-black">{u?.name || 'مستخدم'}</span>
+                                <div className="min-w-0">
+                                  <span className="text-gray-900 dark:text-white font-black block truncate">{u?.name || 'مستخدم'}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono">ID: #{u?.id || part.userId}</span>
+                                </div>
                               </div>
                             </td>
 
-                            <td className="p-3 sm:p-4 font-mono text-xs text-gray-600 dark:text-gray-400">
-                              {u?.email}
+                            <td className="p-3.5 font-mono text-[11px] text-gray-500 max-w-[150px] truncate">
+                              {u?.email || '-'}
                             </td>
 
-                            <td className="p-3 sm:p-4 text-center">
+                            <td className="p-3.5 text-center">
                               {status === 'approved' ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                                   معتمد
                                 </span>
                               ) : status === 'pending' ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 animate-pulse">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 animate-pulse">
                                   قيد المراجعة
                                 </span>
                               ) : status === 'rejected' ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                                   مرفوض
                                 </span>
                               ) : (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400">
                                   محظور
                                 </span>
                               )}
                             </td>
 
-                            <td className="p-3 sm:p-4 text-xs text-gray-400">
-                              {part.appliedAt ? new Date(part.appliedAt).toLocaleDateString('ar-EG') : '-'}
+                            {/* Total Predictions */}
+                            <td className="p-3.5 text-center font-mono font-bold text-gray-700 dark:text-gray-300">
+                              <span className="px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs">
+                                {stats.totalPredictions}
+                              </span>
                             </td>
 
-                            <td className="p-3 sm:p-4 text-xs text-gray-600 dark:text-gray-300 max-w-xs truncate">
-                              {part.notes || '-'}
+                            {/* Correct Predictions */}
+                            <td className="p-3.5 text-center">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-mono font-black text-xs">
+                                <CheckCircle className="w-3 h-3 text-emerald-500" />
+                                {stats.correctPredictions}
+                              </span>
                             </td>
 
-                            <td className="p-3 sm:p-4 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {status !== 'approved' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
-                                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                                    title="اعتماد المشاركة"
-                                  >
-                                    <UserCheck className="w-3.5 h-3.5" />
-                                    <span>اعتماد</span>
-                                  </button>
-                                )}
+                            {/* Incorrect Predictions */}
+                            <td className="p-3.5 text-center">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 font-mono font-black text-xs">
+                                <XCircle className="w-3 h-3 text-red-500" />
+                                {stats.incorrectPredictions}
+                              </span>
+                            </td>
 
-                                {status !== 'rejected' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUpdateParticipantStatus(part.id, 'rejected')}
-                                    className="px-2.5 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-700 dark:text-gray-200 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                    title="رفض الطلب"
-                                  >
-                                    <UserX className="w-3.5 h-3.5" />
-                                    <span>رفض</span>
-                                  </button>
-                                )}
+                            {/* Golden Predictions */}
+                            <td className="p-3.5 text-center">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 font-mono font-black text-xs">
+                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                {stats.goldenPredictions}
+                              </span>
+                            </td>
 
-                                {status !== 'blocked' ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUpdateParticipantStatus(part.id, 'blocked')}
-                                    className="p-2 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/50 transition-colors cursor-pointer"
-                                    title="حظر المستخدم من المسابقة"
-                                  >
-                                    <Ban className="w-3.5 h-3.5" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
-                                    className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 font-bold text-xs cursor-pointer"
-                                    title="إلغاء الحظر"
-                                  >
-                                    إلغاء الحظر
-                                  </button>
-                                )}
+                            {/* Accuracy */}
+                            <td className="p-3.5 text-center">
+                              <span className={`font-mono font-black text-xs ${stats.accuracy >= 50 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                                {stats.accuracy}%
+                              </span>
+                            </td>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteParticipant(part.id, u?.name || 'مستخدم')}
-                                  className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
-                                  title="حذف المشارك"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                            {/* Total Points */}
+                            <td className="p-3.5 text-center font-mono font-black text-sm text-brand">
+                              <span className="px-2.5 py-1 rounded-xl bg-brand/10 border border-brand/20">
+                                {stats.totalPoints} نقطة
+                              </span>
+                            </td>
+
+                            {/* Inspect History Trigger */}
+                            <td className="p-3.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleInspectUserHistory(part.userId || u?.id, u?.name || 'المتسابق', u?.email, u?.avatar)}
+                                className="px-2.5 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-black inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="عرض وفحص سجل جميع توقعات المتسابق"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                                <span>سجل التوقعات</span>
+                              </button>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="p-3.5 text-center">
+                              {canManageParticipants ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  {status !== 'approved' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
+                                      className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                      title="اعتماد المشاركة"
+                                    >
+                                      <UserCheck className="w-3 h-3" />
+                                      <span>اعتماد</span>
+                                    </button>
+                                  )}
+
+                                  {status !== 'rejected' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateParticipantStatus(part.id, 'rejected')}
+                                      className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-700 dark:text-gray-200 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                                      title="رفض الطلب"
+                                    >
+                                      <UserX className="w-3 h-3" />
+                                      <span>رفض</span>
+                                    </button>
+                                  )}
+
+                                  {status !== 'blocked' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateParticipantStatus(part.id, 'blocked')}
+                                      className="p-1.5 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/50 transition-colors cursor-pointer"
+                                      title="حظر المستخدم من المسابقة"
+                                    >
+                                      <Ban className="w-3 h-3" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
+                                      className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 font-bold text-[11px] cursor-pointer"
+                                      title="إلغاء الحظر"
+                                    >
+                                      إلغاء الحظر
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteParticipant(part.id, u?.name || 'مستخدم')}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                    title="حذف المشارك نهائياً"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 text-xs">-</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -2968,29 +3727,46 @@ export default function AdminPredictionsManager({
                     </tbody>
                   </table>
                 </div>
-                
-                {/* Mobile Cards View */}
-                <div className="grid grid-cols-1 gap-4 p-4 md:hidden">
-                  {filteredParticipants.map((part) => {
+
+                {/* Medium Screens & Mobile Responsive Cards View */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:hidden gap-4 p-4">
+                  {sortedParticipants.map((part, idx) => {
                     const u = part.user;
                     const status = part.status;
+                    const stats = part.stats || {
+                      totalPredictions: 0,
+                      correctPredictions: 0,
+                      incorrectPredictions: 0,
+                      goldenPredictions: 0,
+                      pendingPredictions: 0,
+                      accuracy: 0,
+                      totalPoints: u?.totalPoints ?? 0,
+                    };
 
                     return (
-                      <div key={part.id} className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full overflow-hidden bg-brand/10 text-brand flex items-center justify-center font-black text-xs shrink-0">
+                      <div
+                        key={part.id}
+                        className="bg-gray-50 dark:bg-gray-800/60 p-4 rounded-2xl border border-gray-200 dark:border-gray-700/80 flex flex-col justify-between gap-3 shadow-2xs"
+                      >
+                        {/* Header: User Info & Status */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 font-mono font-black text-xs text-gray-600 dark:text-gray-300 flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="w-9 h-9 rounded-full overflow-hidden bg-brand/10 text-brand flex items-center justify-center font-black text-xs shrink-0 border border-brand/20">
                               {u?.avatar ? (
                                 <img loading="lazy" src={u.avatar} alt="" className="w-full h-full object-cover" />
                               ) : (
                                 (u?.name || 'U').charAt(0)
                               )}
                             </div>
-                            <div>
-                              <div className="text-gray-900 dark:text-white font-black text-sm">{u?.name || 'مستخدم'}</div>
-                              <div className="font-mono text-[10px] text-gray-500">{u?.email}</div>
+                            <div className="min-w-0">
+                              <div className="text-gray-900 dark:text-white font-black text-sm truncate">{u?.name || 'مستخدم'}</div>
+                              <div className="font-mono text-[10px] text-gray-400 truncate">{u?.email || 'بدون بريد'}</div>
                             </div>
                           </div>
+
                           <div>
                             {status === 'approved' ? (
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
@@ -3012,63 +3788,97 @@ export default function AdminPredictionsManager({
                           </div>
                         </div>
 
-                        <div className="text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-900 p-2 rounded-lg border border-gray-100 dark:border-gray-800">
-                          <div className="font-bold text-gray-400 mb-1">ملاحظات المتسابق:</div>
-                          {part.notes || 'لا يوجد ملاحظات'}
+                        {/* Stats Metrics Bento */}
+                        <div className="grid grid-cols-4 gap-1.5 p-2.5 rounded-xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 text-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-gray-400 block">إجمالي</span>
+                            <span className="font-mono font-black text-xs text-gray-800 dark:text-gray-200">{stats.totalPredictions}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-emerald-600 block">صحيح</span>
+                            <span className="font-mono font-black text-xs text-emerald-600">{stats.correctPredictions}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-red-500 block">خاطئ</span>
+                            <span className="font-mono font-black text-xs text-red-500">{stats.incorrectPredictions}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-amber-500 block">ذهبي</span>
+                            <span className="font-mono font-black text-xs text-amber-500">{stats.goldenPredictions}</span>
+                          </div>
                         </div>
 
-                        <div className="flex items-center justify-between mt-1 pt-3 border-t border-gray-200 dark:border-gray-700">
-                          <div className="text-[10px] text-gray-400">
-                            {part.appliedAt ? new Date(part.appliedAt).toLocaleDateString('ar-EG') : '-'}
+                        {/* Points & Accuracy Summary */}
+                        <div className="flex items-center justify-between px-1 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-gray-400 font-bold text-[11px]">نسبة الدقة:</span>
+                            <span className="font-mono font-black text-gray-800 dark:text-gray-200">{stats.accuracy}%</span>
                           </div>
                           <div className="flex items-center gap-1.5">
-                            {status !== 'approved' && (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
-                                className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] flex items-center gap-1 transition-colors"
-                              >
-                                <UserCheck className="w-3 h-3" /> اعتماد
-                              </button>
-                            )}
-
-                            {status !== 'rejected' && (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateParticipantStatus(part.id, 'rejected')}
-                                className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-700 dark:text-gray-200 font-bold text-[10px] flex items-center gap-1 transition-colors"
-                              >
-                                <UserX className="w-3 h-3" /> رفض
-                              </button>
-                            )}
-
-                            {status !== 'blocked' ? (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateParticipantStatus(part.id, 'blocked')}
-                                className="p-2 rounded text-red-600 bg-red-50 dark:bg-red-950"
-                              >
-                                <Ban className="w-3.5 h-3.5" />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
-                                className="px-2 py-1 rounded bg-emerald-100 text-emerald-700 font-bold text-[10px]"
-                              >
-                                إلغاء الحظر
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteParticipant(part.id, u?.name || 'مستخدم')}
-                              className="p-2 rounded text-gray-400 hover:text-red-600 bg-gray-100 dark:bg-gray-800"
-                              title="حذف المشارك"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <span className="text-gray-400 font-bold text-[11px]">إجمالي النقاط:</span>
+                            <span className="font-mono font-black text-brand text-sm">{stats.totalPoints} نقطة</span>
                           </div>
+                        </div>
+
+                        {/* Buttons & Actions */}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700/60">
+                          <button
+                            type="button"
+                            onClick={() => handleInspectUserHistory(part.userId || u?.id, u?.name || 'المتسابق', u?.email, u?.avatar)}
+                            className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-black text-xs inline-flex items-center gap-1.5 border border-blue-200 dark:border-blue-800 cursor-pointer"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                            <span>فحص السجل</span>
+                          </button>
+
+                          {canManageParticipants && (
+                            <div className="flex items-center gap-1">
+                              {status !== 'approved' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center gap-1 cursor-pointer"
+                                >
+                                  <UserCheck className="w-3.5 h-3.5" /> اعتماد
+                                </button>
+                              )}
+                              {status !== 'rejected' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'rejected')}
+                                  className="px-2.5 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                >
+                                  <UserX className="w-3.5 h-3.5" /> رفض
+                                </button>
+                              )}
+                              {status !== 'blocked' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'blocked')}
+                                  className="p-1.5 rounded-lg text-red-600 bg-red-100 dark:bg-red-950/60 cursor-pointer"
+                                  title="حظر"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateParticipantStatus(part.id, 'approved')}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 font-bold text-xs cursor-pointer"
+                                >
+                                  إلغاء الحظر
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteParticipant(part.id, u?.name || 'مستخدم')}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 bg-gray-100 dark:bg-gray-800 cursor-pointer"
+                                title="حذف"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -3156,20 +3966,22 @@ export default function AdminPredictionsManager({
               </div>
             </div>
 
-            <div className="pt-3 border-t border-gray-100 dark:border-gray-800 flex justify-end">
-              <button
-                type="submit"
-                disabled={isActionLoading}
-                className="px-6 py-2.5 rounded-xl bg-brand hover:bg-emerald-600 text-white font-black text-xs flex items-center gap-2 shadow-xs cursor-pointer"
-              >
-                {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                <span>حفظ التغييرات</span>
-              </button>
-            </div>
+            {canManageContest && (
+              <div className="pt-3 border-t border-gray-100 dark:border-gray-800 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isActionLoading}
+                  className="px-6 py-2.5 rounded-xl bg-brand hover:bg-emerald-600 text-white font-black text-xs flex items-center gap-2 shadow-xs cursor-pointer"
+                >
+                  {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>حفظ التغييرات</span>
+                </button>
+              </div>
+            )}
           </form>
 
           {/* End Active Contest Section within Contest Settings */}
-          {activeContest && activeContest.status === 'active' && (
+          {canEndContest && activeContest && activeContest.status === 'active' && (
             <div className="mt-6 pt-5 border-t border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/30 p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h4 className="text-xs font-black text-rose-800 dark:text-rose-300 flex items-center gap-2">
@@ -3189,6 +4001,126 @@ export default function AdminPredictionsManager({
                 <Ban className="w-4 h-4" />
                 <span>إنهاء المسابقة الآن</span>
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 6. SUB-TAB 5: COMPLETED CONTESTS & ARCHIVE */}
+      {subTab === 'completed_contests' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                <Archive className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900 dark:text-white">
+                  أرشيف وسجل المسابقات المنتهية ({allContests.filter((c) => c.status === 'completed').length})
+                </h3>
+                <p className="text-xs text-gray-400 font-bold mt-0.5">
+                  استعراض المسابقات السابقة ونتائجها وإمكانية إدارتها أو حذفها.
+                </p>
+              </div>
+            </div>
+
+            <a
+              href="/predictions"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+            >
+              <span>معاينة واجهة المتسابقين</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+
+          {allContests.filter((c) => c.status === 'completed').length === 0 ? (
+            <div className="text-center py-16 px-4 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xs">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-3">
+                <Archive className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-black text-gray-900 dark:text-white mb-1">
+                لا توجد مسابقات منتهية مؤرشفة حتى الآن
+              </h4>
+              <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                عند إنهاء المسابقة الحالية ستظهر كافة بياناتها وسجل نتائجها هنا وفي واجهة الأرشيف العامة.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {allContests
+                .filter((c) => c.status === 'completed')
+                .map((contest) => (
+                  <div
+                    key={contest.id}
+                    className="p-5 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xs space-y-4 flex flex-col justify-between"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 flex items-center gap-1">
+                          <Archive className="w-3 h-3" />
+                          <span>مسابقة منتهية</span>
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-mono font-bold">
+                          المعرف: #{contest.id}
+                        </span>
+                      </div>
+
+                      <h4 className="text-base font-black text-gray-900 dark:text-white">
+                        {contest.name}
+                      </h4>
+
+                      {contest.description && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">
+                          {contest.description}
+                        </p>
+                      )}
+
+                      <div className="pt-2 text-[11px] font-bold text-gray-400 flex items-center gap-3">
+                        {contest.createdAt && (
+                          <span>تاريخ الإنشاء: {new Date(contest.createdAt).toLocaleDateString('ar-EG')}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-100 dark:border-gray-800 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectContestToBrowse(contest.id)}
+                          className="px-3.5 py-2 rounded-xl bg-brand hover:bg-brand/90 text-white text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>تصفح بيانات ومباريات المسابقة باللوحة</span>
+                        </button>
+
+                        <a
+                          href={`/predictions?contestId=${contest.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          title="معاينة الواجهة العامة للمتسابقين"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">معاينة المتسابقين</span>
+                        </a>
+                      </div>
+
+                      {canDeleteContest && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteContest(contest.id, contest.name)}
+                          className="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
+                          title="حذف المسابقة من قاعدة البيانات"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
             </div>
           )}
         </div>
@@ -3431,20 +4363,22 @@ export default function AdminPredictionsManager({
                     className="w-full pr-8 pl-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs font-bold focus:outline-none"
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewPredUserId('');
-                    setNewPredHomeScore('');
-                    setNewPredAwayScore('');
-                    setIsAddUserPredModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-brand hover:bg-emerald-600 text-white text-xs font-black transition-all flex items-center gap-1 shadow-xs cursor-pointer shrink-0"
-                  title="إضافة توقع يدوي لمشارك"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">إضافة توقع</span>
-                </button>
+                {canManageParticipants && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewPredUserId('');
+                      setNewPredHomeScore('');
+                      setNewPredAwayScore('');
+                      setIsAddUserPredModalOpen(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-brand hover:bg-emerald-600 text-white text-xs font-black transition-all flex items-center gap-1 shadow-xs cursor-pointer shrink-0"
+                    title="إضافة توقع يدوي لمشارك"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">إضافة توقع</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -3550,28 +4484,30 @@ export default function AdminPredictionsManager({
                         </div>
 
                         {/* Admin Edit & Delete Actions for Individual Prediction */}
-                        <div className="flex items-center gap-1 border-r border-gray-200 dark:border-gray-700 pr-2">
-                          <button
-                            type="button"
-                            title="تعديل توقع المشارك"
-                            onClick={() => {
-                              setEditingUserPred(p);
-                              setEditPredHomeScore(String(p.homeScore));
-                              setEditPredAwayScore(String(p.awayScore));
-                            }}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            title="حذف توقع المشارك"
-                            onClick={() => handleAdminDeleteUserPrediction(p.id, p.userName)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {canManageParticipants && (
+                          <div className="flex items-center gap-1 border-r border-gray-200 dark:border-gray-700 pr-2">
+                            <button
+                              type="button"
+                              title="تعديل توقع المشارك"
+                              onClick={() => {
+                                setEditingUserPred(p);
+                                setEditPredHomeScore(String(p.homeScore));
+                                setEditPredAwayScore(String(p.awayScore));
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="حذف توقع المشارك"
+                              onClick={() => handleAdminDeleteUserPrediction(p.id, p.userName)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -3758,28 +4694,113 @@ export default function AdminPredictionsManager({
                         value={editingMatchForm.homeTeamName}
                         onChange={(e) => {
                           const val = e.target.value;
+                          const catalogMatch = matchTeamFromCatalog(val, editingMatchForm.leagueName);
                           const matchTeam = existingData.teams.find(
-                            (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                            (t) =>
+                              t.name.toLowerCase() === val.trim().toLowerCase() ||
+                              normalizeSportsName(t.name) === normalizeSportsName(val)
                           );
+                          const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || editingMatchForm.homeTeamLogo;
                           setEditingMatchForm({
                             ...editingMatchForm,
                             homeTeamName: val,
-                            homeTeamLogo: matchTeam?.logo || editingMatchForm.homeTeamLogo,
+                            homeTeamLogo: resolvedLogo,
                           });
                         }}
                         className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                         placeholder="اسم الفريق الأول..."
                       />
                     </div>
-                    <div>
+
+                    {/* Interactive suggestions chips for edit home */}
+                    {editingMatchForm.homeTeamName.trim().length >= 2 && (
+                      (() => {
+                        const suggs = searchTeamsFromCatalog(editingMatchForm.homeTeamName, editingMatchForm.leagueName, 3);
+                        if (suggs.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-[9px] text-gray-400 font-bold">تأكيد:</span>
+                            {suggs.map((t) => (
+                              <button
+                                key={`edit_h_sug_${t.id}`}
+                                type="button"
+                                onClick={() => {
+                                  setEditingMatchForm((prev) => ({
+                                    ...prev,
+                                    homeTeamName: t.name,
+                                    homeTeamLogo: t.logo,
+                                  }));
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[10px] font-bold text-purple-900 dark:text-purple-200 hover:bg-purple-100 cursor-pointer"
+                              >
+                                <img src={t.logo} alt="" className="w-3.5 h-3.5 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
+                                <span>{t.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+
+                    <div className="relative">
                       <input
                         type="url"
                         value={editingMatchForm.homeTeamLogo}
                         onChange={(e) => setEditingMatchForm({ ...editingMatchForm, homeTeamLogo: e.target.value })}
-                        className="w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[11px] font-bold text-gray-900 dark:text-white"
-                        placeholder="شعار الفريق الأول (URL)..."
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'edit_home',
+                            title: 'تعديل شعار الفريق المضيف (صاحب الأرض)',
+                            currentLogo: editingMatchForm.homeTeamLogo,
+                            currentTeamName: editingMatchForm.homeTeamName,
+                            leagueName: editingMatchForm.leagueName,
+                          })
+                        }
+                        className="w-full pl-8 pr-2.5 py-2 rounded-lg border border-purple-200 dark:border-purple-800/70 bg-white dark:bg-gray-800 text-[11px] font-bold text-gray-900 dark:text-white cursor-pointer"
+                        placeholder="اضغط لاختيار الشعار بالصور أو رابط..."
                       />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'edit_home',
+                            title: 'تعديل شعار الفريق المضيف (صاحب الأرض)',
+                            currentLogo: editingMatchForm.homeTeamLogo,
+                            currentTeamName: editingMatchForm.homeTeamName,
+                            leagueName: editingMatchForm.leagueName,
+                          })
+                        }
+                        className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 hover:bg-purple-200 transition-colors cursor-pointer"
+                        title="فتح معرض صور الشعارات"
+                      >
+                        <Layers className="w-3 h-3" />
+                      </button>
                     </div>
+
+                    {editingMatchForm.homeTeamLogo && (
+                      <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <img
+                            src={editingMatchForm.homeTeamLogo}
+                            alt="Home Logo"
+                            className="w-4 h-4 object-contain shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          <span className="truncate">شعار معتمد</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingMatchForm({ ...editingMatchForm, homeTeamLogo: '' })}
+                          className="text-[9px] text-red-500 hover:underline shrink-0 cursor-pointer"
+                        >
+                          مسح
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Away Team */}
@@ -3793,28 +4814,113 @@ export default function AdminPredictionsManager({
                         value={editingMatchForm.awayTeamName}
                         onChange={(e) => {
                           const val = e.target.value;
+                          const catalogMatch = matchTeamFromCatalog(val, editingMatchForm.leagueName);
                           const matchTeam = existingData.teams.find(
-                            (t) => t.name.toLowerCase() === val.trim().toLowerCase()
+                            (t) =>
+                              t.name.toLowerCase() === val.trim().toLowerCase() ||
+                              normalizeSportsName(t.name) === normalizeSportsName(val)
                           );
+                          const resolvedLogo = catalogMatch?.logo || matchTeam?.logo || editingMatchForm.awayTeamLogo;
                           setEditingMatchForm({
                             ...editingMatchForm,
                             awayTeamName: val,
-                            awayTeamLogo: matchTeam?.logo || editingMatchForm.awayTeamLogo,
+                            awayTeamLogo: resolvedLogo,
                           });
                         }}
                         className="w-full p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-bold text-gray-900 dark:text-white"
                         placeholder="اسم الفريق الثاني..."
                       />
                     </div>
-                    <div>
+
+                    {/* Interactive suggestions chips for edit away */}
+                    {editingMatchForm.awayTeamName.trim().length >= 2 && (
+                      (() => {
+                        const suggs = searchTeamsFromCatalog(editingMatchForm.awayTeamName, editingMatchForm.leagueName, 3);
+                        if (suggs.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-[9px] text-gray-400 font-bold">تأكيد:</span>
+                            {suggs.map((t) => (
+                              <button
+                                key={`edit_a_sug_${t.id}`}
+                                type="button"
+                                onClick={() => {
+                                  setEditingMatchForm((prev) => ({
+                                    ...prev,
+                                    awayTeamName: t.name,
+                                    awayTeamLogo: t.logo,
+                                  }));
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[10px] font-bold text-purple-900 dark:text-purple-200 hover:bg-purple-100 cursor-pointer"
+                              >
+                                <img src={t.logo} alt="" className="w-3.5 h-3.5 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
+                                <span>{t.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+
+                    <div className="relative">
                       <input
                         type="url"
                         value={editingMatchForm.awayTeamLogo}
                         onChange={(e) => setEditingMatchForm({ ...editingMatchForm, awayTeamLogo: e.target.value })}
-                        className="w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-[11px] font-bold text-gray-900 dark:text-white"
-                        placeholder="شعار الفريق الثاني (URL)..."
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'edit_away',
+                            title: 'تعديل شعار الفريق الثاني (الضيف)',
+                            currentLogo: editingMatchForm.awayTeamLogo,
+                            currentTeamName: editingMatchForm.awayTeamName,
+                            leagueName: editingMatchForm.leagueName,
+                          })
+                        }
+                        className="w-full pl-8 pr-2.5 py-2 rounded-lg border border-purple-200 dark:border-purple-800/70 bg-white dark:bg-gray-800 text-[11px] font-bold text-gray-900 dark:text-white cursor-pointer"
+                        placeholder="اضغط لاختيار الشعار بالصور أو رابط..."
                       />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLogoPickerModal({
+                            isOpen: true,
+                            target: 'edit_away',
+                            title: 'تعديل شعار الفريق الثاني (الضيف)',
+                            currentLogo: editingMatchForm.awayTeamLogo,
+                            currentTeamName: editingMatchForm.awayTeamName,
+                            leagueName: editingMatchForm.leagueName,
+                          })
+                        }
+                        className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 hover:bg-purple-200 transition-colors cursor-pointer"
+                        title="فتح معرض صور الشعارات"
+                      >
+                        <Layers className="w-3 h-3" />
+                      </button>
                     </div>
+
+                    {editingMatchForm.awayTeamLogo && (
+                      <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <img
+                            src={editingMatchForm.awayTeamLogo}
+                            alt="Away Logo"
+                            className="w-4 h-4 object-contain shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          <span className="truncate">شعار معتمد</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingMatchForm({ ...editingMatchForm, awayTeamLogo: '' })}
+                          className="text-[9px] text-red-500 hover:underline shrink-0 cursor-pointer"
+                        >
+                          مسح
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -4429,7 +5535,198 @@ export default function AdminPredictionsManager({
         </div>
       )}
 
-      {/* 15. CONFIRM MODAL (Unified confirmation for sensitive/destructive actions) */}
+      {/* 15. MODAL: Participant Prediction History & Anti-Fraud Audit */}
+      {inspectingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 p-6 max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-brand/10 text-brand flex items-center justify-center font-black shrink-0 border border-brand/20">
+                  {inspectingUser.avatar ? (
+                    <img loading="lazy" src={inspectingUser.avatar} alt="" className="w-full h-full rounded-2xl object-cover" />
+                  ) : (
+                    inspectingUser.name.charAt(0)
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-gray-900 dark:text-white">
+                      سجل تدقيق توقعات: {inspectingUser.name}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                      ID: #{inspectingUser.id}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 font-bold mt-0.5">
+                    {inspectingUser.email || 'بدون بريد'} &bull; تدقيق وتتبع كل مباراة تم التوقع عليها ومطابقة النقاط المكتسبة
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setInspectingUser(null);
+                  setInspectingUserPredictions([]);
+                }}
+                className="p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content List */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {isLoadingUserHistory ? (
+                <div className="py-16 text-center">
+                  <Loader2 className="w-7 h-7 text-brand animate-spin mx-auto mb-2" />
+                  <p className="text-xs font-bold text-gray-400">جاري جلب وتدقيق سجل توقعات المتسابق...</p>
+                </div>
+              ) : inspectingUserPredictions.length === 0 ? (
+                <div className="text-center py-16 px-4 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-gray-100 dark:border-gray-800">
+                  <AlertCircle className="w-8 h-8 text-gray-400 mx-auto mb-2 opacity-60" />
+                  <div className="text-sm font-black text-gray-700 dark:text-gray-300">لا توجد توقعات مسجلة</div>
+                  <p className="text-xs text-gray-400 mt-1">لم يقم هذا المتسابق بإدخال أي توقعات للمباريات حتى الآن.</p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {inspectingUserPredictions.map((pred, pIdx) => {
+                    const m = pred.match;
+                    const isFinished = m?.status === 'finished';
+                    const hasActualScores = m && m.homeScore !== undefined && m.homeScore !== null && m.awayScore !== undefined && m.awayScore !== null;
+                    
+                    // Verification correctness
+                    let isCorrect = false;
+                    let isExact = false;
+                    if (hasActualScores) {
+                      const actualDiff = m.homeScore - m.awayScore;
+                      const predDiff = pred.homeScore - pred.awayScore;
+                      isExact = m.homeScore === pred.homeScore && m.awayScore === pred.awayScore;
+                      isCorrect = isExact || (actualDiff > 0 && predDiff > 0) || (actualDiff < 0 && predDiff < 0) || (actualDiff === 0 && predDiff === 0);
+                    }
+
+                    return (
+                      <div
+                        key={pred.id || `pred-${pIdx}`}
+                        className="bg-gray-50 dark:bg-gray-800/60 p-3.5 rounded-2xl border border-gray-200 dark:border-gray-700/80 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-2xs"
+                      >
+                        {/* Match & Teams */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold mb-1">
+                            <span>{m?.league?.name || 'الدوري'}</span>
+                            {m?.round && <span>&bull; الجولة {m.round}</span>}
+                            <span>&bull; {m?.date ? new Date(m.date).toLocaleDateString('ar-EG') : ''}</span>
+                            {m?.status === 'finished' ? (
+                              <span className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-[9px] font-black">
+                                منتهية
+                              </span>
+                            ) : m?.status === 'live' ? (
+                              <span className="px-1.5 py-0.5 rounded bg-red-500 text-white text-[9px] font-black animate-pulse">
+                                جارية الآن
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[9px] font-black">
+                                مجدولة
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-gray-900 dark:text-white truncate">
+                              {m?.homeTeam?.name || 'الفريق المضيف'}
+                            </span>
+                            <span className="text-[10px] font-bold text-gray-400">ضد</span>
+                            <span className="text-xs font-black text-gray-900 dark:text-white truncate">
+                              {m?.awayTeam?.name || 'الفريق الضيف'}
+                            </span>
+                          </div>
+
+                          {/* Actual Result if finished */}
+                          {hasActualScores && (
+                            <div className="text-[11px] font-bold text-gray-500 mt-1 flex items-center gap-1.5">
+                              <span>النتيجة الفعلية:</span>
+                              <span className="font-mono font-black text-gray-900 dark:text-white dir-ltr">
+                                {m.homeScore} - {m.awayScore}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* User Prediction */}
+                        <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-gray-200 dark:border-gray-700/60">
+                          {/* Predicted Score Box */}
+                          <div className="bg-white dark:bg-gray-900 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 text-center">
+                            <span className="text-[9px] font-bold text-gray-400 block">توقع المتسابق</span>
+                            <span className="font-mono font-black text-sm text-gray-900 dark:text-white dir-ltr">
+                              {pred.homeScore} - {pred.awayScore}
+                            </span>
+                          </div>
+
+                          {/* Golden Prediction Badge */}
+                          {pred.isGolden && (
+                            <span className="px-2 py-1 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 text-[10px] font-black flex items-center gap-1">
+                              <Sparkles className="w-3 h-3" />
+                              ذهبي
+                            </span>
+                          )}
+
+                          {/* Correctness & Calculation Status */}
+                          <div className="text-center min-w-[85px]">
+                            {pred.isCalculated ? (
+                              <div>
+                                {isExact ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 block mb-0.5">
+                                    تطابق تام
+                                  </span>
+                                ) : isCorrect ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 block mb-0.5">
+                                    صحيح (فارق/فائز)
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 block mb-0.5">
+                                    خاطئ
+                                  </span>
+                                )}
+                                <span className="font-mono font-black text-xs text-brand">
+                                  +{pred.pointsEarned || 0} نقطة
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-100 dark:bg-gray-800 text-gray-500">
+                                بانتظار المباراة
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between shrink-0">
+              <div className="text-xs font-bold text-gray-500">
+                إجمالي التوقعات: <span className="font-mono font-black text-gray-900 dark:text-white">{inspectingUserPredictions.length}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setInspectingUser(null);
+                  setInspectingUserPredictions([]);
+                }}
+                className="px-5 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-black transition-colors cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 16. CONFIRM MODAL (Unified confirmation for sensitive/destructive actions) */}
       <ConfirmModal
         isOpen={confirmModalConfig.isOpen}
         title={confirmModalConfig.title}
@@ -4441,13 +5738,33 @@ export default function AdminPredictionsManager({
         onConfirm={confirmModalConfig.onConfirm}
         onClose={() => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }))}
       />
+
+      {/* 17. VISUAL TEAM LOGO PICKER MODAL */}
+      <TeamLogoPickerModal
+        isOpen={logoPickerModal.isOpen}
+        onClose={() => setLogoPickerModal((prev) => ({ ...prev, isOpen: false }))}
+        title={logoPickerModal.title}
+        currentLogo={logoPickerModal.currentLogo}
+        currentTeamName={logoPickerModal.currentTeamName}
+        leagueName={logoPickerModal.leagueName}
+        existingTeams={existingData.teams}
+        onSelectLogo={handleSelectLogoFromModal}
+      />
       <datalist id="existing-leagues-list">
-        {existingData.leagues.map((l) => (
+        {Array.from(
+          new Map(
+            [...existingData.leagues, ...ALL_KNOWN_LEAGUES].map((l) => [l.name, l])
+          ).values()
+        ).map((l) => (
           <option key={l.id} value={l.name} />
         ))}
       </datalist>
       <datalist id="existing-teams-list">
-        {existingData.teams.map((t) => (
+        {Array.from(
+          new Map(
+            [...existingData.teams, ...ALL_KNOWN_TEAMS].map((t) => [t.name, t])
+          ).values()
+        ).map((t) => (
           <option key={t.id} value={t.name} />
         ))}
       </datalist>

@@ -5,6 +5,8 @@ import {
   Tag, Filter
 } from 'lucide-react';
 import ConfirmModal from '../../common/ConfirmModal';
+import { useAuth } from '../../../contexts/AuthContext';
+import { PERMISSIONS } from '../../../constants/permissions';
 
 interface AdminNewsProps {
   token: string | null;
@@ -12,6 +14,14 @@ interface AdminNewsProps {
 }
 
 export default function AdminNews({ token, showMsg }: AdminNewsProps) {
+  const { hasPermission } = useAuth();
+  const canAddNews = hasPermission(PERMISSIONS.NEWS_ADD);
+  const canEditNews = hasPermission(PERMISSIONS.NEWS_EDIT);
+  const canDeleteNews = hasPermission(PERMISSIONS.NEWS_DELETE);
+  const canPublishNews = hasPermission(PERMISSIONS.NEWS_PUBLISH);
+  const canFeatureNews = hasPermission(PERMISSIONS.NEWS_FEATURE);
+  const canBreakingNews = hasPermission(PERMISSIONS.NEWS_BREAKING);
+
   const [news, setNews] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
@@ -57,11 +67,12 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
   }, [token]);
 
   const handleStartAddNews = () => {
+    if (!canAddNews) return;
     setEditingNews({
       title: '',
       content: '',
       image: '',
-      status: 'published',
+      status: canPublishNews ? 'published' : 'draft',
       isFeatured: false,
       isBreaking: false,
       categoryId: categories[0]?.id || '',
@@ -69,6 +80,7 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
   };
 
   const handleStartEditNews = (item: any) => {
+    if (!canEditNews) return;
     let catId: any = item.categoryId || item.category?.id || '';
     if (!catId && item.categoryName && categories.length > 0) {
       const found = categories.find((c: any) => c.name === item.categoryName);
@@ -107,7 +119,10 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
     }
   };
 
-  const handleDeleteNews = (item: any) => setDeleteModal({ isOpen: true, item });
+  const handleDeleteNews = (item: any) => {
+    if (!canDeleteNews) return;
+    setDeleteModal({ isOpen: true, item });
+  };
 
   const confirmDeleteNews = async () => {
     if (!deleteModal.item) return;
@@ -196,13 +211,15 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
           </button>
           
-          <button
-            onClick={handleStartAddNews}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all text-xs sm:text-sm shadow-xs active:scale-98"
-          >
-            <Plus className="w-4 h-4" />
-            <span>إضافة خبر جديد</span>
-          </button>
+          {canAddNews && (
+            <button
+              onClick={handleStartAddNews}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all text-xs sm:text-sm shadow-xs active:scale-98"
+            >
+              <Plus className="w-4 h-4" />
+              <span>إضافة خبر جديد</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -353,45 +370,55 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
                   حالة النشر
                 </label>
                 <select
-                  value={editingNews.status || 'published'}
+                  value={editingNews.status || (canPublishNews ? 'published' : 'draft')}
                   onChange={e => setEditingNews({ ...editingNews, status: e.target.value })}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  disabled={!canPublishNews && editingNews.status === 'draft'}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all disabled:opacity-60"
                 >
-                  <option value="published">منشور للجمهور مباشرة</option>
+                  {canPublishNews && <option value="published">منشور للجمهور مباشرة</option>}
                   <option value="draft">مسودة خاصة (غير معروض)</option>
                 </select>
+                {!canPublishNews && (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 block font-medium">
+                    حسابك لا يمتلك صلاحية النشر الفوري، سيتم حفظ الخبر كمسودة.
+                  </span>
+                )}
               </div>
             </div>
 
             {/* Feature Flags / Badges Toggle */}
             <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 flex flex-wrap gap-6">
               
-              <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <label className={`flex items-center gap-2.5 select-none ${canBreakingNews ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}>
                 <input
                   type="checkbox"
+                  disabled={!canBreakingNews}
                   checked={!!editingNews.isBreaking}
-                  onChange={e => setEditingNews({ ...editingNews, isBreaking: e.target.checked })}
+                  onChange={e => canBreakingNews && setEditingNews({ ...editingNews, isBreaking: e.target.checked })}
                   className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300"
                 />
                 <div className="flex items-center gap-1.5">
                   <Flame className="w-4 h-4 text-rose-600" />
                   <span className="text-xs font-black text-slate-800 dark:text-slate-200">
                     خبر عاجل (يظهر في الشريط الإخباري العاجل)
+                    {!canBreakingNews && <span className="text-[10px] text-slate-400 font-normal mr-1">(غير مصرح)</span>}
                   </span>
                 </div>
               </label>
 
-              <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <label className={`flex items-center gap-2.5 select-none ${canFeatureNews ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}>
                 <input
                   type="checkbox"
+                  disabled={!canFeatureNews}
                   checked={!!editingNews.isFeatured}
-                  onChange={e => setEditingNews({ ...editingNews, isFeatured: e.target.checked })}
+                  onChange={e => canFeatureNews && setEditingNews({ ...editingNews, isFeatured: e.target.checked })}
                   className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 border-slate-300"
                 />
                 <div className="flex items-center gap-1.5">
                   <Star className="w-4 h-4 text-amber-500" />
                   <span className="text-xs font-black text-slate-800 dark:text-slate-200">
                     خبر مميز (يبرز في السلايدر الرئيسي للموقع)
+                    {!canFeatureNews && <span className="text-[10px] text-slate-400 font-normal mr-1">(غير مصرح)</span>}
                   </span>
                 </div>
               </label>
@@ -607,22 +634,30 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
 
                       {/* Action buttons */}
                       <td className="py-3.5 px-4 text-left">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleStartEditNews(item)}
-                            className="p-1.5 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 dark:text-slate-400 dark:hover:text-emerald-400 dark:hover:bg-emerald-950/40 rounded-lg transition-colors"
-                            title="تعديل الخبر"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteNews(item)}
-                            className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-400 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
-                            title="حذف الخبر"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {canEditNews || canDeleteNews ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {canEditNews && (
+                              <button
+                                onClick={() => handleStartEditNews(item)}
+                                className="p-1.5 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 dark:text-slate-400 dark:hover:text-emerald-400 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
+                                title="تعديل الخبر"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                            )}
+                            {canDeleteNews && (
+                              <button
+                                onClick={() => handleDeleteNews(item)}
+                                className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-400 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                title="حذف الخبر"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-medium">عرض فقط</span>
+                        )}
                       </td>
 
                     </tr>

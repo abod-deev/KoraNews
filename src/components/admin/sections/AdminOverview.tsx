@@ -27,6 +27,8 @@ import {
 import { GA_MEASUREMENT_ID } from '../../../services/analytics';
 import { getSystemTodayStr } from '../../../utils/systemDateUtils';
 import { translateTeamName } from '../../../utils/teamTranslations';
+import { useAuth } from '../../../contexts/AuthContext';
+import { PERMISSIONS } from '../../../constants/permissions';
 
 interface AdminStats {
   newsCount: number;
@@ -107,6 +109,36 @@ export default function AdminOverview({
   canManageUsers = false,
   canViewLogs = false,
 }: AdminOverviewProps) {
+  const { hasPermission, hasAnyPermission, isOwner, isManager } = useAuth();
+
+  const userCanManageNews = hasAnyPermission(
+    PERMISSIONS.NEWS_VIEW,
+    PERMISSIONS.NEWS_ADD,
+    PERMISSIONS.NEWS_EDIT,
+    PERMISSIONS.NEWS_DELETE
+  );
+  const userCanManageMatches = hasAnyPermission(
+    PERMISSIONS.PREDICTIONS_MATCH_ADD,
+    PERMISSIONS.PREDICTIONS_MATCH_EDIT,
+    PERMISSIONS.PREDICTIONS_MATCH_DELETE,
+    PERMISSIONS.PREDICTIONS_RESULTS_MANAGE,
+    PERMISSIONS.PREDICTIONS_POINTS_MANAGE,
+    PERMISSIONS.PREDICTIONS_MANAGE,
+    PERMISSIONS.PREDICTIONS_VIEW
+  );
+  const userCanManageContests = hasAnyPermission(
+    PERMISSIONS.PREDICTIONS_CONTEST_CREATE,
+    PERMISSIONS.PREDICTIONS_CONTEST_END,
+    PERMISSIONS.PREDICTIONS_CONTEST_DELETE,
+    PERMISSIONS.PREDICTIONS_MANAGE,
+    PERMISSIONS.PREDICTIONS_VIEW
+  );
+  const userCanManageParticipants = hasPermission(PERMISSIONS.PREDICTIONS_PARTICIPANTS_MANAGE);
+  const userCanViewPredictions = userCanManageMatches || userCanManageContests || userCanManageParticipants || canManagePredictions;
+  const userCanManageUsers = hasAnyPermission(PERMISSIONS.USERS_VIEW, PERMISSIONS.ADMINS_VIEW);
+  const userCanViewLogs = hasPermission(PERMISSIONS.ACTIVITY_LOGS_VIEW);
+  const userCanViewErrorLogs = isOwner || isManager || hasPermission(PERMISSIONS.ERROR_LOGS_VIEW);
+
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [activeContest, setActiveContest] = useState<ActiveContestInfo | null>(null);
   const [predictionStats, setPredictionStats] = useState<PredictionStatsInfo | null>(null);
@@ -305,8 +337,10 @@ export default function AdminOverview({
         
         {/* Card 1: News Count */}
         <div 
-          onClick={() => onNavigateTab?.('news')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
+          onClick={() => userCanManageNews && onNavigateTab?.('news')}
+          className={`group bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
+            userCanManageNews ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
+          }`}
         >
           <div className="flex items-center justify-between gap-1.5">
             <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
@@ -328,9 +362,9 @@ export default function AdminOverview({
 
         {/* Card 2: Users Count */}
         <div 
-          onClick={() => (canManageUsers || isSuperAdmin) && onNavigateTab?.('users')}
+          onClick={() => userCanManageUsers && onNavigateTab?.('users')}
           className={`group bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
-            (canManageUsers || isSuperAdmin) ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
+            userCanManageUsers ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
           }`}
         >
           <div className="flex items-center justify-between gap-1.5">
@@ -353,8 +387,10 @@ export default function AdminOverview({
 
         {/* Card 3: Active Contest */}
         <div 
-          onClick={() => onNavigateTab?.('predictions_contests')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between min-w-0 overflow-hidden"
+          onClick={() => userCanManageContests && onNavigateTab?.('predictions_contests')}
+          className={`group bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between min-w-0 overflow-hidden ${
+            userCanManageContests ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
+          }`}
         >
           <div className="flex items-center justify-between gap-1.5">
             <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
@@ -380,8 +416,10 @@ export default function AdminOverview({
 
         {/* Card 4: Prediction Matches */}
         <div 
-          onClick={() => onNavigateTab?.('predictions_matches')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
+          onClick={() => userCanManageMatches && onNavigateTab?.('predictions_matches')}
+          className={`group bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
+            userCanManageMatches ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
+          }`}
         >
           <div className="flex items-center justify-between gap-1.5">
             <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
@@ -403,8 +441,10 @@ export default function AdminOverview({
 
         {/* Card 5: Total Predictions */}
         <div 
-          onClick={() => onNavigateTab?.('predictions_participants')}
-          className="group cursor-pointer bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 transition-all shadow-2xs hover:shadow-xs flex flex-col justify-between"
+          onClick={() => userCanManageParticipants && onNavigateTab?.('predictions_participants')}
+          className={`group bg-white dark:bg-slate-900 p-3 sm:p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 transition-all shadow-2xs flex flex-col justify-between ${
+            userCanManageParticipants ? 'cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-xs' : ''
+          }`}
         >
           <div className="flex items-center justify-between gap-1.5">
             <span className="text-[11px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
@@ -463,7 +503,7 @@ export default function AdminOverview({
         {/* Standard Button Toolbar */}
         <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
           {/* Primary Action Button */}
-          {canManageNews && (
+          {userCanManageNews && (
             <button
               type="button"
               onClick={() => onNavigateTab?.('news')}
@@ -475,38 +515,40 @@ export default function AdminOverview({
           )}
 
           {/* Secondary Action Buttons */}
-          {canManagePredictions && (
-            <>
-              <button
-                type="button"
-                onClick={() => onNavigateTab?.('predictions_matches')}
-                className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
-              >
-                <Target className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>مباريات التوقع</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onNavigateTab?.('predictions_contests')}
-                className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
-              >
-                <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                <span>إعدادات المسابقات</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onNavigateTab?.('predictions_participants')}
-                className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
-              >
-                <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>المشاركون</span>
-              </button>
-            </>
+          {userCanManageMatches && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.('predictions_matches')}
+              className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+            >
+              <Target className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <span>مباريات التوقع</span>
+            </button>
           )}
 
-          {canManageUsers && (
+          {userCanManageContests && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.('predictions_contests')}
+              className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>إعدادات المسابقات</span>
+            </button>
+          )}
+
+          {userCanManageParticipants && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.('predictions_participants')}
+              className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+            >
+              <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>المشاركون</span>
+            </button>
+          )}
+
+          {userCanManageUsers && (
             <button
               type="button"
               onClick={() => onNavigateTab?.('users')}
@@ -517,7 +559,7 @@ export default function AdminOverview({
             </button>
           )}
 
-          {canViewLogs && (
+          {userCanViewLogs && (
             <button
               type="button"
               onClick={() => onNavigateTab?.('logs')}
@@ -527,123 +569,142 @@ export default function AdminOverview({
               <span>سجل العمليات</span>
             </button>
           )}
+
+          {userCanViewErrorLogs && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.('error_logs')}
+              className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition-colors"
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+              <span>سجل الأخطاء</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* 4. Active Contest & Predictions Dedicated Section */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 flex items-center justify-center shrink-0">
-              <Trophy className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-                حالة المسابقة الرياضية الحالية والتوقعات
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                متابعة مباشرة لأداء المسابقة التنافسية وتفاعل المشاركين
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              to="/predictions/leaderboard"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              لوحة المتصدرين العامة
-              <ExternalLink className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-
-        {activeContest ? (
-          <div className="mt-5 space-y-5">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+      {userCanViewPredictions && (
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 flex items-center justify-center shrink-0">
+                <Trophy className="w-5 h-5" />
+              </div>
               <div>
-                <div className="flex items-center gap-2.5">
-                  <h4 className="text-lg font-black text-slate-900 dark:text-white">{activeContest.name}</h4>
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
-                    activeContest.status === 'active'
-                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                  }`}>
-                    {activeContest.status === 'active' ? 'مسابقة جارية' : activeContest.status}
-                  </span>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                  حالة المسابقة الرياضية الحالية والتوقعات
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  متابعة مباشرة لأداء المسابقة التنافسية وتفاعل المشاركين
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Link
+                to="/predictions/leaderboard"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                لوحة المتصدرين العامة
+                <ExternalLink className="w-3 h-3" />
+              </Link>
+            </div>
+          </div>
+
+          {activeContest ? (
+            <div className="mt-5 space-y-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h4 className="text-lg font-black text-slate-900 dark:text-white">{activeContest.name}</h4>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
+                      activeContest.status === 'active'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                    }`}>
+                      {activeContest.status === 'active' ? 'مسابقة جارية' : activeContest.status}
+                    </span>
+                  </div>
+                  {activeContest.description && (
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">
+                      {activeContest.description}
+                    </p>
+                  )}
                 </div>
-                {activeContest.description && (
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">
-                    {activeContest.description}
-                  </p>
-                )}
+
+                <div className="flex items-center gap-2 shrink-0 flex-wrap w-full sm:w-auto">
+                  {userCanManageMatches && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateTab?.('predictions_matches')}
+                      className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <Target className="w-3.5 h-3.5" />
+                      <span>جدولة المباريات</span>
+                    </button>
+                  )}
+                  {userCanManageContests && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateTab?.('predictions_contests')}
+                      className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center cursor-pointer shadow-2xs"
+                    >
+                      <span>إعدادات المسابقة</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0 flex-wrap w-full sm:w-auto">
+              {/* Micro stats for active contest */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
+                  <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">المشاركون المعتمدون</div>
+                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                    {activeContest.participantsCount || 0}
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
+                  <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">مباريات المسابقة</div>
+                  <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                    {predictionStats?.totalMatches ?? activeContest.matchesCount ?? 0}
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
+                  <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">النقاط الموزعة</div>
+                  <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">
+                    {predictionStats?.totalPointsDistributed ?? 0}
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
+                  <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">النقاط الذهبية</div>
+                  <div className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1">
+                    {predictionStats?.goldenPointsDistributed ?? 0}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-5 text-center py-8 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
+              <Trophy className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">لا توجد مسابقة توقعات نشطة حالياً</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                يمكنك تهيئة وتفعيل مسابقة جديدة لتسمح للمستخدمين بتسجيل توقعاتهم والمنافسة على جوائز المتصدرين.
+              </p>
+              {userCanManageContests && (
                 <button
-                  type="button"
-                  onClick={() => onNavigateTab?.('predictions_matches')}
-                  className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <Target className="w-3.5 h-3.5" />
-                  <span>جدولة المباريات</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => onNavigateTab?.('predictions_contests')}
-                  className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center cursor-pointer shadow-2xs"
+                  className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                 >
-                  <span>إعدادات المسابقة</span>
+                  <Trophy className="w-4 h-4" />
+                  الانتقال لإعدادات المسابقات
                 </button>
-              </div>
+              )}
             </div>
-
-            {/* Micro stats for active contest */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
-                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">المشاركون المعتمدون</div>
-                <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
-                  {activeContest.participantsCount || 0}
-                </div>
-              </div>
-              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
-                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">مباريات المسابقة</div>
-                <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
-                  {predictionStats?.totalMatches ?? activeContest.matchesCount ?? 0}
-                </div>
-              </div>
-              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
-                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">النقاط الموزعة</div>
-                <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">
-                  {predictionStats?.totalPointsDistributed ?? 0}
-                </div>
-              </div>
-              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 text-right">
-                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">النقاط الذهبية</div>
-                <div className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1">
-                  {predictionStats?.goldenPointsDistributed ?? 0}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-5 text-center py-8 px-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700">
-            <Trophy className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">لا توجد مسابقة توقعات نشطة حالياً</h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
-              يمكنك تهيئة وتفعيل مسابقة جديدة لتسمح للمستخدمين بتسجيل توقعاتهم والمنافسة على جوائز المتصدرين.
-            </p>
-            <button
-              onClick={() => onNavigateTab?.('predictions_contests')}
-              className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors inline-flex items-center gap-1.5"
-            >
-              <Trophy className="w-4 h-4" />
-              الانتقال لإعدادات المسابقات
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* 5. Two-Column Operational Layout: Latest News & Scheduled Matches */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -656,13 +717,15 @@ export default function AdminOverview({
                 <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 أحدث الأخبار والمقالات
               </h3>
-              <button
-                onClick={() => onNavigateTab?.('news')}
-                className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1"
-              >
-                <span>عرض الكل</span>
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
+              {userCanManageNews && (
+                <button
+                  onClick={() => onNavigateTab?.('news')}
+                  className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>عرض الكل</span>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             <div className="mt-4 space-y-3">
@@ -721,14 +784,16 @@ export default function AdminOverview({
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <button
-              onClick={() => onNavigateTab?.('news')}
-              className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors"
-            >
-              فتح محرر الأخبار وإضافة مقال جديد
-            </button>
-          </div>
+          {userCanManageNews && (
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => onNavigateTab?.('news')}
+                className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                فتح محرر الأخبار وإضافة مقال جديد
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Scheduled Matches */}
@@ -800,14 +865,16 @@ export default function AdminOverview({
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <button
-              onClick={() => onNavigateTab?.('predictions_matches')}
-              className="w-full py-2 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded-xl text-xs font-bold transition-colors"
-            >
-              ربط وتعيين مباريات لمسابقة التوقعات
-            </button>
-          </div>
+          {userCanManageMatches && (
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => onNavigateTab?.('predictions_matches')}
+                className="w-full py-2 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                ربط وتعيين مباريات لمسابقة التوقعات
+              </button>
+            </div>
+          )}
         </div>
 
       </div>
@@ -823,13 +890,15 @@ export default function AdminOverview({
                 <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 سجل نشاطات النظام الأخيرة
               </h3>
-              <button
-                onClick={() => onNavigateTab?.('logs')}
-                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
-              >
-                <span>فتح السجل</span>
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
+              {userCanViewLogs && (
+                <button
+                  onClick={() => onNavigateTab?.('logs')}
+                  className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>فتح السجل</span>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             <div className="mt-4 space-y-2.5">

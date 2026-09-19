@@ -6,6 +6,8 @@ import {
   ExternalLink, Calendar
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
+import AdminAccessDenied from '../AdminAccessDenied';
+import { PERMISSIONS } from '../../../constants/permissions';
 
 interface AdminLogsProps {
   token: string | null;
@@ -30,7 +32,7 @@ interface LogRecord {
 type CategoryType = 'ALL' | 'CONTESTS' | 'USERS' | 'NEWS' | 'SYSTEM';
 
 export default function AdminLogs({ token }: AdminLogsProps) {
-  const { isOwner } = useAuth();
+  const { isOwner, isManager, hasPermission } = useAuth();
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -268,6 +270,18 @@ export default function AdminLogs({ token }: AdminLogsProps) {
     setCurrentPage(1);
   }, [categoryFilter, actionFilter, searchQuery]);
 
+  const canViewLogs = isOwner || isManager || hasPermission(PERMISSIONS.ACTIVITY_LOGS_VIEW);
+
+  if (!canViewLogs) {
+    return (
+      <AdminAccessDenied
+        title="غير مصرح لك بالوصول إلى سجل العمليات"
+        sectionTitle="سجل عمليات وأحداث النظام"
+        message="هذا القسم يتطلب صلاحية استعراض سجل النشاطات لمتابعة الإجراءات الإدارية."
+      />
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       
@@ -355,93 +369,93 @@ export default function AdminLogs({ token }: AdminLogsProps) {
         </div>
       </div>
 
-      {/* Interactive Category Filter Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Interactive Category Filter Cards - Compact */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
         {/* All */}
         <button
           onClick={() => setCategoryFilter('ALL')}
-          className={`p-3.5 rounded-xl border text-right transition-all flex items-center gap-3 cursor-pointer ${
+          className={`p-2.5 sm:p-3 rounded-xl border text-right transition-all flex items-center gap-2.5 cursor-pointer ${
             categoryFilter === 'ALL'
               ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-500/80 shadow-xs ring-1 ring-emerald-500'
               : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
           }`}
         >
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             categoryFilter === 'ALL'
               ? 'bg-emerald-600 text-white'
               : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
           }`}>
-            <Activity className="w-4 h-4" />
+            <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-black text-slate-900 dark:text-white truncate">كافة العمليات</div>
-            <div className="text-[11px] font-bold text-slate-400 mt-0.5">{categoryCounts.ALL} حدث مسجل</div>
+            <div className="text-[11px] sm:text-xs font-black text-slate-900 dark:text-white truncate">كافة العمليات</div>
+            <div className="text-[10px] font-bold text-slate-400 mt-0.5">{categoryCounts.ALL} حدث مسجل</div>
           </div>
         </button>
 
         {/* Contests */}
         <button
           onClick={() => setCategoryFilter('CONTESTS')}
-          className={`p-3.5 rounded-xl border text-right transition-all flex items-center gap-3 cursor-pointer ${
+          className={`p-2.5 sm:p-3 rounded-xl border text-right transition-all flex items-center gap-2.5 cursor-pointer ${
             categoryFilter === 'CONTESTS'
               ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-500 dark:border-amber-500/80 shadow-xs ring-1 ring-amber-500'
               : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
           }`}
         >
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             categoryFilter === 'CONTESTS'
               ? 'bg-amber-600 text-white'
               : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400'
           }`}>
-            <Trophy className="w-4 h-4" />
+            <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-black text-slate-900 dark:text-white truncate">المسابقات والتوقعات</div>
-            <div className="text-[11px] font-bold text-slate-400 mt-0.5">{categoryCounts.CONTESTS} حدث</div>
+            <div className="text-[11px] sm:text-xs font-black text-slate-900 dark:text-white truncate">المسابقات والتوقعات</div>
+            <div className="text-[10px] font-bold text-slate-400 mt-0.5">{categoryCounts.CONTESTS} حدث</div>
           </div>
         </button>
 
         {/* Users */}
         <button
           onClick={() => setCategoryFilter('USERS')}
-          className={`p-3.5 rounded-xl border text-right transition-all flex items-center gap-3 cursor-pointer ${
+          className={`p-2.5 sm:p-3 rounded-xl border text-right transition-all flex items-center gap-2.5 cursor-pointer ${
             categoryFilter === 'USERS'
               ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 dark:border-blue-500/80 shadow-xs ring-1 ring-blue-500'
               : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
           }`}
         >
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             categoryFilter === 'USERS'
               ? 'bg-blue-600 text-white'
               : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
           }`}>
-            <Users className="w-4 h-4" />
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-black text-slate-900 dark:text-white truncate">المستخدمين والأدوار</div>
-            <div className="text-[11px] font-bold text-slate-400 mt-0.5">{categoryCounts.USERS} حدث</div>
+            <div className="text-[11px] sm:text-xs font-black text-slate-900 dark:text-white truncate">المستخدمين والأدوار</div>
+            <div className="text-[10px] font-bold text-slate-400 mt-0.5">{categoryCounts.USERS} حدث</div>
           </div>
         </button>
 
         {/* News */}
         <button
           onClick={() => setCategoryFilter('NEWS')}
-          className={`p-3.5 rounded-xl border text-right transition-all flex items-center gap-3 cursor-pointer ${
+          className={`p-2.5 sm:p-3 rounded-xl border text-right transition-all flex items-center gap-2.5 cursor-pointer ${
             categoryFilter === 'NEWS'
               ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 dark:border-purple-500/80 shadow-xs ring-1 ring-purple-500'
               : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
           }`}
         >
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             categoryFilter === 'NEWS'
               ? 'bg-purple-600 text-white'
               : 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400'
           }`}>
-            <FileText className="w-4 h-4" />
+            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-black text-slate-900 dark:text-white truncate">الأخبار والمحتوى</div>
-            <div className="text-[11px] font-bold text-slate-400 mt-0.5">{categoryCounts.NEWS} حدث</div>
+            <div className="text-[11px] sm:text-xs font-black text-slate-900 dark:text-white truncate">الأخبار والمحتوى</div>
+            <div className="text-[10px] font-bold text-slate-400 mt-0.5">{categoryCounts.NEWS} حدث</div>
           </div>
         </button>
       </div>
@@ -449,23 +463,23 @@ export default function AdminLogs({ token }: AdminLogsProps) {
       {/* Main Container */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs">
         
-        {/* Filter & Search Bar */}
-        <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200/80 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-3">
+        {/* Filter & Search Bar - Compact */}
+        <div className="p-2.5 sm:p-3 bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200/80 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-2.5">
           
           {/* Search Box */}
-          <div className="relative w-full md:w-96">
-            <Search className="w-4 h-4 absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+          <div className="relative w-full md:w-80">
+            <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
-              placeholder="ابحث بالعملية، اسم المشرف، البريد، أو المعرف..."
+              placeholder="ابحث بالعملية، اسم المشرف، البريد..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-10 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
+              className="w-full pl-7 pr-9 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -473,15 +487,15 @@ export default function AdminLogs({ token }: AdminLogsProps) {
           </div>
 
           {/* Action Type Dropdown */}
-          <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-            <span className="text-xs font-bold text-slate-400 shrink-0 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" />
-              <span>نوع الإجراء:</span>
+          <div className="flex items-center gap-1.5 w-full md:w-auto justify-end">
+            <span className="text-[11px] font-bold text-slate-400 shrink-0 flex items-center gap-1">
+              <Filter className="w-3 h-3" />
+              <span>الإجراء:</span>
             </span>
             <select
               value={actionFilter}
               onChange={e => setActionFilter(e.target.value)}
-              className="py-1.5 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
+              className="py-1 px-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="ALL">كافة الإجراءات</option>
               <option value="CREATE">إنشاء وإضافة (Create)</option>
@@ -494,25 +508,26 @@ export default function AdminLogs({ token }: AdminLogsProps) {
 
         {/* Content Area */}
         {isLoading ? (
-          <div className="py-24 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-9 h-9 animate-spin text-emerald-600" />
+          <div className="py-16 flex flex-col items-center justify-center gap-2.5">
+            <Loader2 className="w-7 h-7 animate-spin text-emerald-600" />
             <span className="text-xs font-bold text-slate-400">جاري تحميل وفحص سجل العمليات...</span>
           </div>
         ) : filteredLogs.length > 0 ? (
           <div>
-            <div className="overflow-x-auto">
+            {/* Desktop & Tablet View: 50% Reduced Compact Table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-right border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 text-[11px] font-black uppercase text-slate-400">
-                    <th className="py-3.5 px-4">نوع العملية</th>
-                    <th className="py-3.5 px-4">المشرف / المنفّذ</th>
-                    <th className="py-3.5 px-4">العنصر المستهدف</th>
-                    <th className="py-3.5 px-4">ملخص التغيير</th>
-                    <th className="py-3.5 px-4">التوقيت</th>
-                    <th className="py-3.5 px-4 text-center">التفاصيل</th>
+                  <tr className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 text-[10px] font-black uppercase text-slate-400">
+                    <th className="py-2 px-3">نوع العملية</th>
+                    <th className="py-2 px-3">المشرف / المنفّذ</th>
+                    <th className="py-2 px-3">العنصر المستهدف</th>
+                    <th className="py-2 px-3">ملخص التغيير</th>
+                    <th className="py-2 px-3">التوقيت</th>
+                    <th className="py-2 px-3 text-center">التفاصيل</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {paginatedLogs.map((log) => {
                     const badge = getActionBadge(log.action);
                     const entityInfo = getEntityLabel(log.entityType, log.entityId);
@@ -521,32 +536,37 @@ export default function AdminLogs({ token }: AdminLogsProps) {
                     const timeAgo = formatTimeAgo(dateObj);
 
                     return (
-                      <tr key={log.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
+                      <tr
+                        key={log.id}
+                        onClick={() => setSelectedLog(log)}
+                        className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group/row"
+                        title="اضغط لعرض كافة تفاصيل العملية"
+                      >
                         
-                        {/* Action Badge */}
-                        <td className="py-3.5 px-4">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black border ${badge.bg} ${badge.textCol} ${badge.borderCol}`}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                        {/* Action Badge - Compact */}
+                        <td className="py-1.5 px-3">
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5px] font-black border ${badge.bg} ${badge.textCol} ${badge.borderCol}`}>
+                            <span className="w-1 h-1 rounded-full bg-current" />
                             <span>{badge.text}</span>
                           </span>
                         </td>
 
-                        {/* Admin / User */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-2.5">
+                        {/* Admin / User - Compact */}
+                        <td className="py-1.5 px-3">
+                          <div className="flex items-center gap-2">
                             {log.userAvatar ? (
-                              <img src={log.userAvatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+                              <img src={log.userAvatar} alt="" className="w-5 h-5 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
                             ) : (
-                              <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-black text-[11px] flex items-center justify-center shrink-0">
+                              <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-black text-[9px] flex items-center justify-center shrink-0">
                                 {(log.userName || log.user || 'م')[0]}
                               </div>
                             )}
                             <div className="min-w-0">
-                              <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                              <div className="text-[11px] font-bold text-slate-900 dark:text-white truncate">
                                 {log.userName || log.user || 'مدير النظام'}
                               </div>
                               {log.userEmail && (
-                                <div className="text-[10px] text-slate-400 font-mono truncate" dir="ltr">
+                                <div className="text-[9px] text-slate-400 font-mono truncate leading-none" dir="ltr">
                                   {log.userEmail}
                                 </div>
                               )}
@@ -554,39 +574,43 @@ export default function AdminLogs({ token }: AdminLogsProps) {
                           </div>
                         </td>
 
-                        {/* Entity */}
-                        <td className="py-3.5 px-4">
-                          <div className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-                            <EntityIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>{entityInfo.label}</span>
+                        {/* Entity - Compact */}
+                        <td className="py-1.5 px-3">
+                          <div className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            <EntityIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate max-w-[120px]">{entityInfo.label}</span>
                           </div>
                         </td>
 
-                        {/* Summary */}
-                        <td className="py-3.5 px-4">
-                          <span className="text-xs text-slate-600 dark:text-slate-300 max-w-xs block truncate font-medium" title={formatLogDetails(log.details)}>
+                        {/* Summary - Compact */}
+                        <td className="py-1.5 px-3">
+                          <span className="text-[11px] text-slate-600 dark:text-slate-300 max-w-xs block truncate font-medium" title={formatLogDetails(log.details)}>
                             {formatLogDetails(log.details)}
                           </span>
                         </td>
 
-                        {/* Timestamp */}
-                        <td className="py-3.5 px-4">
-                          <div className="text-xs text-slate-600 dark:text-slate-300 font-bold">
+                        {/* Timestamp - Compact */}
+                        <td className="py-1.5 px-3">
+                          <div className="text-[11px] text-slate-600 dark:text-slate-300 font-bold leading-tight">
                             {timeAgo}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-mono" dir="ltr">
-                            {!isNaN(dateObj.getTime()) ? dateObj.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                          <div className="text-[9px] text-slate-400 font-mono leading-none" dir="ltr">
+                            {!isNaN(dateObj.getTime()) ? dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                           </div>
                         </td>
 
-                        {/* Action Details Button */}
-                        <td className="py-3.5 px-4 text-center">
+                        {/* Action Details Button - Compact */}
+                        <td className="py-1.5 px-3 text-center">
                           <button
-                            onClick={() => setSelectedLog(log)}
-                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedLog(log);
+                            }}
+                            className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer group-hover/row:text-emerald-600"
                             title="فحص التفاصيل الكاملة"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
                         </td>
 
@@ -597,33 +621,108 @@ export default function AdminLogs({ token }: AdminLogsProps) {
               </table>
             </div>
 
-            {/* Pagination Controls */}
-            <div className="p-4 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <div className="text-slate-500 dark:text-slate-400 font-medium">
-                عرض {((currentPage - 1) * pageSize) + 1} إلى {Math.min(currentPage * pageSize, filteredLogs.length)} من أصل {filteredLogs.length} عملية
+            {/* Mobile View: 70% Scaled & Ultra-Compact Card List */}
+            <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800/60 p-2 space-y-2">
+              {paginatedLogs.map((log) => {
+                const badge = getActionBadge(log.action);
+                const entityInfo = getEntityLabel(log.entityType, log.entityId);
+                const EntityIcon = entityInfo.icon;
+                const dateObj = new Date(log.createdAt || log.timestamp || '');
+                const timeAgo = formatTimeAgo(dateObj);
+
+                return (
+                  <div
+                    key={log.id}
+                    onClick={() => setSelectedLog(log)}
+                    className="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/90 shadow-2xs space-y-1.5 cursor-pointer hover:border-emerald-500/50 active:scale-[0.99] transition-all"
+                    title="اضغط لعرض تفاصيل العملية"
+                  >
+                    {/* Top Row: Badge, Entity, Time & View Button */}
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-black border shrink-0 ${badge.bg} ${badge.textCol} ${badge.borderCol}`}>
+                          <span className="w-1 h-1 rounded-full bg-current" />
+                          <span>{badge.text}</span>
+                        </span>
+                        <div className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 dark:text-slate-400 truncate">
+                          <EntityIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="truncate">{entityInfo.label}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {timeAgo}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedLog(log);
+                          }}
+                          className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
+                          title="التفاصيل"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Middle Row: Admin Info */}
+                    <div className="flex items-center gap-1.5">
+                      {log.userAvatar ? (
+                        <img src={log.userAvatar} alt="" className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-black text-[8px] flex items-center justify-center shrink-0">
+                          {(log.userName || log.user || 'م')[0]}
+                        </div>
+                      )}
+                      <span className="text-[11px] font-bold text-slate-900 dark:text-white truncate">
+                        {log.userName || log.user || 'مدير النظام'}
+                      </span>
+                      {log.userEmail && (
+                        <span className="text-[9px] text-slate-400 font-mono truncate" dir="ltr">
+                          ({log.userEmail})
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Bottom Row: Summary Box */}
+                    <div className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800/80 text-[10.5px] font-medium text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                      {formatLogDetails(log.details)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pagination Controls - Compact */}
+            <div className="p-2.5 sm:p-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                عرض {((currentPage - 1) * pageSize) + 1} إلى {Math.min(currentPage * pageSize, filteredLogs.length)} من {filteredLogs.length} عملية
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="p-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40"
+                  className="p-1 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
                   title="الصفحة السابقة"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
 
-                <span className="px-3 py-1 font-bold text-slate-700 dark:text-slate-300">
+                <span className="px-2 py-0.5 font-bold text-[11px] text-slate-700 dark:text-slate-300">
                   صفحة {currentPage} من {totalPages}
                 </span>
 
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage >= totalPages}
-                  className="p-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40"
+                  className="p-1 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
                   title="الصفحة التالية"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -667,88 +766,161 @@ export default function AdminLogs({ token }: AdminLogsProps) {
 
       {/* Details Modal */}
       {selectedLog && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div 
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setSelectedLog(null)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
             
             {/* Modal Header */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-                  <Terminal className="w-5 h-5" />
+            {(() => {
+              const badge = getActionBadge(selectedLog.action);
+              const entityInfo = getEntityLabel(selectedLog.entityType, selectedLog.entityId);
+              const EntityIcon = entityInfo.icon;
+              const dateObj = new Date(selectedLog.createdAt || selectedLog.timestamp || '');
+              const timeAgo = formatTimeAgo(dateObj);
+
+              return (
+                <div className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <EntityIcon className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">
+                          تفاصيل العملية الإدارية #{selectedLog.id}
+                        </h3>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-black border ${badge.bg} ${badge.textCol} ${badge.borderCol}`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                          <span>{badge.text}</span>
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {entityInfo.label} • {timeAgo}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => setSelectedLog(null)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
+                    title="إغلاق"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                    تفاصيل العملية الإدارية #{selectedLog.id}
-                  </h3>
-                  <p className="text-[11px] text-slate-400">
-                    {new Date(selectedLog.createdAt || selectedLog.timestamp || '').toLocaleString('ar-SA')}
-                  </p>
-                </div>
-              </div>
-              
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+              );
+            })()}
 
             {/* Modal Body */}
-            <div className="p-5 space-y-4 overflow-y-auto">
+            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto">
               
               {/* Meta Info Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs">
-                <div>
-                  <span className="text-slate-400 block mb-0.5 font-bold">نوع الإجراء:</span>
-                  <span className="font-black text-slate-800 dark:text-slate-100">{selectedLog.action}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs">
+                
+                {/* Admin */}
+                <div className="space-y-1">
+                  <span className="text-slate-400 block text-[10.5px] font-bold">المشرف المسؤول:</span>
+                  <div className="flex items-center gap-2">
+                    {selectedLog.userAvatar ? (
+                      <img src={selectedLog.userAvatar} alt="" className="w-6 h-6 rounded-full object-cover border border-slate-200 dark:border-slate-700" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-black text-[10px] flex items-center justify-center shrink-0">
+                        {(selectedLog.userName || selectedLog.user || 'م')[0]}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <span className="font-bold text-slate-800 dark:text-slate-100 truncate block">
+                        {selectedLog.userName || selectedLog.user || 'مدير النظام'}
+                      </span>
+                      {selectedLog.userEmail && (
+                        <span className="text-[10px] text-slate-400 font-mono truncate block" dir="ltr">
+                          {selectedLog.userEmail}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5 font-bold">المشرف المسؤول:</span>
-                  <span className="font-black text-slate-800 dark:text-slate-100">
-                    {selectedLog.userName || selectedLog.user || 'مدير النظام'}
-                    {selectedLog.userEmail ? ` (${selectedLog.userEmail})` : ''}
-                  </span>
+
+                {/* Target Entity */}
+                <div className="space-y-1">
+                  <span className="text-slate-400 block text-[10.5px] font-bold">الكيان المستهدف:</span>
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-100">
+                    <span className="px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-700/60 font-mono text-[11px]">
+                      {selectedLog.entityType}
+                    </span>
+                    {selectedLog.entityId && (
+                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[150px]" dir="ltr">
+                        #{selectedLog.entityId}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5 font-bold">نوع الكيان المستهدف:</span>
-                  <span className="font-mono text-slate-800 dark:text-slate-100">{selectedLog.entityType}</span>
+
+                {/* Timestamp */}
+                <div className="space-y-1 sm:col-span-2">
+                  <span className="text-slate-400 block text-[10.5px] font-bold">التاريخ والتوقيت الدقيق:</span>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <span>
+                      {new Date(selectedLog.createdAt || selectedLog.timestamp || '').toLocaleString('ar-SA', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                      })}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5 font-bold">معرف الكيان (Entity ID):</span>
-                  <span className="font-mono text-slate-800 dark:text-slate-100">{selectedLog.entityId || '—'}</span>
-                </div>
+
+              </div>
+
+              {/* Human-Readable Summary Card */}
+              <div className="p-3.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/50 space-y-1.5">
+                <span className="text-[11px] font-black text-emerald-800 dark:text-emerald-300 block">
+                  ملخص العملية والتغييرات:
+                </span>
+                <p className="text-xs font-medium text-emerald-950 dark:text-emerald-100 leading-relaxed">
+                  {formatLogDetails(selectedLog.details)}
+                </p>
               </div>
 
               {/* Payload Data View */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    حمولة البيانات المرفقة (Payload):
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-slate-400" />
+                    <span>الحمولة البرمجية الكاملة (JSON Payload):</span>
                   </span>
                   <button
                     onClick={() => handleCopyPayload(selectedLog.details)}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     <span>{copiedPayload ? 'تم النسخ!' : 'نسخ JSON'}</span>
                   </button>
                 </div>
 
-                <pre className="p-4 bg-slate-950 text-emerald-400 rounded-xl text-xs font-mono overflow-x-auto max-h-64 border border-slate-800" dir="ltr">
+                <pre className="p-3.5 bg-slate-950 text-emerald-400 rounded-xl text-[11px] font-mono overflow-x-auto max-h-60 border border-slate-800 leading-relaxed select-all" dir="ltr">
                   {selectedLog.details 
                     ? JSON.stringify(selectedLog.details, null, 2)
-                    : '// لا توجد بيانات مرفقة إضافية'}
+                    : '// لا توجد بيانات إضافية'}
                 </pre>
               </div>
 
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+            <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-900/50">
               <button
                 onClick={() => setSelectedLog(null)}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-xs font-bold transition-colors"
+                className="px-4 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 إغلاق النافذة
               </button>

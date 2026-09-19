@@ -6,6 +6,7 @@ import {
   Crown, Zap, Sparkles, Layers, Sliders, CheckSquare, Square, Info, Target, Trophy, FileText
 } from 'lucide-react';
 import ConfirmModal from '../../common/ConfirmModal';
+import AdminAccessDenied from '../AdminAccessDenied';
 import { useAuth } from '../../../contexts/AuthContext';
 import { getRoleBadgeInfo, isSystemOwner, isSystemManager } from '../../../utils/authHelpers';
 import { UserRole, PermissionKey } from '../../../types';
@@ -72,7 +73,7 @@ interface AdminUsersProps {
 }
 
 export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
-  const { user: currentUser, isOwner: callerIsOwner, isManager: callerIsManager } = useAuth();
+  const { user: currentUser, isOwner: callerIsOwner, isManager: callerIsManager, hasPermission } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -84,6 +85,10 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
     isOpen: false,
     user: null
   });
+
+  const canViewUsers = callerIsOwner || callerIsManager || hasPermission(PERMISSIONS.USERS_VIEW) || hasPermission(PERMISSIONS.ADMINS_VIEW);
+  const canPromoteAdmin = callerIsOwner || callerIsManager || hasPermission(PERMISSIONS.ADMINS_ADD);
+  const canManageStatus = callerIsOwner || callerIsManager || hasPermission(PERMISSIONS.USERS_MANAGE) || hasPermission(PERMISSIONS.USERS_ACTIVATE) || hasPermission(PERMISSIONS.USERS_DEACTIVATE);
 
   const fetchUsers = async () => {
     setIsLoading(true);
@@ -283,6 +288,16 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
       return true;
     });
   }, [users, searchQuery, roleFilter, statusFilter]);
+
+  if (!canViewUsers) {
+    return (
+      <AdminAccessDenied
+        title="غير مصرح لك بالوصول إلى إدارة المستخدمين"
+        sectionTitle="إدارة المستخدمين والأدوار"
+        message="هذا القسم مخصص حصرياً لمالك ومدير النظام لإدارة الحسابات وتعيين الأدوار والصلاحيات."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -738,6 +753,7 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
                         {/* Admin */}
                         <button
                           type="button"
+                          disabled={!canPromoteAdmin}
                           onClick={() => {
                             const existingPerms = Array.isArray(editingUser.permissions) && editingUser.permissions.length > 0
                               ? editingUser.permissions.filter((p: string) => !OWNER_MANAGER_ONLY_PERMISSIONS.includes(p))
@@ -748,11 +764,14 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
                                 ];
                             setEditingUser({ ...editingUser, role: 'admin', permissions: existingPerms, isAdmin: true });
                           }}
-                          className={`min-h-[38px] px-2 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          className={`min-h-[38px] px-2 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                            !canPromoteAdmin ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                          } ${
                             editingUser.role === 'admin'
                               ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
                               : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
                           }`}
+                          title={!canPromoteAdmin ? 'يتطلب صلاحية إضافة أو إدارة المشرفين' : ''}
                         >
                           <Shield className="w-3.5 h-3.5" />
                           <span>مشرف (Admin)</span>
@@ -805,24 +824,32 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
+                          disabled={!canManageStatus}
                           onClick={() => setEditingUser({ ...editingUser, isActive: true })}
-                          className={`min-h-[34px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                          className={`min-h-[34px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                            !canManageStatus ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                          } ${
                             editingUser.isActive !== false
                               ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
                               : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
                           }`}
+                          title={!canManageStatus ? 'يتطلب صلاحية تفعيل الحسابات' : ''}
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>نشط</span>
                         </button>
                         <button
                           type="button"
+                          disabled={!canManageStatus}
                           onClick={() => setEditingUser({ ...editingUser, isActive: false })}
-                          className={`min-h-[34px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                          className={`min-h-[34px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                            !canManageStatus ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                          } ${
                             editingUser.isActive === false
                               ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
                               : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
                           }`}
+                          title={!canManageStatus ? 'يتطلب صلاحية تعطيل الحسابات' : ''}
                         >
                           <XCircle className="w-3.5 h-3.5" />
                           <span>معطل</span>

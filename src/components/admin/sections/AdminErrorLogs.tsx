@@ -6,6 +6,7 @@ import {
   FileText, ShieldAlert, Bug, Server, Laptop, Database, Globe
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
+import AdminAccessDenied from '../AdminAccessDenied';
 import { ErrorLogRecord } from '../../../types';
 
 interface AdminErrorLogsProps {
@@ -277,13 +278,11 @@ export default function AdminErrorLogs({ token }: AdminErrorLogsProps) {
 
   if (!isOwner && !isManager) {
     return (
-      <div className="p-10 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xs space-y-3">
-        <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-        <h3 className="text-base font-black text-slate-900 dark:text-white">غير مصرح بالوصول</h3>
-        <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-          سجل الأخطاء متاح حصراً لمالك ومدير النظام فقط. لا تملك الصلاحيات الكافية للوصول لهذه الصفحة.
-        </p>
-      </div>
+      <AdminAccessDenied
+        title="غير مصرح لك بالوصول إلى سجل الأخطاء"
+        sectionTitle="سجل وتشخيص الأخطاء البرمجية"
+        message="سجل الأخطاء متاح حصراً لمالك ومدير النظام فقط لمتابعة المشاكل التقنية وتشخيص الأعطال."
+      />
     );
   }
 

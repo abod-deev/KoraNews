@@ -12,6 +12,7 @@ import {
 } from '../db/schema.ts';
 import { eq, and, sql, desc, asc, count, sum, inArray, or, ne } from 'drizzle-orm';
 import { seedSaudiAndNationalTeams } from './seedSaudiAndNationalTeams.ts';
+import { matchTeamFromCatalog, matchLeagueFromCatalog } from './knownTeamsAndLeagues.ts';
 
 export function normalizeArabicText(str: string): string {
   return (str || '')
@@ -425,30 +426,64 @@ export async function getAdminContestParticipants(filterStatus?: string, search?
       orderBy: [desc(contestParticipants.appliedAt)],
     });
 
-    let results = list.map((p) => ({
-      id: p.id,
-      userId: p.userId,
-      contestId: p.contestId,
-      status: p.status,
-      appliedAt: p.appliedAt.toISOString(),
-      reviewedAt: p.reviewedAt ? p.reviewedAt.toISOString() : null,
-      notes: p.notes,
-      user: {
-        id: p.user.id,
-        name: p.user.name || 'مستخدم',
-        email: p.user.email,
-        avatar: p.user.avatar,
-        role: p.user.role,
-        isActive: p.user.isActive,
-        createdAt: p.user.createdAt ? p.user.createdAt.toISOString() : null,
-      },
-      reviewer: p.reviewer
-        ? {
-            id: p.reviewer.id,
-            name: p.reviewer.name || 'أدمن',
-          }
-        : null,
-    }));
+    const userIds = list.map((p) => p.userId);
+    let allPredictions: any[] = [];
+    if (userIds.length > 0 && targetContestId !== undefined) {
+      allPredictions = await db.query.predictions.findMany({
+        where: and(
+          eq(predictions.contestId, targetContestId),
+          inArray(predictions.userId, userIds)
+        ),
+      });
+    }
+
+    let results = list.map((p) => {
+      const userPreds = allPredictions.filter((pr) => pr.userId === p.userId);
+      const totalPredictions = userPreds.length;
+      const evaluatedPreds = userPreds.filter((pr) => pr.isEvaluated);
+      const evaluatedPredictions = evaluatedPreds.length;
+      const correctPredictions = evaluatedPreds.filter((pr) => (pr.pointsEarned ?? 0) > 0).length;
+      const incorrectPredictions = evaluatedPreds.filter((pr) => (pr.pointsEarned ?? 0) === 0).length;
+      const goldenPredictions = evaluatedPreds.filter((pr) => pr.isGolden || (pr.goldenPoints ?? 0) > 0).length;
+      const pendingPredictions = userPreds.filter((pr) => !pr.isEvaluated).length;
+      const totalPoints = userPreds.reduce((sum, pr) => sum + (pr.pointsEarned ?? 0), 0);
+      const accuracy = evaluatedPredictions > 0 ? Math.round((correctPredictions / evaluatedPredictions) * 100) : 0;
+
+      return {
+        id: p.id,
+        userId: p.userId,
+        contestId: p.contestId,
+        status: p.status,
+        appliedAt: p.appliedAt.toISOString(),
+        reviewedAt: p.reviewedAt ? p.reviewedAt.toISOString() : null,
+        notes: p.notes,
+        stats: {
+          totalPredictions,
+          evaluatedPredictions,
+          correctPredictions,
+          incorrectPredictions,
+          goldenPredictions,
+          pendingPredictions,
+          totalPoints,
+          accuracy,
+        },
+        user: {
+          id: p.user.id,
+          name: p.user.name || 'مستخدم',
+          email: p.user.email,
+          avatar: p.user.avatar,
+          role: p.user.role,
+          isActive: p.user.isActive,
+          createdAt: p.user.createdAt ? p.user.createdAt.toISOString() : null,
+        },
+        reviewer: p.reviewer
+          ? {
+              id: p.reviewer.id,
+              name: p.reviewer.name || 'أدمن',
+            }
+          : null,
+      };
+    });
 
     if (filterStatus && filterStatus !== 'all') {
       results = results.filter((r) => r.status === filterStatus);
@@ -464,6 +499,136 @@ export async function getAdminContestParticipants(filterStatus?: string, search?
     }
 
     return results;
+  });
+}
+
+/**
+ * Admin: Get all predictions of a specific participant in a contest with detailed match information and scores.
+ */
+export async function getAdminParticipantPredictions(userId: number, contestId?: number) {
+  return await withDbRetry(async () => {
+    let targetContestId = contestId;
+    if (targetContestId === undefined) {
+      const active = await getContestSettings();
+      if (active) {
+        targetContestId = active.id;
+      }
+    }
+
+    const whereConditions = [eq(predictions.userId, userId)];
+    if (targetContestId !== undefined) {
+      whereConditions.push(eq(predictions.contestId, targetContestId));
+    }
+
+    const userPreds = await db.query.predictions.findMany({
+      where: and(...whereConditions),
+      with: {
+        predictionMatch: {
+          with: {
+            match: {
+              with: {
+                league: true,
+                homeTeam: true,
+                awayTeam: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [desc(predictions.createdAt)],
+    });
+
+    return userPreds.map((p) => {
+      const pm = p.predictionMatch;
+      const actualHomeScore = pm.customHomeScore !== null && pm.customHomeScore !== undefined ? pm.customHomeScore : pm.match?.homeScore ?? null;
+      const actualAwayScore = pm.customAwayScore !== null && pm.customAwayScore !== undefined ? pm.customAwayScore : pm.match?.awayScore ?? null;
+      const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
+      const homeTeamName = pm.customHomeName || pm.match?.homeTeam?.name || 'الفريق الأول';
+      const homeTeamLogo = pm.customHomeLogo || pm.match?.homeTeam?.logo || null;
+      const awayTeamName = pm.customAwayName || pm.match?.awayTeam?.name || 'الفريق الثاني';
+      const awayTeamLogo = pm.customAwayLogo || pm.match?.awayTeam?.logo || null;
+      const leagueName = pm.customLeagueName || pm.match?.league?.name || 'بطولة عامة';
+      const matchDate = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
+
+      return {
+        id: p.id,
+        predictionMatchId: p.predictionMatchId,
+        contestId: p.contestId,
+        homeScore: p.homeScore,
+        awayScore: p.awayScore,
+        pointsEarned: p.pointsEarned,
+        isEvaluated: p.isEvaluated,
+        isGolden: p.isGolden,
+        goldenPoints: p.goldenPoints,
+        createdAt: p.createdAt ? p.createdAt.toISOString() : null,
+        updatedAt: p.updatedAt ? p.updatedAt.toISOString() : null,
+        matchInfo: {
+          homeTeamName,
+          homeTeamLogo,
+          awayTeamName,
+          awayTeamLogo,
+          leagueName,
+          matchDate,
+          actualHomeScore,
+          actualAwayScore,
+          matchStatus,
+          isCalculated: pm.isCalculated,
+          isConfirmedByAdmin: pm.isConfirmedByAdmin,
+          pointsPerMatch: pm.pointsPerMatch ?? 2,
+        },
+      };
+    });
+  });
+}
+
+/**
+ * Admin: Complete Contest Points Audit & Safe Recalculation
+ * Iterates through all finished/confirmed prediction matches in the contest and idempotently recomputes all points and ledgers.
+ */
+export async function recalculateContestPredictions(adminUserId: number, contestId?: number) {
+  return await withDbRetry(async () => {
+    let targetContestId = contestId;
+    if (targetContestId === undefined) {
+      const active = await getContestSettings();
+      if (active) {
+        targetContestId = active.id;
+      }
+    }
+
+    if (targetContestId === undefined) {
+      throw new Error('لا توجد مسابقة نشطة لإعادة احتساب نقاطها');
+    }
+
+    // 1. Fetch all prediction matches for this contest
+    const pMatches = await db.query.predictionMatches.findMany({
+      where: eq(predictionMatches.contestId, targetContestId),
+      with: {
+        match: true,
+      },
+    });
+
+    let evaluatedMatchesCount = 0;
+    let totalPointsRecalculated = 0;
+
+    for (const pm of pMatches) {
+      // Check if match was confirmed or finished with valid scores
+      const homeScore = pm.customHomeScore !== null && pm.customHomeScore !== undefined ? pm.customHomeScore : pm.match?.homeScore;
+      const awayScore = pm.customAwayScore !== null && pm.customAwayScore !== undefined ? pm.customAwayScore : pm.match?.awayScore;
+      const isFinished = pm.isCalculated || pm.isConfirmedByAdmin || pm.customStatus === 'FINISHED' || pm.match?.status === 'FINISHED';
+
+      if (isFinished && homeScore !== null && homeScore !== undefined && awayScore !== null && awayScore !== undefined) {
+        const evalRes = await confirmAndEvaluatePredictionMatch(pm.id, adminUserId, homeScore, awayScore);
+        evaluatedMatchesCount++;
+        totalPointsRecalculated += evalRes.pointsAwarded;
+      }
+    }
+
+    return {
+      success: true,
+      message: `تم تدقيق وإعادة احتساب نقاط ${evaluatedMatchesCount} مباراة بنجاح دون أي أخطاء أو نقاط مكررة`,
+      evaluatedMatchesCount,
+      totalPointsRecalculated,
+    };
   });
 }
 
@@ -2613,42 +2778,45 @@ export async function getOrCreateLeague(name: string, logo?: string | null) {
   if (!cleanName) throw new Error('اسم الدوري أو البطولة مطلوب');
   const normClean = normalizeArabicText(cleanName);
 
+  // Check known catalog for verified leagues and logos
+  const catalogMatch = matchLeagueFromCatalog(cleanName);
+
   const allLeagues = await db.select().from(leagues);
   let found = allLeagues.find(
     (l) =>
       normalizeArabicText(l.name) === normClean ||
       l.name.trim().toLowerCase() === cleanName.toLowerCase() ||
-      l.id.toLowerCase() === cleanName.toLowerCase()
+      l.id.toLowerCase() === cleanName.toLowerCase() ||
+      (catalogMatch && (l.id.toLowerCase() === catalogMatch.id.toLowerCase() || normalizeArabicText(l.name) === normalizeArabicText(catalogMatch.name)))
   );
 
   // Special match for Saudi Pro League
-  if (!found && (normClean.includes('روشن') || normClean.includes('saudi'))) {
+  if (!found && (normClean.includes('روشن') || normClean.includes('saudi') || normClean.includes('سعودي') || cleanName.toLowerCase().includes('spl'))) {
     found = allLeagues.find((l) => l.id === 'SPL' || normalizeArabicText(l.name).includes('روشن'));
   }
 
+  const effectiveLogo =
+    (logo && logo.trim() && !logo.includes('placeholder') && !logo.includes('ui-avatars') ? logo.trim() : null) ||
+    catalogMatch?.logo ||
+    (found?.logo && !found.logo.includes('placeholder') && !found.logo.includes('ui-avatars') ? found.logo : null);
+
   if (found) {
-    if (logo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
-      await db.update(leagues).set({ logo: logo.trim() }).where(eq(leagues.id, found.id)).catch(() => null);
-      found.logo = logo.trim();
+    if (effectiveLogo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
+      await db.update(leagues).set({ logo: effectiveLogo }).where(eq(leagues.id, found.id)).catch(() => null);
+      found.logo = effectiveLogo;
     }
     return found;
   }
 
-  const slug = cleanName
-    .toLowerCase()
-    .replace(/[^\w\u0621-\u064A\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_')
-    .slice(0, 24);
-  const newId = `ext_l_${slug || 'cust'}_${Date.now().toString(36)}`;
-  const defaultLogo = logo?.trim() || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=0284c7&color=fff&size=128`;
+  const targetId = catalogMatch?.id || `ext_l_${cleanName.toLowerCase().replace(/[^\w\u0621-\u064A\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 24) || 'cust'}_${Date.now().toString(36)}`;
+  const finalLogo = effectiveLogo || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=0284c7&color=fff&size=128`;
 
   const inserted = await db
     .insert(leagues)
     .values({
-      id: newId,
-      name: cleanName,
-      logo: defaultLogo,
+      id: targetId,
+      name: catalogMatch?.name || cleanName,
+      logo: finalLogo,
     })
     .returning();
 
@@ -2676,17 +2844,21 @@ export async function createAdminLeague(name: string, logo?: string | null) {
   return await getOrCreateLeague(cleanName, logo);
 }
 
-export async function getOrCreateTeam(name: string, logo?: string | null) {
+export async function getOrCreateTeam(name: string, logo?: string | null, leagueContext?: string) {
   const cleanName = name?.trim();
   if (!cleanName) throw new Error('اسم الفريق مطلوب');
   const normClean = normalizeArabicText(cleanName);
+
+  // Check known catalog for verified teams and logos with league context
+  const catalogMatch = matchTeamFromCatalog(cleanName, leagueContext);
 
   const allTeams = await db.select().from(teams);
   let found = allTeams.find(
     (t) =>
       normalizeArabicText(t.name) === normClean ||
       t.name.trim().toLowerCase() === cleanName.toLowerCase() ||
-      t.id.toLowerCase() === cleanName.toLowerCase()
+      t.id.toLowerCase() === cleanName.toLowerCase() ||
+      (catalogMatch && (t.id.toLowerCase() === catalogMatch.id.toLowerCase() || normalizeArabicText(t.name) === normalizeArabicText(catalogMatch.name)))
   );
 
   // Special match for national teams: e.g. "مصر" matching "منتخب مصر" or vice versa
@@ -2702,33 +2874,73 @@ export async function getOrCreateTeam(name: string, logo?: string | null) {
     });
   }
 
+  // Alias fuzzy check if not found
+  if (!found && catalogMatch) {
+    for (const alias of catalogMatch.aliases) {
+      const normAlias = normalizeArabicText(alias);
+      found = allTeams.find((t) => normalizeArabicText(t.name) === normAlias);
+      if (found) break;
+    }
+  }
+
+  const providedLogo =
+    logo && logo.trim() && !logo.includes('placeholder') && !logo.includes('ui-avatars') ? logo.trim() : null;
+
+  const effectiveLogo =
+    providedLogo ||
+    catalogMatch?.logo ||
+    (found?.logo && !found.logo.includes('placeholder') && !found.logo.includes('ui-avatars') ? found.logo : null);
+
   if (found) {
-    if (logo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
-      await db.update(teams).set({ logo: logo.trim() }).where(eq(teams.id, found.id)).catch(() => null);
-      found.logo = logo.trim();
+    // If the caller explicitly passed a valid new logo that differs from found, update the team in the database!
+    if (providedLogo && providedLogo !== found.logo) {
+      await db.update(teams).set({ logo: providedLogo }).where(eq(teams.id, found.id)).catch(() => null);
+      found.logo = providedLogo;
+    } else if (effectiveLogo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
+      await db.update(teams).set({ logo: effectiveLogo }).where(eq(teams.id, found.id)).catch(() => null);
+      found.logo = effectiveLogo;
     }
     return found;
   }
 
-  const slug = cleanName
-    .toLowerCase()
-    .replace(/[^\w\u0621-\u064A\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_')
-    .slice(0, 24);
-  const newId = `ext_t_${slug || 'cust'}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-  const defaultLogo = logo?.trim() || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=10b981&color=fff&size=128`;
+  const targetId = catalogMatch?.id || `ext_t_${cleanName.toLowerCase().replace(/[^\w\u0621-\u064A\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 24) || 'cust'}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+  const finalLogo = effectiveLogo || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=10b981&color=fff&size=128`;
 
   const inserted = await db
     .insert(teams)
     .values({
-      id: newId,
-      name: cleanName,
-      logo: defaultLogo,
+      id: targetId,
+      name: catalogMatch?.name || cleanName,
+      logo: finalLogo,
     })
     .returning();
 
   return inserted[0];
+}
+
+/**
+ * Updates a team's logo explicitly in the database.
+ */
+export async function updateTeamLogo(nameOrId: string, logo: string) {
+  const clean = nameOrId?.trim();
+  const cleanLogo = logo?.trim();
+  if (!clean || !cleanLogo) throw new Error('اسم أو معرف الفريق ورابط الشعار الجديد مطلوبان');
+
+  const normClean = normalizeArabicText(clean);
+  const allTeams = await db.select().from(teams);
+  let found = allTeams.find(
+    (t) =>
+      t.id.toLowerCase() === clean.toLowerCase() ||
+      t.name.trim().toLowerCase() === clean.toLowerCase() ||
+      normalizeArabicText(t.name) === normClean
+  );
+
+  if (found) {
+    await db.update(teams).set({ logo: cleanLogo }).where(eq(teams.id, found.id));
+    return { ...found, logo: cleanLogo };
+  } else {
+    return await getOrCreateTeam(clean, cleanLogo);
+  }
 }
 
 export async function createAdminTeam(name: string, logo?: string | null) {
@@ -2759,7 +2971,7 @@ export async function createAdminTeam(name: string, logo?: string | null) {
 
 export async function getExistingTeamsAndLeagues() {
   return await withDbRetry(async () => {
-    // Ensure Saudi Pro League and national teams are seeded
+    // Ensure Saudi Pro League and national teams are seeded & updated
     await seedSaudiAndNationalTeams().catch(() => null);
 
     const [allLeagues, allTeams] = await Promise.all([
@@ -2830,8 +3042,8 @@ export async function addCustomExternalMatchToPredictions(data: {
 
     // 1. Get or create league and teams in existing DB tables
     const leagueRec = await getOrCreateLeague(data.leagueName, data.leagueLogo);
-    const homeTeamRec = await getOrCreateTeam(data.homeTeamName, data.homeTeamLogo);
-    const awayTeamRec = await getOrCreateTeam(data.awayTeamName, data.awayTeamLogo);
+    const homeTeamRec = await getOrCreateTeam(data.homeTeamName, data.homeTeamLogo, data.leagueName);
+    const awayTeamRec = await getOrCreateTeam(data.awayTeamName, data.awayTeamLogo, data.leagueName);
 
     // 2. Insert into relational matches table
     const newMatchId = data.externalMatchId?.trim() || `m_custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

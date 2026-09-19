@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSEO } from '../hooks/useSEO';
 import { PERMISSIONS } from '../constants/permissions';
 import {
-  LayoutDashboard,
   FileText,
   Users,
   Activity,
@@ -22,23 +21,25 @@ import {
   Crown,
   Zap,
   ChevronLeft,
-  AlertTriangle
+  AlertTriangle,
+  Archive
 } from 'lucide-react';
-import AdminOverview from '../components/admin/sections/AdminOverview';
 import AdminNews from '../components/admin/sections/AdminNews';
 import AdminUsers from '../components/admin/sections/AdminUsers';
 import AdminLogs from '../components/admin/sections/AdminLogs';
 import AdminErrorLogs from '../components/admin/sections/AdminErrorLogs';
 import AdminPredictionsManager from '../components/admin/AdminPredictionsManager';
+import { AdminTeamsLogos } from '../components/admin/sections/AdminTeamsLogos';
 
-type AdminTab = 'overview' | 'news' | 'predictions_contests' | 'predictions_matches' | 'predictions_participants' | 'users' | 'logs' | 'error_logs';
+type AdminTab = 'news' | 'predictions_matches' | 'predictions_participants' | 'predictions_contests' | 'predictions_archive' | 'teams_logos' | 'users' | 'logs' | 'error_logs';
 
 const VALID_TABS: readonly AdminTab[] = [
-  'overview',
   'news',
-  'predictions_contests',
   'predictions_matches',
   'predictions_participants',
+  'predictions_contests',
+  'predictions_archive',
+  'teams_logos',
   'users',
   'logs',
   'error_logs',
@@ -54,41 +55,109 @@ export default function Admin() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const canManageNews = hasAnyPermission(PERMISSIONS.NEWS_VIEW, PERMISSIONS.CATEGORIES_VIEW);
-  const canManagePredictions = hasAnyPermission(PERMISSIONS.PREDICTIONS_VIEW, PERMISSIONS.MATCHES_VIEW);
-  const canManageUsers = hasAnyPermission(PERMISSIONS.USERS_VIEW, PERMISSIONS.ADMINS_VIEW);
-  const canViewLogs = hasPermission(PERMISSIONS.ACTIVITY_LOGS_VIEW);
-  const canViewErrorLogs = isOwner || isManager;
+  const canManageNews = isOwner || isManager || hasAnyPermission(
+    PERMISSIONS.NEWS_VIEW,
+    PERMISSIONS.NEWS_ADD,
+    PERMISSIONS.NEWS_EDIT,
+    PERMISSIONS.NEWS_DELETE,
+    PERMISSIONS.NEWS_PUBLISH,
+    PERMISSIONS.NEWS_UNPUBLISH,
+    PERMISSIONS.NEWS_FEATURE,
+    PERMISSIONS.NEWS_BREAKING,
+    PERMISSIONS.CATEGORIES_VIEW,
+    PERMISSIONS.CATEGORIES_ADD,
+    PERMISSIONS.CATEGORIES_EDIT,
+    PERMISSIONS.CATEGORIES_DELETE
+  );
+
+  const canViewContestsTab = isOwner || isManager || hasAnyPermission(
+    PERMISSIONS.PREDICTIONS_VIEW,
+    PERMISSIONS.PREDICTIONS_MANAGE,
+    PERMISSIONS.PREDICTIONS_CONTEST_CREATE,
+    PERMISSIONS.PREDICTIONS_CONTEST_END,
+    PERMISSIONS.PREDICTIONS_CONTEST_DELETE
+  );
+
+  const canViewMatchesTab = isOwner || isManager || hasAnyPermission(
+    PERMISSIONS.PREDICTIONS_VIEW,
+    PERMISSIONS.PREDICTIONS_MANAGE,
+    PERMISSIONS.PREDICTIONS_MATCH_ADD,
+    PERMISSIONS.PREDICTIONS_MATCH_EDIT,
+    PERMISSIONS.PREDICTIONS_MATCH_DELETE,
+    PERMISSIONS.PREDICTIONS_RESULTS_MANAGE,
+    PERMISSIONS.PREDICTIONS_POINTS_MANAGE,
+    PERMISSIONS.MATCHES_VIEW,
+    PERMISSIONS.MATCHES_MANAGE
+  );
+
+  const canViewParticipantsTab = isOwner || isManager || hasAnyPermission(
+    PERMISSIONS.PREDICTIONS_VIEW,
+    PERMISSIONS.PREDICTIONS_MANAGE,
+    PERMISSIONS.PREDICTIONS_PARTICIPANTS_MANAGE
+  );
+
+  const canManagePredictions = canViewContestsTab || canViewMatchesTab || canViewParticipantsTab;
+
+  const canManageUsers = isOwner || isManager || hasAnyPermission(
+    PERMISSIONS.USERS_VIEW,
+    PERMISSIONS.USERS_MANAGE,
+    PERMISSIONS.USERS_ACTIVATE,
+    PERMISSIONS.USERS_DEACTIVATE,
+    PERMISSIONS.ADMINS_VIEW,
+    PERMISSIONS.ADMINS_ADD,
+    PERMISSIONS.ADMINS_EDIT,
+    PERMISSIONS.ADMINS_REMOVE,
+    PERMISSIONS.ADMINS_PERMISSIONS_MANAGE
+  );
+
+  const canViewLogs = isOwner || isManager || hasPermission(PERMISSIONS.ACTIVITY_LOGS_VIEW);
+  const canViewErrorLogs = isOwner || isManager || hasPermission(PERMISSIONS.ERROR_LOGS_VIEW);
+
+  // Compute default fallback tab according to permissions
+  const defaultTab = useMemo<AdminTab>(() => {
+    if (canManageNews) return 'news';
+    if (canViewMatchesTab) return 'predictions_matches';
+    if (canViewParticipantsTab) return 'predictions_participants';
+    if (canViewContestsTab) return 'predictions_contests';
+    if (canManageUsers) return 'users';
+    if (canViewLogs) return 'logs';
+    if (canViewErrorLogs) return 'error_logs';
+    return 'news';
+  }, [canManageNews, canViewMatchesTab, canViewParticipantsTab, canViewContestsTab, canManageUsers, canViewLogs, canViewErrorLogs]);
 
   // Derive active tab from URL query param (?tab=...) with permission validation
   const activeTab = useMemo<AdminTab>(() => {
     const tabParam = searchParams.get('tab');
     if (!tabParam || !VALID_TABS.includes(tabParam as AdminTab)) {
-      return 'overview';
+      return defaultTab;
     }
 
     const candidate = tabParam as AdminTab;
 
     // Verify permission for the requested tab
     switch (candidate) {
-      case 'overview':
-        return 'overview';
       case 'news':
-        return canManageNews ? 'news' : 'overview';
-      case 'predictions_contests':
+        return canManageNews ? 'news' : defaultTab;
       case 'predictions_matches':
+        return canViewMatchesTab ? 'predictions_matches' : defaultTab;
       case 'predictions_participants':
-        return canManagePredictions ? candidate : 'overview';
+        return canViewParticipantsTab ? 'predictions_participants' : defaultTab;
+      case 'predictions_contests':
+        return canViewContestsTab ? 'predictions_contests' : defaultTab;
+      case 'predictions_archive':
+        return canViewContestsTab ? 'predictions_archive' : defaultTab;
+      case 'teams_logos':
+        return canViewMatchesTab || isOwner || isManager ? 'teams_logos' : defaultTab;
       case 'users':
-        return canManageUsers ? 'users' : 'overview';
+        return canManageUsers ? 'users' : defaultTab;
       case 'logs':
-        return canViewLogs ? 'logs' : 'overview';
+        return canViewLogs ? 'logs' : defaultTab;
       case 'error_logs':
-        return canViewErrorLogs ? 'error_logs' : 'overview';
+        return canViewErrorLogs ? 'error_logs' : defaultTab;
       default:
-        return 'overview';
+        return defaultTab;
     }
-  }, [searchParams, canManageNews, canManagePredictions, canManageUsers, canViewLogs, canViewErrorLogs]);
+  }, [searchParams, defaultTab, canManageNews, canViewContestsTab, canViewMatchesTab, canViewParticipantsTab, canManageUsers, canViewLogs, canViewErrorLogs]);
 
   // Navigate to tab with standard browser history push (creates a new history entry)
   const navigateToTab = useCallback((newTab: AdminTab) => {
@@ -99,11 +168,7 @@ export default function Admin() {
       return;
     }
 
-    if (newTab === 'overview') {
-      navigate('/admin');
-    } else {
-      navigate(`/admin?tab=${newTab}`);
-    }
+    navigate(`/admin?tab=${newTab}`);
   }, [activeTab, navigate]);
 
   const showMsg = (type: 'success' | 'error', text: string) => {
@@ -112,11 +177,12 @@ export default function Admin() {
   };
 
   const tabDetails: Record<AdminTab, { title: string; subtitle: string; icon: React.ElementType }> = {
-    overview: { title: 'نظرة عامة', subtitle: 'المؤشرات الحيوية وملخص النظام', icon: LayoutDashboard },
     news: { title: 'الأخبار والتصنيفات', subtitle: 'إدارة المحتوى والمقالات الرياضية', icon: FileText },
-    predictions_contests: { title: 'المسابقات والإعدادات', subtitle: 'إعدادات المسابقات ونظام النقاط', icon: Trophy },
     predictions_matches: { title: 'مباريات التوقع', subtitle: 'جدولة المباريات واحتساب النتائج', icon: Target },
-    predictions_participants: { title: 'المشاركون بالمسابقة', subtitle: 'قائمة المتسابقين وطلبات الانضمام', icon: Users },
+    predictions_participants: { title: 'المشاركون بالمسابقة', subtitle: 'قائمة المتسابقين وإحصائيات التوقعات', icon: Users },
+    predictions_contests: { title: 'المسابقات والإعدادات', subtitle: 'إعدادات المسابقات ونظام النقاط', icon: Trophy },
+    predictions_archive: { title: 'أرشيف المسابقات المنتهية', subtitle: 'استعراض وإدارة وتصفح بيانات المسابقات السابقة', icon: Archive },
+    teams_logos: { title: 'إدارة الأندية والشعارات', subtitle: 'تعديل وتصحيح أسماء وشعارات الأندية في قاعدة البيانات', icon: Shield },
     users: { title: 'إدارة المستخدمين', subtitle: 'التحكم بالصلاحيات وحسابات المشرفين', icon: ShieldCheck },
     logs: { title: 'سجل العمليات', subtitle: 'سجل التغييرات وأحداث النظام الإدارية', icon: Activity },
     error_logs: { title: 'سجل الأخطاء', subtitle: 'متابعة ورصد استثناءات النظام وتصدير التقارير', icon: AlertTriangle },
@@ -133,7 +199,7 @@ export default function Admin() {
 
   if (!isAdmin) return <Navigate to="/" replace />;
 
-  const currentTabInfo = tabDetails[activeTab] || tabDetails.overview;
+  const currentTabInfo = tabDetails[activeTab] || tabDetails[defaultTab];
   const CurrentIcon = currentTabInfo.icon;
 
   return (
@@ -158,7 +224,7 @@ export default function Admin() {
       <aside
         role="dialog"
         aria-label="القائمة الجانبية للوحة التحكم"
-        className={`fixed lg:sticky top-0 lg:top-16 right-0 h-full lg:h-[calc(100vh-4rem)] w-[86vw] sm:w-72 max-w-xs bg-white dark:bg-slate-900 border-l border-slate-200/80 dark:border-slate-800 z-50 transform transition-transform duration-300 ease-out shadow-2xl lg:shadow-none flex flex-col ${
+        className={`fixed lg:sticky top-0 lg:top-16 right-0 h-full lg:h-[calc(100vh-4rem)] w-[86vw] sm:w-72 max-w-xs bg-white dark:bg-slate-900 border-l border-slate-200/80 dark:border-slate-800 z-50 lg:z-30 transform transition-transform duration-300 ease-out shadow-2xl lg:shadow-none flex flex-col ${
           isSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
         }`}
       >
@@ -166,9 +232,9 @@ export default function Admin() {
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <button
             type="button"
-            onClick={() => navigateToTab('overview')}
+            onClick={() => navigateToTab(defaultTab)}
             className="flex items-center gap-2.5 min-w-0 text-right cursor-pointer"
-            title="الانتقال إلى نظرة عامة"
+            title="الانتقال إلى الرئيسية"
           >
             <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
               {isOwner ? <Crown className="w-5 h-5 text-amber-300" /> : isManager ? <Zap className="w-5 h-5 text-purple-200" /> : <Shield className="w-5 h-5" />}
@@ -196,28 +262,7 @@ export default function Admin() {
         {/* Sidebar Menu Items */}
         <div className="p-3 sm:p-3.5 flex-1 overflow-y-auto space-y-5">
           
-          {/* Group 1: الرئيسية */}
-          <div>
-            <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
-              الرئيسية والتحليلات
-            </div>
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => navigateToTab('overview')}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
-                  activeTab === 'overview'
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
-                }`}
-              >
-                <LayoutDashboard className={`w-4 h-4 shrink-0 ${activeTab === 'overview' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
-                <span>لوحة التحكم (نظرة عامة)</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Group 2: المحتوى */}
+          {/* Group 1: المحتوى الرياضي */}
           {canManageNews && (
             <div>
               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
@@ -240,49 +285,83 @@ export default function Admin() {
             </div>
           )}
 
-          {/* Group 3: التوقعات والمسابقات */}
+          {/* Group 2: مسابقة التوقعات */}
           {canManagePredictions && (
             <div>
               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
                 مسابقة التوقعات
               </div>
               <div className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => navigateToTab('predictions_contests')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
-                    activeTab === 'predictions_contests'
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
-                  }`}
-                >
-                  <Trophy className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_contests' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
-                  <span>المسابقات والإعدادات</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigateToTab('predictions_matches')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
-                    activeTab === 'predictions_matches'
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
-                  }`}
-                >
-                  <Target className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_matches' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
-                  <span>مباريات التوقع</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigateToTab('predictions_participants')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
-                    activeTab === 'predictions_participants'
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
-                  }`}
-                >
-                  <Users className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_participants' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
-                  <span>المشاركون بالمسابقة</span>
-                </button>
+                {canViewMatchesTab && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('predictions_matches')}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
+                      activeTab === 'predictions_matches'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
+                    }`}
+                  >
+                    <Target className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_matches' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
+                    <span>مباريات التوقع</span>
+                  </button>
+                )}
+                {canViewParticipantsTab && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('predictions_participants')}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
+                      activeTab === 'predictions_participants'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
+                    }`}
+                  >
+                    <Users className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_participants' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
+                    <span>المشاركون بالمسابقة</span>
+                  </button>
+                )}
+                {canViewContestsTab && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('predictions_contests')}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
+                      activeTab === 'predictions_contests'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
+                    }`}
+                  >
+                    <Trophy className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_contests' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
+                    <span>المسابقات والإعدادات</span>
+                  </button>
+                )}
+                {canViewContestsTab && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('predictions_archive')}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
+                      activeTab === 'predictions_archive'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
+                    }`}
+                  >
+                    <Archive className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_archive' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
+                    <span>المسابقات المنتهية والأرشيف</span>
+                  </button>
+                )}
+                {(canViewMatchesTab || isOwner || isManager) && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('teams_logos')}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
+                      activeTab === 'teams_logos'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
+                    }`}
+                  >
+                    <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'teams_logos' ? 'text-amber-400 dark:text-amber-500' : 'text-amber-500/80'}`} />
+                    <span>إدارة الأندية والشعارات</span>
+                  </button>
+                )}
                 <Link
                   to="/predictions/leaderboard"
                   className="w-full flex items-center justify-between px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 transition-all"
@@ -297,7 +376,7 @@ export default function Admin() {
             </div>
           )}
 
-          {/* Group 4: النظام والمستخدمون */}
+          {/* Group 3: الإدارة والأمان */}
           {(canManageUsers || canViewLogs || canViewErrorLogs) && (
             <div>
               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-3">
@@ -372,10 +451,10 @@ export default function Admin() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full lg:w-[calc(100%-18rem)] overflow-x-hidden min-h-[calc(100vh-4rem)] flex flex-col">
+      <main className="flex-1 w-full lg:w-[calc(100%-18rem)] overflow-x-clip min-h-[calc(100vh-4rem)] flex flex-col">
         
         {/* Top Header Bar for Desktop & Mobile */}
-        <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-6 py-2 flex items-center justify-between shadow-2xs h-14">
+        <header className="sticky top-12 sm:top-16 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-6 py-2 flex items-center justify-between shadow-2xs h-14">
           
           {/* Breadcrumb & Section Name */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -390,13 +469,9 @@ export default function Admin() {
             </button>
 
             <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm min-w-0 truncate">
-              <button
-                type="button"
-                onClick={() => navigateToTab('overview')}
-                className="font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hidden sm:inline shrink-0 cursor-pointer"
-              >
+              <span className="font-bold text-slate-400 hidden sm:inline shrink-0">
                 لوحة التحكم
-              </button>
+              </span>
               <span className="text-slate-300 dark:text-slate-700 hidden sm:inline shrink-0">/</span>
               <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-white truncate">
                 <CurrentIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
@@ -470,31 +545,11 @@ export default function Admin() {
           )}
 
           {/* Active Tab View Rendering */}
-          {activeTab === 'overview' && (
-            <AdminOverview
-              token={token}
-              onNavigateTab={(tab) => navigateToTab(tab)}
-              isSuperAdmin={isOwner}
-              canManageNews={canManageNews}
-              canManagePredictions={canManagePredictions}
-              canManageUsers={canManageUsers}
-              canViewLogs={canViewLogs}
-            />
-          )}
-
           {activeTab === 'news' && canManageNews && (
             <AdminNews token={token} showMsg={showMsg} />
           )}
 
-          {activeTab === 'predictions_contests' && canManagePredictions && (
-            <AdminPredictionsManager
-              token={token}
-              onShowMessage={showMsg}
-              activeSubTab="overview"
-            />
-          )}
-
-          {activeTab === 'predictions_matches' && canManagePredictions && (
+          {activeTab === 'predictions_matches' && canViewMatchesTab && (
             <AdminPredictionsManager
               token={token}
               onShowMessage={showMsg}
@@ -502,12 +557,32 @@ export default function Admin() {
             />
           )}
 
-          {activeTab === 'predictions_participants' && canManagePredictions && (
+          {activeTab === 'predictions_participants' && canViewParticipantsTab && (
             <AdminPredictionsManager
               token={token}
               onShowMessage={showMsg}
               activeSubTab="participants"
             />
+          )}
+
+          {activeTab === 'predictions_contests' && canViewContestsTab && (
+            <AdminPredictionsManager
+              token={token}
+              onShowMessage={showMsg}
+              activeSubTab="settings"
+            />
+          )}
+
+          {activeTab === 'predictions_archive' && canViewContestsTab && (
+            <AdminPredictionsManager
+              token={token}
+              onShowMessage={showMsg}
+              activeSubTab="completed_contests"
+            />
+          )}
+
+          {activeTab === 'teams_logos' && (canViewMatchesTab || isOwner || isManager) && (
+            <AdminTeamsLogos />
           )}
 
           {activeTab === 'users' && canManageUsers && (

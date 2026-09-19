@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSEO } from '../hooks/useSEO';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Trophy,
   Sparkles,
@@ -21,6 +21,14 @@ import {
   Activity,
   X,
   ChevronLeft,
+  FolderArchive,
+  Archive,
+  ArrowRight,
+  Check,
+  BarChart3,
+  TrendingUp,
+  Percent,
+  CheckCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import PredictionMatchCard from '../components/predictions/PredictionMatchCard';
@@ -36,9 +44,19 @@ export default function Predictions() {
   );
   const { user, token } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<'matches' | 'my_predictions' | 'leaderboard'>('matches');
-  const [matchFilter, setMatchFilter] = useState<'all' | 'open' | 'finished'>('open');
+  const urlContestId = searchParams.get('contestId') ? parseInt(searchParams.get('contestId')!, 10) : null;
+  const [selectedContestId, setSelectedContestId] = useState<number | null>(
+    urlContestId && !isNaN(urlContestId) ? urlContestId : null
+  );
+
+  const [activeTab, setActiveTab] = useState<'matches' | 'my_predictions' | 'leaderboard' | 'stats'>('matches');
+  const [matchFilter, setMatchFilter] = useState<'all' | 'open' | 'live' | 'finished'>('open');
+
+  // Contests list
+  const [allContests, setAllContests] = useState<any[]>([]);
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
 
   // Data states
   const [predictionMatches, setPredictionMatches] = useState<PredictionMatchInfo[]>([]);
@@ -79,10 +97,36 @@ export default function Predictions() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Fetch contest settings
-  const fetchContestSettings = async () => {
+  // Keep selectedContestId synchronized with searchParams
+  useEffect(() => {
+    const pId = searchParams.get('contestId') ? parseInt(searchParams.get('contestId')!, 10) : null;
+    if (pId && !isNaN(pId)) {
+      setSelectedContestId(pId);
+    } else {
+      setSelectedContestId(null);
+    }
+  }, [searchParams]);
+
+  // Fetch contests list
+  const fetchContestsList = async () => {
     try {
-      const res = await fetch('/api/predictions/contest/settings');
+      const res = await fetch('/api/predictions/contests');
+      if (res.ok) {
+        const data = await res.json();
+        setAllContests(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch contests list:', e);
+    }
+  };
+
+  // Fetch contest settings
+  const fetchContestSettings = async (targetContestId?: number | null) => {
+    try {
+      const url = targetContestId
+        ? `/api/predictions/contest/settings?contestId=${targetContestId}`
+        : '/api/predictions/contest/settings';
+      const res = await fetch(url);
       if (res.ok) {
         setContestSettings(await res.json());
       }
@@ -90,13 +134,16 @@ export default function Predictions() {
   };
 
   // Fetch participation status
-  const fetchParticipationStatus = async () => {
+  const fetchParticipationStatus = async (targetContestId?: number | null) => {
     if (!token) {
       setParticipationStatus({ status: 'not_registered' });
       return;
     }
     try {
-      const res = await fetch('/api/predictions/contest/my-status', {
+      const url = targetContestId
+        ? `/api/predictions/contest/my-status?contestId=${targetContestId}`
+        : '/api/predictions/contest/my-status';
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -106,11 +153,14 @@ export default function Predictions() {
   };
 
   // Fetch all prediction matches
-  const fetchMatches = async () => {
+  const fetchMatches = async (targetContestId?: number | null) => {
     try {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch('/api/predictions', { headers });
+      const url = targetContestId
+        ? `/api/predictions?contestId=${targetContestId}`
+        : '/api/predictions';
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setPredictionMatches(data);
@@ -121,12 +171,14 @@ export default function Predictions() {
   };
 
   // Fetch user history
-  const fetchMyHistory = async () => {
+  const fetchMyHistory = async (targetContestId?: number | null) => {
     if (!token) return;
     try {
-      const res = await fetch('/api/predictions/my', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      const url = targetContestId
+        ? `/api/predictions/my?contestId=${targetContestId}`
+        : '/api/predictions/my';
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setMyPredictions(data);
@@ -137,12 +189,14 @@ export default function Predictions() {
   };
 
   // Fetch user stats
-  const fetchStats = async () => {
+  const fetchStats = async (targetContestId?: number | null) => {
     if (!token) return;
     try {
-      const res = await fetch('/api/predictions/stats', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      const url = targetContestId
+        ? `/api/predictions/stats?contestId=${targetContestId}`
+        : '/api/predictions/stats';
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -153,11 +207,14 @@ export default function Predictions() {
   };
 
   // Fetch leaderboard
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = async (targetContestId?: number | null) => {
     try {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch('/api/predictions/leaderboard', { headers });
+      const url = targetContestId
+        ? `/api/predictions/leaderboard?contestId=${targetContestId}`
+        : '/api/predictions/leaderboard';
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setLeaderboard(data.leaderboard || []);
@@ -168,17 +225,18 @@ export default function Predictions() {
     }
   };
 
-  const loadAllData = async (showLoader = true) => {
+  const loadAllData = async (showLoader = true, targetContestId = selectedContestId) => {
     if (showLoader) setIsLoading(true);
     else setIsRefreshing(true);
 
     await Promise.all([
-      fetchContestSettings(),
-      fetchMatches(),
-      token ? fetchParticipationStatus() : Promise.resolve(),
-      token ? fetchMyHistory() : Promise.resolve(),
-      token ? fetchStats() : Promise.resolve(),
-      fetchLeaderboard(),
+      fetchContestsList(),
+      fetchContestSettings(targetContestId),
+      fetchMatches(targetContestId),
+      token ? fetchParticipationStatus(targetContestId) : Promise.resolve(),
+      token ? fetchMyHistory(targetContestId) : Promise.resolve(),
+      token ? fetchStats(targetContestId) : Promise.resolve(),
+      fetchLeaderboard(targetContestId),
     ]);
 
     setIsLoading(false);
@@ -186,8 +244,29 @@ export default function Predictions() {
   };
 
   useEffect(() => {
-    loadAllData(true);
-  }, [token]);
+    loadAllData(true, selectedContestId);
+  }, [token, selectedContestId]);
+
+  const handleSelectContest = (contestId: number | null) => {
+    setSelectedContestId(contestId);
+    if (contestId) {
+      setSearchParams({ contestId: String(contestId) });
+    } else {
+      setSearchParams({});
+    }
+    setArchiveModalOpen(false);
+  };
+
+  // Active contest in the whole system
+  const activeContest = allContests.find((c) => c.status === 'active');
+  const completedContests = allContests.filter((c) => c.status === 'completed');
+
+  // Check if current view is an archived completed contest
+  const isBrowsingArchive = Boolean(
+    contestSettings &&
+    (contestSettings.status === 'completed' ||
+      (selectedContestId && activeContest && selectedContestId !== activeContest.id))
+  );
 
   // Handle contest registration request
   const handleApplyContest = async (e?: React.FormEvent) => {
@@ -281,17 +360,33 @@ export default function Predictions() {
   };
 
   const openMatches = predictionMatches.filter((p) => p.isOpenForPrediction || p.matchState === 'open');
+  const liveMatches = predictionMatches.filter(
+    (p) =>
+      !p.isOpenForPrediction &&
+      p.matchState !== 'open' &&
+      (p.matchState === 'live' ||
+        p.match.status === 'LIVE' ||
+        p.match.status === 'IN_PLAY' ||
+        p.match.status === 'PAUSED')
+  );
   const finishedMatches = predictionMatches.filter(
     (p) =>
-      p.matchState === 'calculated' ||
-      p.matchState === 'pending_admin' ||
-      p.matchState === 'live' ||
-      p.match.status === 'FINISHED'
+      !p.isOpenForPrediction &&
+      p.matchState !== 'open' &&
+      p.matchState !== 'live' &&
+      p.match.status !== 'LIVE' &&
+      p.match.status !== 'IN_PLAY' &&
+      p.match.status !== 'PAUSED' &&
+      (p.matchState === 'calculated' ||
+        p.matchState === 'pending_admin' ||
+        p.match.status === 'FINISHED')
   );
 
   const displayedMatches =
     matchFilter === 'open'
       ? openMatches
+      : matchFilter === 'live'
+      ? liveMatches
       : matchFilter === 'finished'
       ? finishedMatches
       : predictionMatches;
@@ -375,7 +470,7 @@ export default function Predictions() {
             {/* Quick Actions & Navigation Links */}
             <div className="flex items-center gap-2 shrink-0 flex-wrap">
               <Link
-                to="/predictions/leaderboard"
+                to={selectedContestId ? `/predictions/leaderboard?contestId=${selectedContestId}` : '/predictions/leaderboard'}
                 className="min-h-[44px] px-4 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs"
               >
                 <Trophy className="w-4 h-4 text-amber-500" />
@@ -383,7 +478,7 @@ export default function Predictions() {
               </Link>
 
               <Link
-                to="/predictions/golden"
+                to={selectedContestId ? `/predictions/golden?contestId=${selectedContestId}` : '/predictions/golden'}
                 className="min-h-[44px] px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 font-black text-xs flex items-center gap-1.5 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors shadow-2xs"
               >
                 <Crown className="w-4 h-4 text-amber-500" />
@@ -392,7 +487,7 @@ export default function Predictions() {
 
               <button
                 type="button"
-                onClick={() => loadAllData(false)}
+                onClick={() => loadAllData(false, selectedContestId)}
                 disabled={isRefreshing}
                 className="min-w-[44px] min-h-[44px] p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-50 flex items-center justify-center"
                 title="تحديث البيانات"
@@ -405,63 +500,39 @@ export default function Predictions() {
 
           {/* Current Available Contest Information */}
           {contestStatus !== 'none' && (
-            <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-              <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-2.5 shadow-2xs">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
-                  <Calendar className="w-4 h-4" />
+            <div className="mt-4 sm:mt-5 pt-3.5 sm:pt-4 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-3 gap-2 sm:gap-3 text-xs">
+              <div className="p-2 sm:p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-right gap-1.5 sm:gap-2.5 shadow-2xs">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                  <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400">المباريات المتاحة</div>
-                  <div className="font-black text-slate-900 dark:text-white text-sm">
+                <div className="min-w-0">
+                  <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 truncate">المباريات المتاحة</div>
+                  <div className="font-black text-slate-900 dark:text-white text-xs sm:text-sm truncate">
                     {openMatches.length} مباراة
                   </div>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-2.5 shadow-2xs">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20">
-                  <Users className="w-4 h-4" />
+              <div className="p-2 sm:p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-right gap-1.5 sm:gap-2.5 shadow-2xs">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20">
+                  <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400">المشاركون</div>
-                  <div className="font-black text-slate-900 dark:text-white text-sm">
+                <div className="min-w-0">
+                  <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 truncate">المشاركون</div>
+                  <div className="font-black text-slate-900 dark:text-white text-xs sm:text-sm truncate">
                     {contestSettings?.participantsCount ?? leaderboard.length} متسابق
                   </div>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-2.5 shadow-2xs">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20">
-                  <Target className="w-4 h-4" />
+              <div className="p-2 sm:p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-right gap-1.5 sm:gap-2.5 shadow-2xs">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                  <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400">التوقع الدقيق</div>
-                  <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm">
+                <div className="min-w-0">
+                  <div className="text-[9px] sm:text-[10px] font-bold text-slate-400 truncate">التوقع الذهبي</div>
+                  <div className="font-black text-amber-600 dark:text-amber-400 text-xs sm:text-sm truncate">
                     +{contestSettings?.pointsExact || 3} نقاط
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-2.5 shadow-2xs">
-                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400">الفائز أو التعادل</div>
-                  <div className="font-black text-cyan-600 dark:text-cyan-400 text-sm">
-                    +{contestSettings?.pointsOutcome || 1} نقطة
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 flex items-center gap-2.5 shadow-2xs col-span-2 sm:col-span-1">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
-                  <Crown className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400">بونص الذهبي</div>
-                  <div className="font-black text-amber-600 dark:text-amber-400 text-sm">
-                    +{contestSettings?.pointsGolden || 2} نقاط
                   </div>
                 </div>
               </div>
@@ -469,60 +540,38 @@ export default function Predictions() {
           )}
         </div>
 
-        {/* 2. User Stats: Display existing user stats only */}
-        {user && isParticipant && stats && (
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <h3 className="font-black text-xs sm:text-sm text-slate-900 dark:text-white">
-                  إحصائيات المستخدم
-                </h3>
+        {/* Archived Contest Alert Banner */}
+        {isBrowsingArchive && (
+          <div className="rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-300/80 dark:border-amber-700/60 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Archive className="w-5 h-5" />
               </div>
-              <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400">
-                نسبة النجاح: <span className="text-blue-600 dark:text-blue-400 font-mono">{stats.successRate}%</span>
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x sm:divide-x-reverse divide-slate-100 dark:divide-slate-800/80">
-              <div className="p-4 text-center">
-                <div className="text-[10px] font-bold text-slate-400 mb-1">إجمالي النقاط</div>
-                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {stats.totalPoints}
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-black text-amber-950 dark:text-amber-100">
+                    أنت تتصفح أرشيف مسابقة منتهية: {contestSettings?.name || `#${selectedContestId}`}
+                  </h4>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200">
+                    أرشيف للعرض فقط
+                  </span>
                 </div>
-              </div>
-
-              <div className="p-4 text-center">
-                <div className="text-[10px] font-bold text-slate-400 mb-1">التوقعات المسجلة</div>
-                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {stats.totalPredictions}
-                </div>
-              </div>
-
-              <div className="p-4 text-center">
-                <div className="text-[10px] font-bold text-slate-400 mb-1">توقعات صحيحة</div>
-                <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                  {stats.correctPredictions}
-                </div>
-              </div>
-
-              <div className="p-4 text-center bg-amber-50/30 dark:bg-amber-950/10">
-                <div className="text-[10px] font-bold text-slate-400 mb-1 flex items-center justify-center gap-1">
-                  <Crown className="w-3 h-3 text-amber-500" />
-                  <span>توقعات ذهبية</span>
-                </div>
-                <div className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
-                  {stats.goldenPredictions || 0}
-                </div>
-              </div>
-
-              <div className="p-4 text-center col-span-2 sm:col-span-1">
-                <div className="text-[10px] font-bold text-slate-400 mb-1">الترتيب الحالي</div>
-                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                  {stats.userRank ? `#${stats.userRank}` : '—'}
-                </div>
+                <p className="text-xs text-amber-800/90 dark:text-amber-300/90 font-medium">
+                  يتم عرض كافة المباريات والنتائج المسجلة وسجل التوقعات ولائحة المتصدرين النهائية لهذه المسابقة السابقة.
+                </p>
               </div>
             </div>
+
+            {activeContest && (
+              <button
+                type="button"
+                onClick={() => handleSelectContest(null)}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-black flex items-center justify-center gap-2 transition-all shrink-0 shadow-xs cursor-pointer"
+              >
+                <Trophy className="w-4 h-4 text-amber-300" />
+                <span>العودة للمسابقة الحالية النشطة</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -541,7 +590,7 @@ export default function Predictions() {
               </p>
             </div>
           </div>
-        ) : contestStatus === 'completed' ? (
+        ) : contestStatus === 'completed' && !isBrowsingArchive ? (
           <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
@@ -557,7 +606,7 @@ export default function Predictions() {
               </div>
             </div>
             <Link
-              to="/predictions/leaderboard"
+              to={selectedContestId ? `/predictions/leaderboard?contestId=${selectedContestId}` : '/predictions/leaderboard'}
               className="min-h-[44px] px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs transition-colors shrink-0 flex items-center justify-center shadow-xs"
             >
               عرض النتائج النهائية
@@ -662,16 +711,16 @@ export default function Predictions() {
           </div>
         ) : null}
 
-        {/* 3. Navigation Tabs: Segmented Navigation (المباريات / توقعاتي / الترتيب) */}
+        {/* 3. Navigation Tabs: Segmented Navigation (المباريات / توقعاتي / الترتيب / المسابقات المنتهية) */}
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800 pb-2">
-            <div className="bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl flex items-center gap-1.5 w-full sm:w-auto shadow-inner">
+            <div className="bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl flex items-center gap-1.5 w-full sm:w-auto shadow-inner overflow-x-auto scrollbar-hide">
               
               {/* Tab 1: المباريات */}
               <button
                 type="button"
                 onClick={() => setActiveTab('matches')}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   activeTab === 'matches'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -694,7 +743,7 @@ export default function Predictions() {
               <button
                 type="button"
                 onClick={() => setActiveTab('my_predictions')}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   activeTab === 'my_predictions'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -719,7 +768,7 @@ export default function Predictions() {
               <button
                 type="button"
                 onClick={() => setActiveTab('leaderboard')}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   activeTab === 'leaderboard'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -728,11 +777,36 @@ export default function Predictions() {
                 <Trophy className="w-4 h-4 shrink-0" />
                 <span>الترتيب</span>
               </button>
+
+              {/* Tab 4: الإحصائيات */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('stats')}
+                className={`px-3.5 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  activeTab === 'stats'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 shrink-0" />
+                <span>الإحصائيات</span>
+                {user && isParticipant && stats ? (
+                  <span
+                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono ${
+                      activeTab === 'stats'
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                        : 'bg-blue-100 text-blue-900 dark:bg-blue-900/60 dark:text-blue-200'
+                    }`}
+                  >
+                    {stats.totalPoints} نقطة
+                  </span>
+                ) : null}
+              </button>
             </div>
 
             <Link
               to="/predictions/golden"
-              className="inline-flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400 hover:text-amber-700 transition-colors self-end sm:self-center"
+              className="inline-flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400 hover:text-amber-700 transition-colors self-end sm:self-center shrink-0"
             >
               <Crown className="w-4 h-4" />
               <span>الترتيب الذهبي</span>
@@ -757,6 +831,21 @@ export default function Predictions() {
 
               <button
                 type="button"
+                onClick={() => setMatchFilter('live')}
+                className={`px-3.5 py-1.5 rounded-xl font-extrabold text-xs transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-1.5 ${
+                  matchFilter === 'live'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                {liveMatches.length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
+                )}
+                <span>المباريات الجارية ({liveMatches.length})</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setMatchFilter('finished')}
                 className={`px-3.5 py-1.5 rounded-xl font-extrabold text-xs transition-all cursor-pointer whitespace-nowrap ${
                   matchFilter === 'finished'
@@ -764,7 +853,7 @@ export default function Predictions() {
                     : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
-                المنتهية والجارية ({finishedMatches.length})
+                المباريات المنتهية ({finishedMatches.length})
               </button>
 
               <button
@@ -818,6 +907,8 @@ export default function Predictions() {
                   <h3 className="text-base font-extrabold text-slate-900 dark:text-white mb-1">
                     {matchFilter === 'open'
                       ? 'لا توجد مباريات متاحة للتوقع حالياً'
+                      : matchFilter === 'live'
+                      ? 'لا توجد مباريات جارية حالياً'
                       : matchFilter === 'finished'
                       ? 'لا توجد مباريات منتهية مسجلة'
                       : 'لا توجد مباريات مسجلة في المسابقة'}
@@ -825,7 +916,11 @@ export default function Predictions() {
                   <p className="text-xs text-slate-500 max-w-sm mx-auto">
                     {matchFilter === 'open'
                       ? 'انتظر حتى يقوم المشرف بجدولة مباريات جديدة للتوقع قريباً.'
-                      : 'تابع الجدول عند انتهاء المباريات واحتساب النقاط.'}
+                      : matchFilter === 'live'
+                      ? 'تابع نتائج المباريات فور انطلاقها واحتساب التوقعات مباشرة.'
+                      : matchFilter === 'finished'
+                      ? 'تابع الجدول عند انتهاء المباريات واحتساب النقاط.'
+                      : 'لا توجد مباريات مسجلة في المسابقة حالياً.'}
                   </p>
                 </div>
               ) : (
@@ -887,6 +982,255 @@ export default function Predictions() {
               currentUserRank={currentUserRank}
               isLoading={isLoading}
             />
+          )}
+
+          {/* Tab 4: Statistics (الإحصائيات) */}
+          {activeTab === 'stats' && (
+            <div className="space-y-6">
+              {/* User Personal Stats Section */}
+              {user && isParticipant && stats ? (
+                <div className="space-y-4">
+                  {/* User Stats Card Header */}
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
+                    <div className="p-5 sm:p-6 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20 shadow-2xs">
+                          <Activity className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                              إحصائياتك في المسابقة
+                            </h3>
+                            {stats.userRank && (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 flex items-center gap-1">
+                                <Trophy className="w-3 h-3 text-amber-500" />
+                                <span>المركز #{stats.userRank}</span>
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                            سجل أدائك ودقة توقعاتك والنقاط المكتسبة في مسابقة {contestSettings?.name || 'التوقعات'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 px-4 py-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shrink-0">
+                        <div className="text-right">
+                          <div className="text-[10px] font-bold text-slate-400">نسبة النجاح العامة</div>
+                          <div className="text-base font-black text-blue-600 dark:text-blue-400 font-mono">
+                            {stats.successRate}%
+                          </div>
+                        </div>
+                        <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                          <TrendingUp className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stats Metrics Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 divide-slate-100 dark:divide-slate-800/80">
+                      <div className="p-4 sm:p-5 text-center border-l border-slate-100 dark:border-slate-800/80">
+                        <div className="text-[11px] font-bold text-slate-400 mb-1">إجمالي النقاط</div>
+                        <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono">
+                          {stats.totalPoints}
+                        </div>
+                        <div className="text-[10px] font-medium text-slate-400 mt-1">نقطة مكتسبة</div>
+                      </div>
+
+                      <div className="p-4 sm:p-5 text-center border-l border-slate-100 dark:border-slate-800/80">
+                        <div className="text-[11px] font-bold text-slate-400 mb-1">التوقعات المسجلة</div>
+                        <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono">
+                          {stats.totalPredictions}
+                        </div>
+                        <div className="text-[10px] font-medium text-slate-400 mt-1">مباراة متوقعة</div>
+                      </div>
+
+                      <div className="p-4 sm:p-5 text-center border-l border-slate-100 dark:border-slate-800/80">
+                        <div className="text-[11px] font-bold text-slate-400 mb-1">توقعات صحيحة</div>
+                        <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                          {stats.correctPredictions}
+                        </div>
+                        <div className="text-[10px] font-medium text-emerald-600/80 dark:text-emerald-400/80 mt-1">فائز / تعادل</div>
+                      </div>
+
+                      <div className="p-4 sm:p-5 text-center border-l border-slate-100 dark:border-slate-800/80">
+                        <div className="text-[11px] font-bold text-slate-400 mb-1">النتيجة الدقيقة</div>
+                        <div className="text-2xl sm:text-3xl font-black text-purple-600 dark:text-purple-400 font-mono">
+                          {stats.exactScorePredictions || 0}
+                        </div>
+                        <div className="text-[10px] font-medium text-purple-600/80 dark:text-purple-400/80 mt-1">نتيجة مطابقة</div>
+                      </div>
+
+                      <div className="p-4 sm:p-5 text-center bg-amber-50/40 dark:bg-amber-950/15 border-l border-slate-100 dark:border-slate-800/80">
+                        <div className="text-[11px] font-bold text-amber-700 dark:text-amber-300 mb-1 flex items-center justify-center gap-1">
+                          <Crown className="w-3.5 h-3.5 text-amber-500" />
+                          <span>توقعات ذهبية</span>
+                        </div>
+                        <div className="text-2xl sm:text-3xl font-black text-amber-600 dark:text-amber-400 font-mono">
+                          {stats.goldenPredictions || 0}
+                        </div>
+                        <div className="text-[10px] font-medium text-amber-600/80 dark:text-amber-400/80 mt-1">مضاعفة النقاط</div>
+                      </div>
+
+                      <div className="p-4 sm:p-5 text-center col-span-2 sm:col-span-1">
+                        <div className="text-[11px] font-bold text-slate-400 mb-1">الترتيب العام</div>
+                        <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono">
+                          {stats.userRank ? `#${stats.userRank}` : '—'}
+                        </div>
+                        <div className="text-[10px] font-medium text-slate-400 mt-1">من {contestSettings?.participantsCount ?? leaderboard.length} متسابق</div>
+                      </div>
+                    </div>
+
+                    {/* Accuracy Visual Progress Bar */}
+                    <div className="p-5 bg-slate-50/70 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <Percent className="w-3.5 h-3.5 text-blue-500" />
+                          <span>معدل دقة التوقعات</span>
+                        </span>
+                        <span className="font-mono text-slate-900 dark:text-white">{stats.correctPredictions} صحيحة من {stats.totalPredictions} مسجلة ({stats.successRate}%)</span>
+                      </div>
+                      <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex">
+                        <div
+                          className="bg-emerald-500 h-full transition-all duration-500 rounded-full"
+                          style={{ width: `${Math.min(100, stats.successRate)}%` }}
+                          title={`توقعات صحيحة: ${stats.correctPredictions}`}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span>توقعات صحيحة ({stats.correctPredictions})</span>
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                          <span>توقعات غير موفقة ({Math.max(0, stats.totalPredictions - stats.correctPredictions)})</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : user && !isParticipant ? (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-black text-slate-900 dark:text-white">
+                        أنت غير مشترك في هذه المسابقة بعد
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                        قم بالاشتراك في المسابقة لتسجيل توقعاتك للمباريات ومتابعة إحصائياتك ونقاطك وترتيبك.
+                      </p>
+                    </div>
+                  </div>
+                  {participationStatus.status === 'none' && contestStatus === 'active' && (
+                    <button
+                      type="button"
+                      onClick={() => setApplyModalOpen(true)}
+                      className="min-h-[44px] px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition-colors shadow-xs shrink-0 cursor-pointer"
+                    >
+                      طلب الاشتراك في المسابقة
+                    </button>
+                  )}
+                </div>
+              ) : !user ? (
+                <div className="text-center py-10 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+                  <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto mb-3 border border-blue-500/20">
+                    <LogIn className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white mb-1">
+                    سجل دخولك لعرض إحصائياتك الشخصية
+                  </h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
+                    يمكنك متابعة معدل نجاحك في التوقعات وإجمالي نقاطك وترتيبك عند تسجيل الدخول.
+                  </p>
+                  <Link
+                    to="/login"
+                    className="inline-flex px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-xs hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors"
+                  >
+                    تسجيل الدخول الآن
+                  </Link>
+                </div>
+              ) : null}
+
+              {/* Contest Overview & General Stats */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                      إحصائيات عامة للمسابقة
+                    </h4>
+                  </div>
+                  <span className="text-xs font-bold text-slate-400">
+                    {contestSettings?.name || 'مسابقة التوقعات'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800">
+                    <div className="text-[10px] font-bold text-slate-400 mb-1">إجمالي المباريات</div>
+                    <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                      {predictionMatches.length}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40">
+                    <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 mb-1">المتاحة للتوقع</div>
+                    <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                      {openMatches.length}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/40">
+                    <div className="text-[10px] font-bold text-rose-700 dark:text-rose-400 mb-1">المباريات الجارية</div>
+                    <div className="text-xl font-black text-rose-600 dark:text-rose-400 font-mono">
+                      {liveMatches.length}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800">
+                    <div className="text-[10px] font-bold text-slate-400 mb-1">المباريات المنتهية</div>
+                    <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
+                      {finishedMatches.length}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40 col-span-2 sm:col-span-1">
+                    <div className="text-[10px] font-bold text-blue-700 dark:text-blue-400 mb-1">إجمالي المشتركين</div>
+                    <div className="text-xl font-black text-blue-600 dark:text-blue-400 font-mono">
+                      {contestSettings?.participantsCount ?? leaderboard.length}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scoring System Rules Banner */}
+                <div className="pt-2">
+                  <div className="p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span className="font-bold text-slate-700 dark:text-slate-300">
+                        نظام النقاط:
+                      </span>
+                      <span className="text-slate-500">
+                        النتيجة الدقيقة (<strong className="text-slate-800 dark:text-slate-200">+{contestSettings?.pointsExact || 3} نقاط</strong>) • توقع الفائز (<strong className="text-slate-800 dark:text-slate-200">+{contestSettings?.pointsWinner || 1} نقطة</strong>)
+                      </span>
+                    </div>
+
+                    <Link
+                      to={selectedContestId ? `/predictions/leaderboard?contestId=${selectedContestId}` : '/predictions/leaderboard'}
+                      className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 shrink-0"
+                    >
+                      <span>عرض لائحة الترتيب كاملة</span>
+                      <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

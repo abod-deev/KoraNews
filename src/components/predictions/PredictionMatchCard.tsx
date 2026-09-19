@@ -10,7 +10,6 @@ import {
   Save,
   Loader2,
   Trophy,
-  Share2,
   Check,
   ChevronDown,
   ChevronUp,
@@ -22,6 +21,8 @@ import {
   Send,
   Plus,
   Minus,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -65,10 +66,10 @@ export default function PredictionMatchCard({
   const [awayScore, setAwayScore] = useState<number | ''>(
     userPred !== undefined && userPred !== null ? userPred.awayScore : 0
   );
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [showWinnersList, setShowWinnersList] = useState(false);
-  const [copiedShare, setCopiedShare] = useState(false);
 
   useEffect(() => {
     if (userPred) {
@@ -140,6 +141,26 @@ export default function PredictionMatchCard({
     }
   };
 
+  const openModal = () => {
+    if (!isLoggedIn) {
+      onRequestLogin();
+      return;
+    }
+    if (!isApprovedParticipant) {
+      if (onRequestRegister) onRequestRegister();
+      return;
+    }
+    // Sync latest score values before opening
+    if (userPred) {
+      setHomeScore(userPred.homeScore);
+      setAwayScore(userPred.awayScore);
+    } else {
+      if (homeScore === '') setHomeScore(0);
+      if (awayScore === '') setAwayScore(0);
+    }
+    setIsModalOpen(true);
+  };
+
   const handleSave = async () => {
     if (homeScore === '' || awayScore === '') return;
     setIsSaving(true);
@@ -151,34 +172,13 @@ export default function PredictionMatchCard({
       );
       if (success) {
         setJustSaved(true);
-        setTimeout(() => setJustSaved(false), 3000);
+        setTimeout(() => {
+          setJustSaved(false);
+          setIsModalOpen(false);
+        }, 900);
       }
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleShareResult = async () => {
-    setCopiedShare(true);
-    setTimeout(() => setCopiedShare(false), 2500);
-
-    const shareTitle = `توقع مباراة ${m.homeTeam.name} ضد ${m.awayTeam.name}`;
-    const shareText = userPred
-      ? `توقعي لمباراة ${m.homeTeam.name} و ${m.awayTeam.name}: (${userPred.homeScore} - ${userPred.awayScore}) على منصة توقعات KoraNews!`
-      : `شارك في توقع مباراة ${m.homeTeam.name} ضد ${m.awayTeam.name} على منصة توقعات KoraNews!`;
-
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: shareTitle,
-          text: shareText,
-          url: window.location.href,
-        });
-      } catch {}
-    } else if (navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(`${shareText}\n${window.location.href}`);
-      } catch {}
     }
   };
 
@@ -369,7 +369,7 @@ export default function PredictionMatchCard({
             </h4>
           </div>
 
-          {/* Center Arena: Official Match Score or Mobile Prediction Steppers or VS */}
+          {/* Center Arena: Official Match Score or User Prediction Score Display or VS */}
           <div className="col-span-4 flex flex-col items-center justify-center min-w-0">
             {isFinished || isLive ? (
               <div className="flex flex-col items-center gap-1">
@@ -386,80 +386,41 @@ export default function PredictionMatchCard({
                   </div>
                 </div>
               </div>
-            ) : isOpen ? (
-              <div className="flex flex-col items-center w-full">
-                <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 whitespace-nowrap">
-                  ضع توقعك للنتيجة
+            ) : userPred ? (
+              <button
+                type="button"
+                onClick={() => isOpen && openModal()}
+                disabled={!isOpen}
+                className={`flex flex-col items-center gap-1 group/pred transition-transform ${
+                  isOpen ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default'
+                }`}
+                title={isOpen ? 'اضغط لتعديل التوقع' : 'توقعك المسجل'}
+              >
+                <span className="text-[9px] sm:text-[10px] font-black text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                  <span>توقعك</span>
+                  {isOpen && <Pencil className="w-2.5 h-2.5 text-blue-500" />}
                 </span>
-                {/* Mobile Ergonomic Prediction Steppers */}
-                <div className="flex items-center gap-1 sm:gap-2.5 dir-ltr">
-                  
-                  {/* Home Score Stepper */}
-                  <div className="flex flex-col items-center gap-0.5 sm:gap-1">
-                    <button
-                      type="button"
-                      onClick={() => adjustScore('home', 1)}
-                      className="w-8 sm:w-10 h-7 sm:h-8 rounded-lg sm:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center text-xs transition-colors cursor-pointer active:scale-95 shadow-2xs"
-                      title="زيادة هدف"
-                      aria-label="زيادة أهداف الفريق الأول"
-                    >
-                      <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </button>
-                    <input
-                      type="number"
-                      min="0"
-                      max="99"
-                      value={homeScore}
-                      onChange={(e) => handleScoreChange('home', e.target.value)}
-                      className="w-8 sm:w-11 h-9 sm:h-12 text-center text-lg sm:text-2xl font-black font-mono bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 outline-none text-slate-900 dark:text-white transition-all shadow-inner"
-                      aria-label="أهداف الفريق الأول"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => adjustScore('home', -1)}
-                      className="w-8 sm:w-10 h-7 sm:h-8 rounded-lg sm:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center text-xs transition-colors cursor-pointer active:scale-95 shadow-2xs"
-                      title="إنقاص هدف"
-                      aria-label="إنقاص أهداف الفريق الأول"
-                    >
-                      <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </button>
+                <div className="flex items-center gap-1.5 sm:gap-2 dir-ltr">
+                  <div className="min-w-[2rem] sm:min-w-[2.75rem] h-9 sm:h-11 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200 border-2 border-blue-300 dark:border-blue-700 font-mono text-lg sm:text-2xl font-black flex items-center justify-center px-1.5 shadow-xs">
+                    {userPred.homeScore}
                   </div>
-
-                  <span className="text-sm sm:text-lg font-bold text-slate-300 dark:text-slate-600 mb-4 font-mono">:</span>
-
-                  {/* Away Score Stepper */}
-                  <div className="flex flex-col items-center gap-0.5 sm:gap-1">
-                    <button
-                      type="button"
-                      onClick={() => adjustScore('away', 1)}
-                      className="w-8 sm:w-10 h-7 sm:h-8 rounded-lg sm:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center text-xs transition-colors cursor-pointer active:scale-95 shadow-2xs"
-                      title="زيادة هدف"
-                      aria-label="زيادة أهداف الفريق الثاني"
-                    >
-                      <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </button>
-                    <input
-                      type="number"
-                      min="0"
-                      max="99"
-                      value={awayScore}
-                      onChange={(e) => handleScoreChange('away', e.target.value)}
-                      className="w-8 sm:w-11 h-9 sm:h-12 text-center text-lg sm:text-2xl font-black font-mono bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 outline-none text-slate-900 dark:text-white transition-all shadow-inner"
-                      aria-label="أهداف الفريق الثاني"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => adjustScore('away', -1)}
-                      className="w-8 sm:w-10 h-7 sm:h-8 rounded-lg sm:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center text-xs transition-colors cursor-pointer active:scale-95 shadow-2xs"
-                      title="إنقاص هدف"
-                      aria-label="إنقاص أهداف الفريق الثاني"
-                    >
-                      <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </button>
+                  <span className="text-sm sm:text-base font-black text-blue-400 font-mono">:</span>
+                  <div className="min-w-[2rem] sm:min-w-[2.75rem] h-9 sm:h-11 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200 border-2 border-blue-300 dark:border-blue-700 font-mono text-lg sm:text-2xl font-black flex items-center justify-center px-1.5 shadow-xs">
+                    {userPred.awayScore}
                   </div>
-
                 </div>
-              </div>
+              </button>
+            ) : isOpen ? (
+              <button
+                type="button"
+                onClick={openModal}
+                className="flex flex-col items-center justify-center gap-1 px-3 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white active:scale-95 transition-all shadow-xs cursor-pointer group/btn"
+              >
+                <Target className="w-4 h-4 text-amber-300 group-hover/btn:scale-110 transition-transform" />
+                <span className="text-[10px] sm:text-xs font-black whitespace-nowrap">
+                  توقع النتيجة
+                </span>
+              </button>
             ) : (
               <div className="flex flex-col items-center justify-center gap-1">
                 <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700 flex items-center justify-center text-xs font-black text-slate-400 dark:text-slate-500 shadow-2xs">
@@ -540,57 +501,31 @@ export default function PredictionMatchCard({
             )}
           </div>
 
-          {/* Action Buttons: Save Prediction, Share, or Login */}
+          {/* Action Buttons: Modal Trigger or Login */}
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            
-            {/* Share Prediction Result / Match */}
-            {(isCalculated || isFinished || isLive || userPred) && (
-              <button
-                type="button"
-                onClick={handleShareResult}
-                className="min-w-[44px] min-h-[44px] p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer shadow-2xs flex items-center justify-center shrink-0"
-                title="مشاركة التوقع"
-                aria-label="مشاركة التوقع"
-              >
-                {copiedShare ? (
-                  <Check className="w-4 h-4 text-emerald-500" />
-                ) : (
-                  <Share2 className="w-4 h-4" />
-                )}
-              </button>
-            )}
-
-            {/* Save / Update Prediction Button */}
+            {/* Open Prediction Modal Button */}
             {isOpen && isLoggedIn && isApprovedParticipant && (
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSaving || homeScore === '' || awayScore === ''}
-                className={`w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  justSaved
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : isSaving || homeScore === '' || awayScore === ''
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-xs'
-                }`}
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>جاري الحفظ...</span>
-                  </>
-                ) : justSaved ? (
-                  <>
-                    <Check className="w-4 h-4" />
-                    <span>تم الحفظ بنجاح</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>{userPred ? 'تحديث التوقع' : 'تأكيد التوقع'}</span>
-                  </>
-                )}
-              </button>
+              userPred ? (
+                <button
+                  type="button"
+                  onClick={openModal}
+                  className="min-w-[40px] min-h-[40px] p-2 sm:px-3 sm:py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  title="تعديل التوقع"
+                  aria-label="تعديل التوقع"
+                >
+                  <Pencil className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span className="hidden sm:inline">تعديل</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openModal}
+                  className="w-full sm:w-auto min-h-[40px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-xs transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  <span>توقع النتيجة</span>
+                </button>
+              )
             )}
 
             {/* Login / Register prompt */}
@@ -598,7 +533,7 @@ export default function PredictionMatchCard({
               <button
                 type="button"
                 onClick={!isLoggedIn ? onRequestLogin : onRequestRegister}
-                className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-xs hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
+                className="w-full sm:w-auto min-h-[40px] px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-xs hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
               >
                 {!isLoggedIn
                   ? 'سجل دخولك لتسجيل التوقع'
@@ -609,6 +544,211 @@ export default function PredictionMatchCard({
             )}
           </div>
         </div>
+
+        {/* 4. Prediction Popup Modal (واجهة التوقع المنبثقة) */}
+        <AnimatePresence>
+          {isModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => !isSaving && setIsModalOpen(false)}
+                className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs"
+              />
+
+              {/* Dialog Box */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.92, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: 15 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-10 p-5 sm:p-6"
+              >
+                {/* Modal Header */}
+                <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                        {userPred ? 'تعديل توقع النتيجة' : 'تسجيل توقع النتيجة'}
+                      </h3>
+                      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                        {m.leagueName} • {formattedDate}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => !isSaving && setIsModalOpen(false)}
+                    className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Match Interactive Stepper Arena */}
+                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 sm:p-5 border border-slate-100 dark:border-slate-800 mb-4">
+                  <div className="grid grid-cols-12 items-center gap-2">
+                    
+                    {/* Home Team */}
+                    <div className="col-span-4 flex flex-col items-center text-center gap-2">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 p-2.5 flex items-center justify-center shadow-xs">
+                        {m.homeTeam.logo ? (
+                          <img
+                            src={m.homeTeam.logo}
+                            alt={m.homeTeam.name}
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        ) : (
+                          <Shield className="w-7 h-7 text-slate-400" />
+                        )}
+                      </div>
+                      <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white line-clamp-2 leading-tight">
+                        {m.homeTeam.name}
+                      </span>
+                    </div>
+
+                    {/* Steppers */}
+                    <div className="col-span-4 flex flex-col items-center justify-center">
+                      <span className="text-[10px] font-bold text-slate-400 mb-2 whitespace-nowrap">النتيجة المتوقعة</span>
+                      <div className="flex items-center gap-1.5 dir-ltr">
+                        {/* Home Score Stepper */}
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => adjustScore('home', 1)}
+                            className="w-9 h-8 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 hover:bg-blue-50 dark:hover:bg-slate-600 flex items-center justify-center text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            max="99"
+                            value={homeScore}
+                            onChange={(e) => handleScoreChange('home', e.target.value)}
+                            className="w-10 sm:w-11 h-11 sm:h-12 text-center text-xl sm:text-2xl font-black font-mono bg-white dark:bg-slate-900 border-2 border-blue-500 rounded-xl text-slate-900 dark:text-white shadow-inner outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => adjustScore('home', -1)}
+                            className="w-9 h-8 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 hover:bg-blue-50 dark:hover:bg-slate-600 flex items-center justify-center text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <span className="text-xl font-mono font-bold text-slate-400 mb-3">:</span>
+
+                        {/* Away Score Stepper */}
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => adjustScore('away', 1)}
+                            className="w-9 h-8 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 hover:bg-blue-50 dark:hover:bg-slate-600 flex items-center justify-center text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            max="99"
+                            value={awayScore}
+                            onChange={(e) => handleScoreChange('away', e.target.value)}
+                            className="w-10 sm:w-11 h-11 sm:h-12 text-center text-xl sm:text-2xl font-black font-mono bg-white dark:bg-slate-900 border-2 border-blue-500 rounded-xl text-slate-900 dark:text-white shadow-inner outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => adjustScore('away', -1)}
+                            className="w-9 h-8 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 hover:bg-blue-50 dark:hover:bg-slate-600 flex items-center justify-center text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Away Team */}
+                    <div className="col-span-4 flex flex-col items-center text-center gap-2">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 p-2.5 flex items-center justify-center shadow-xs">
+                        {m.awayTeam.logo ? (
+                          <img
+                            src={m.awayTeam.logo}
+                            alt={m.awayTeam.name}
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        ) : (
+                          <Shield className="w-7 h-7 text-slate-400" />
+                        )}
+                      </div>
+                      <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white line-clamp-2 leading-tight">
+                        {m.awayTeam.name}
+                      </span>
+                    </div>
+
+                  </div>
+
+                  {/* Prediction Outcome Indicator */}
+                  <div className="mt-3.5 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 text-center">
+                    <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                      {Number(homeScore) > Number(awayScore)
+                        ? `توقعك: فوز ${m.homeTeam.name}`
+                        : Number(homeScore) < Number(awayScore)
+                        ? `توقعك: فوز ${m.awayTeam.name}`
+                        : `توقعك: تعادل الفريقين`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Modal Buttons */}
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSaving || homeScore === '' || awayScore === ''}
+                    className={`flex-1 min-h-[46px] rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs ${
+                      justSaved
+                        ? 'bg-emerald-600 text-white'
+                        : isSaving || homeScore === '' || awayScore === ''
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-98'
+                    }`}
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>جاري الحفظ...</span>
+                      </>
+                    ) : justSaved ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>تم الحفظ بنجاح</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>{userPred ? 'تحديث وحفظ التوقع' : 'تأكيد التوقع'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    disabled={isSaving}
+                    className="px-4 min-h-[46px] rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* 4. Expandable Correct Predictors */}
         {isCalculated && predictionMatch.correctPredictorsCount !== undefined && (

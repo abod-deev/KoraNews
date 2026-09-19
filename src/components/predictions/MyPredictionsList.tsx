@@ -115,10 +115,10 @@ export default function MyPredictionsList({
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
         {[
           { id: 'all', label: `الكل (${predictions.length})` },
-          { id: 'correct', label: `صحيحة (${correctCount})` },
-          { id: 'wrong', label: `غير دقيقة (${wrongCount})` },
-          ...(goldenCount > 0 ? [{ id: 'golden', label: `توقعات ذهبية 👑 (${goldenCount})` }] : []),
           { id: 'pending', label: `قيد الانتظار (${pendingCount})` },
+          { id: 'correct', label: `صحيحة (${correctCount})` },
+          { id: 'golden', label: `ذهبية 👑 (${goldenCount})` },
+          { id: 'wrong', label: `خاطئة (${wrongCount})` },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -137,7 +137,14 @@ export default function MyPredictionsList({
 
       {/* Predictions Cards List */}
       <div className="space-y-3">
-        {filteredList.map((item) => {
+        {filteredList.length === 0 ? (
+          <div className="text-center py-10 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+              لا توجد توقعات ضمن هذا التصنيف حالياً
+            </p>
+          </div>
+        ) : (
+          filteredList.map((item) => {
           const m = item.match;
           if (!m) return null;
 
@@ -251,7 +258,7 @@ export default function MyPredictionsList({
                   ) : isWrong ? (
                     <span className="inline-flex items-center gap-1.5 font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-full text-xs">
                       <XCircle className="w-3.5 h-3.5 text-slate-400" />
-                      <span>توقع غير دقيق (0 نقطة)</span>
+                      <span>توقع خاطئ (0 نقطة)</span>
                     </span>
                   ) : m.status === 'LIVE' ? (
                     <span className="inline-flex items-center gap-1.5 font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800/60 px-3 py-1 rounded-full text-xs animate-pulse">
@@ -268,7 +275,8 @@ export default function MyPredictionsList({
               </div>
             </motion.div>
           );
-        })}
+        })
+      )}
       </div>
     </div>
   );
