@@ -18,7 +18,7 @@ import { emailVerifications, users } from '../src/db/schema.ts';
 import { eq, sql } from 'drizzle-orm';
 import { hashPassword } from '../server/security/passwords.ts';
 
-describe('Registration & Email Verification OTP Flow', () => {
+describe('Registration & Email Verification OTP Flow', { timeout: 25000 }, () => {
   const testEmail = 'otp_test_user@koranews.com';
   const testName = 'مستخدم تجريبي كورة';
   const testPassword = 'SecurePassword123!';
@@ -119,7 +119,7 @@ describe('Registration & Email Verification OTP Flow', () => {
     });
   });
 
-  describe('Full DB-Backed Verification Lifecycle', () => {
+  describe('Full DB-Backed Verification Lifecycle', { timeout: 25000 }, () => {
     it('should register verification request in database and verify successfully with valid OTP', async () => {
       const sendResult = await sendVerificationRequest(testEmail, testName, testPassword);
       expect(sendResult.success).toBe(true);

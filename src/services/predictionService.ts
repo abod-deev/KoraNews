@@ -12,8 +12,14 @@ import {
 } from '../db/schema.ts';
 import { eq, and, sql, desc, asc, count, sum, inArray, or, ne } from 'drizzle-orm';
 import { seedSaudiAndNationalTeams } from './seedSaudiAndNationalTeams.ts';
-import { matchTeamFromCatalog, matchLeagueFromCatalog, normalizeSportsName } from './knownTeamsAndLeagues.ts';
-import { getArabicTeamName } from '../utils/teamTranslations.ts';
+import { matchTeamFromCatalog, matchLeagueFromCatalog } from './knownTeamsAndLeagues.ts';
+import {
+  parseMeccaDateTimeInput,
+  formatMeccaTime24,
+  formatMeccaTime,
+  getMatchDateStr,
+  MECCA_TIMEZONE,
+} from '../utils/timezoneDateUtils.ts';
 
 export function normalizeArabicText(str: string): string {
   return (str || '')
@@ -35,6 +41,16 @@ export type { PredictionMatchInfo };
 
 export type ContestSettingsRecord = typeof contestSettings.$inferSelect;
 
+// In-memory micro-cache for contest settings to eliminate redundant DB roundtrips on hot paths
+let cachedActiveContest: { data: ContestSettingsRecord | null; expiresAt: number } | null = null;
+const cachedContestsById = new Map<number, { data: ContestSettingsRecord | null; expiresAt: number }>();
+const CONTEST_CACHE_TTL_MS = 20_000; // 20 seconds cache
+
+export function invalidateContestCache() {
+  cachedActiveContest = null;
+  cachedContestsById.clear();
+}
+
 /**
  * Fetches contest settings.
  * - If contestId is specified, returns that contest.
@@ -45,11 +61,24 @@ export type ContestSettingsRecord = typeof contestSettings.$inferSelect;
  * - If no contests exist at all in the database, returns null without auto-creating anything.
  */
 export async function getContestSettings(contestId?: number): Promise<ContestSettingsRecord | null> {
+  const now = Date.now();
+  if (contestId !== undefined && !isNaN(contestId)) {
+    const cached = cachedContestsById.get(contestId);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+  } else if (!contestId) {
+    if (cachedActiveContest && cachedActiveContest.expiresAt > now) {
+      return cachedActiveContest.data;
+    }
+  }
+
   return await withDbRetry(async () => {
     if (contestId !== undefined && !isNaN(contestId)) {
       const found = await db.query.contestSettings.findFirst({
         where: eq(contestSettings.id, contestId),
       });
+      cachedContestsById.set(contestId, { data: found || null, expiresAt: Date.now() + CONTEST_CACHE_TTL_MS });
       return found || null;
     }
 
@@ -59,6 +88,10 @@ export async function getContestSettings(contestId?: number): Promise<ContestSet
       orderBy: [desc(contestSettings.createdAt)],
     });
 
+    cachedActiveContest = { data: activeContest || null, expiresAt: Date.now() + CONTEST_CACHE_TTL_MS };
+    if (activeContest) {
+      cachedContestsById.set(activeContest.id, { data: activeContest, expiresAt: Date.now() + CONTEST_CACHE_TTL_MS });
+    }
     return activeContest || null;
   });
 }
@@ -67,12 +100,11 @@ export async function getContestSettings(contestId?: number): Promise<ContestSet
  * Returns the currently active contest, or null if none is active.
  */
 export async function getActiveContest(): Promise<ContestSettingsRecord | null> {
-  return await withDbRetry(async () => {
-    const activeContest = await db.query.contestSettings.findFirst({
-      where: eq(contestSettings.status, 'active'),
-    });
-    return activeContest || null;
-  });
+  const now = Date.now();
+  if (cachedActiveContest && cachedActiveContest.expiresAt > now) {
+    return cachedActiveContest.data;
+  }
+  return await getContestSettings();
 }
 
 /**
@@ -127,6 +159,7 @@ export async function createContest(data: { name: string; description?: string }
       })
       .returning();
 
+    invalidateContestCache();
     return inserted[0];
   });
 }
@@ -154,6 +187,7 @@ export async function completeContest(contestId: number): Promise<ContestSetting
       .where(eq(contestSettings.id, contestId))
       .returning();
 
+    invalidateContestCache();
     return updated[0];
   });
 }
@@ -225,6 +259,7 @@ export async function deleteContest(contestId: number): Promise<{ success: boole
       await tx.delete(contestSettings).where(eq(contestSettings.id, contestId));
     });
 
+    invalidateContestCache();
     return {
       success: true,
       message: 'تم حذف المسابقة وجميع بياناتها المرتبطة بها بنجاح',
@@ -286,6 +321,7 @@ export async function updateContestSettings(data: {
       .where(eq(contestSettings.id, existing.id))
       .returning();
 
+    invalidateContestCache();
     return updated[0];
   });
 }
@@ -445,9 +481,15 @@ export async function getAdminContestParticipants(filterStatus?: string, search?
       const evaluatedPredictions = evaluatedPreds.length;
       const correctPredictions = evaluatedPreds.filter((pr) => (pr.pointsEarned ?? 0) > 0).length;
       const incorrectPredictions = evaluatedPreds.filter((pr) => (pr.pointsEarned ?? 0) === 0).length;
-      const goldenPredictions = evaluatedPreds.filter((pr) => pr.isGolden || (pr.goldenPoints ?? 0) > 0).length;
+      const siteGoldens = evaluatedPreds.filter((pr) => pr.isGolden || (pr.goldenPoints ?? 0) > 0).length;
       const pendingPredictions = userPreds.filter((pr) => !pr.isEvaluated).length;
-      const totalPoints = userPreds.reduce((sum, pr) => sum + (pr.pointsEarned ?? 0), 0);
+      const sitePoints = userPreds.reduce((sum, pr) => sum + (pr.pointsEarned ?? 0), 0);
+      
+      const initialPoints = p.initialPoints || 0;
+      const initialGoldenPredictions = p.initialGoldenPredictions || 0;
+      const totalGoldenPredictions = siteGoldens + initialGoldenPredictions;
+      const { bonusPoints: goldenBonus } = calculateGoldenPoints(totalGoldenPredictions);
+      const totalPoints = sitePoints + initialPoints + goldenBonus;
       const accuracy = evaluatedPredictions > 0 ? Math.round((correctPredictions / evaluatedPredictions) * 100) : 0;
 
       return {
@@ -458,13 +500,22 @@ export async function getAdminContestParticipants(filterStatus?: string, search?
         appliedAt: p.appliedAt.toISOString(),
         reviewedAt: p.reviewedAt ? p.reviewedAt.toISOString() : null,
         notes: p.notes,
+        initialPoints,
+        initialGoldenPredictions,
+        manualAdjustmentReason: p.manualAdjustmentReason || null,
+        pointsAdjustedAt: p.pointsAdjustedAt ? p.pointsAdjustedAt.toISOString() : null,
+        pointsAdjustedBy: p.pointsAdjustedBy || null,
         stats: {
           totalPredictions,
           evaluatedPredictions,
           correctPredictions,
           incorrectPredictions,
-          goldenPredictions,
+          goldenPredictions: totalGoldenPredictions,
+          siteGoldens,
+          initialGoldens: initialGoldenPredictions,
           pendingPredictions,
+          sitePoints,
+          initialPoints,
           totalPoints,
           accuracy,
         },
@@ -521,35 +572,54 @@ export async function getAdminParticipantPredictions(userId: number, contestId?:
       whereConditions.push(eq(predictions.contestId, targetContestId));
     }
 
-    const userPreds = await db.query.predictions.findMany({
+    let userPreds = await db.query.predictions.findMany({
       where: and(...whereConditions),
       with: {
         predictionMatch: {
           with: {
-            match: {
-              with: {
-                league: true,
-                homeTeam: true,
-                awayTeam: true,
-              },
-            },
+            match: true,
           },
         },
       },
       orderBy: [desc(predictions.createdAt)],
     });
 
-    return userPreds.map((p) => {
+    // Fallback: If no predictions found for this specific contest, check if user has any predictions in other contests
+    if (userPreds.length === 0 && targetContestId !== undefined) {
+      userPreds = await db.query.predictions.findMany({
+        where: eq(predictions.userId, userId),
+        with: {
+          predictionMatch: {
+            with: {
+              match: true,
+            },
+          },
+        },
+        orderBy: [desc(predictions.createdAt)],
+      });
+    }
+
+    return userPreds.map((p: any) => {
       const pm = p.predictionMatch;
-      const actualHomeScore = pm.customHomeScore !== null && pm.customHomeScore !== undefined ? pm.customHomeScore : pm.match?.homeScore ?? null;
-      const actualAwayScore = pm.customAwayScore !== null && pm.customAwayScore !== undefined ? pm.customAwayScore : pm.match?.awayScore ?? null;
-      const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
-      const homeTeamName = pm.customHomeName || pm.match?.homeTeam?.name || 'الفريق الأول';
-      const homeTeamLogo = pm.customHomeLogo || pm.match?.homeTeam?.logo || null;
-      const awayTeamName = pm.customAwayName || pm.match?.awayTeam?.name || 'الفريق الثاني';
-      const awayTeamLogo = pm.customAwayLogo || pm.match?.awayTeam?.logo || null;
-      const leagueName = pm.customLeagueName || pm.match?.league?.name || 'بطولة عامة';
-      const matchDate = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
+      const actualHomeScore = pm?.customHomeScore !== null && pm?.customHomeScore !== undefined ? pm.customHomeScore : pm?.match?.homeScore ?? null;
+      const actualAwayScore = pm?.customAwayScore !== null && pm?.customAwayScore !== undefined ? pm.customAwayScore : pm?.match?.awayScore ?? null;
+      const matchStatus = pm?.customStatus || pm?.match?.status || 'SCHEDULED';
+      const homeTeamName = pm?.customHomeName || 'الفريق الأول';
+      const homeTeamLogo = pm?.customHomeLogo || null;
+      const awayTeamName = pm?.customAwayName || 'الفريق الثاني';
+      const awayTeamLogo = pm?.customAwayLogo || null;
+      const leagueName = pm?.customLeagueName || 'بطولة عامة';
+      const leagueLogo = pm?.customLeagueLogo || null;
+      const matchDate = pm?.customMatchDate || pm?.match?.matchDate || pm?.createdAt || p.createdAt;
+      const isCalculated = Boolean(pm?.isCalculated || p.isEvaluated);
+      const isConfirmed = Boolean(pm?.isConfirmedByAdmin);
+
+      const statusLower = String(matchStatus || '').toLowerCase();
+      const normalizedStatus = (statusLower.includes('fin') || statusLower.includes('ft') || statusLower.includes('ended'))
+        ? 'finished'
+        : (statusLower.includes('live') || statusLower.includes('in_play') || statusLower.includes('1h') || statusLower.includes('2h') || statusLower.includes('ht'))
+        ? 'live'
+        : 'scheduled';
 
       return {
         id: p.id,
@@ -557,25 +627,48 @@ export async function getAdminParticipantPredictions(userId: number, contestId?:
         contestId: p.contestId,
         homeScore: p.homeScore,
         awayScore: p.awayScore,
-        pointsEarned: p.pointsEarned,
-        isEvaluated: p.isEvaluated,
-        isGolden: p.isGolden,
-        goldenPoints: p.goldenPoints,
+        pointsEarned: p.pointsEarned ?? 0,
+        isEvaluated: Boolean(p.isEvaluated),
+        isGolden: Boolean(p.isGolden),
+        goldenPoints: p.goldenPoints ?? 0,
+        isCalculated,
+        isConfirmedByAdmin: isConfirmed,
         createdAt: p.createdAt ? p.createdAt.toISOString() : null,
         updatedAt: p.updatedAt ? p.updatedAt.toISOString() : null,
+        // Match structure compatible with UI
+        match: {
+          id: pm?.matchId || String(pm?.id || p.predictionMatchId),
+          homeTeam: {
+            name: homeTeamName,
+            logo: homeTeamLogo,
+          },
+          awayTeam: {
+            name: awayTeamName,
+            logo: awayTeamLogo,
+          },
+          league: {
+            name: leagueName,
+            logo: leagueLogo,
+          },
+          homeScore: actualHomeScore,
+          awayScore: actualAwayScore,
+          status: normalizedStatus,
+          date: matchDate ? (matchDate instanceof Date ? matchDate.toISOString() : String(matchDate)) : null,
+        },
         matchInfo: {
           homeTeamName,
           homeTeamLogo,
           awayTeamName,
           awayTeamLogo,
           leagueName,
-          matchDate,
+          leagueLogo,
+          matchDate: matchDate ? (matchDate instanceof Date ? matchDate.toISOString() : String(matchDate)) : null,
           actualHomeScore,
           actualAwayScore,
           matchStatus,
-          isCalculated: pm.isCalculated,
-          isConfirmedByAdmin: pm.isConfirmedByAdmin,
-          pointsPerMatch: pm.pointsPerMatch ?? 2,
+          isCalculated,
+          isConfirmedByAdmin: isConfirmed,
+          pointsPerMatch: pm?.pointsPerMatch ?? 2,
         },
       };
     });
@@ -667,6 +760,260 @@ export async function removeParticipant(participantId: number) {
   });
 }
 
+/**
+ * Adjusts or sets initial points and golden predictions for a contest participant.
+ * Designed for adding points/goldens or manual administrative corrections.
+ */
+export async function adjustParticipantPointsAndGoldens(params: {
+  participantId: number;
+  points: number;
+  goldenPredictions: number;
+  mode: 'set' | 'add';
+  reason?: string;
+  adminUserId: number;
+}) {
+  return await withDbRetry(async () => {
+    const { participantId, points, goldenPredictions, mode, reason, adminUserId } = params;
+
+    const participant = await db.query.contestParticipants.findFirst({
+      where: eq(contestParticipants.id, participantId),
+      with: {
+        user: true,
+        contest: true,
+      },
+    });
+
+    if (!participant) {
+      throw new Error('المشارك غير موجود في المسابقة');
+    }
+
+    const currentPoints = participant.initialPoints || 0;
+    const currentGoldens = participant.initialGoldenPredictions || 0;
+
+    let nextPoints: number;
+    let nextGoldens: number;
+
+    if (mode === 'add') {
+      nextPoints = Math.max(0, currentPoints + (Math.floor(Number(points)) || 0));
+      nextGoldens = Math.max(0, currentGoldens + (Math.floor(Number(goldenPredictions)) || 0));
+    } else {
+      nextPoints = Math.max(0, Math.floor(Number(points)) || 0);
+      nextGoldens = Math.max(0, Math.floor(Number(goldenPredictions)) || 0);
+    }
+
+    const [updated] = await db
+      .update(contestParticipants)
+      .set({
+        initialPoints: nextPoints,
+        initialGoldenPredictions: nextGoldens,
+        manualAdjustmentReason: reason?.trim() || 'تعديل نقاط وذهبيات من قبل المشرف',
+        pointsAdjustedAt: new Date(),
+        pointsAdjustedBy: adminUserId,
+        status: participant.status === 'rejected' ? 'approved' : participant.status, // auto-approve if rejected
+        updatedAt: new Date(),
+      })
+      .where(eq(contestParticipants.id, participantId))
+      .returning();
+
+    return {
+      success: true,
+      participant: updated,
+      previous: {
+        initialPoints: currentPoints,
+        initialGoldenPredictions: currentGoldens,
+      },
+      current: {
+        initialPoints: nextPoints,
+        initialGoldenPredictions: nextGoldens,
+      },
+    };
+  });
+}
+
+/**
+ * Directly enrolls a registered user into a contest with initial points and goldens.
+ */
+export async function addParticipantWithInitialPoints(params: {
+  contestId: number;
+  userId: number;
+  points: number;
+  goldenPredictions: number;
+  reason?: string;
+  adminUserId: number;
+}) {
+  return await withDbRetry(async () => {
+    const { contestId, userId, points, goldenPredictions, reason, adminUserId } = params;
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    if (!user) {
+      throw new Error('المستخدم غير موجود في النظام');
+    }
+
+    const safePoints = Math.max(0, Math.floor(Number(points)) || 0);
+    const safeGoldens = Math.max(0, Math.floor(Number(goldenPredictions)) || 0);
+    const cleanReason = reason?.trim() || 'إضافة المتسابق بنقاط من قبل المشرف';
+
+    // Check if participant already exists in this contest
+    const existing = await db.query.contestParticipants.findFirst({
+      where: and(
+        eq(contestParticipants.contestId, contestId),
+        eq(contestParticipants.userId, userId)
+      ),
+    });
+
+    if (existing) {
+      // Update existing record
+      const [updated] = await db
+        .update(contestParticipants)
+        .set({
+          status: 'approved',
+          initialPoints: safePoints,
+          initialGoldenPredictions: safeGoldens,
+          manualAdjustmentReason: cleanReason,
+          pointsAdjustedAt: new Date(),
+          pointsAdjustedBy: adminUserId,
+          reviewedAt: new Date(),
+          reviewedBy: adminUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(contestParticipants.id, existing.id))
+        .returning();
+
+      return { success: true, participant: updated, isNew: false };
+    }
+
+    // Insert brand new participant record
+    const [inserted] = await db
+      .insert(contestParticipants)
+      .values({
+        contestId,
+        userId,
+        status: 'approved',
+        initialPoints: safePoints,
+        initialGoldenPredictions: safeGoldens,
+        manualAdjustmentReason: cleanReason,
+        pointsAdjustedAt: new Date(),
+        pointsAdjustedBy: adminUserId,
+        appliedAt: new Date(),
+        reviewedAt: new Date(),
+        reviewedBy: adminUserId,
+        notes: 'تمت الإضافة واعتماد النقاط بواسطة المشرف',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return { success: true, participant: inserted, isNew: true };
+  });
+}
+
+/**
+ * Batch adjusts multiple participants points / goldens.
+ */
+export async function batchAdjustParticipantsPoints(params: {
+  contestId: number;
+  items: Array<{
+    userId?: number;
+    participantId?: number;
+    points: number;
+    goldenPredictions?: number;
+    reason?: string;
+  }>;
+  adminUserId: number;
+}) {
+  return await withDbRetry(async () => {
+    const { contestId, items, adminUserId } = params;
+    const results: Array<{ id: number; success: boolean; error?: string }> = [];
+
+    for (const item of items) {
+      try {
+        if (item.participantId) {
+          await adjustParticipantPointsAndGoldens({
+            participantId: item.participantId,
+            points: item.points || 0,
+            goldenPredictions: item.goldenPredictions || 0,
+            mode: 'set',
+            reason: item.reason || 'إضافة نقاط من قبل المشرف',
+            adminUserId,
+          });
+          results.push({ id: item.participantId, success: true });
+        } else if (item.userId) {
+          const res = await addParticipantWithInitialPoints({
+            contestId,
+            userId: item.userId,
+            points: item.points || 0,
+            goldenPredictions: item.goldenPredictions || 0,
+            reason: item.reason || 'إضافة نقاط من قبل المشرف',
+            adminUserId,
+          });
+          results.push({ id: res.participant.id, success: true });
+        }
+      } catch (err: any) {
+        results.push({
+          id: item.participantId || item.userId || 0,
+          success: false,
+          error: err?.message || 'فشل التعديل',
+        });
+      }
+    }
+
+    return { success: true, results };
+  });
+}
+
+/**
+ * Returns registered users with their participation status for easy selection in admin panel.
+ */
+export async function getEligibleUsersForContest(contestId: number, search?: string) {
+  return await withDbRetry(async () => {
+    // Get existing participants in this contest
+    const existing = await db.query.contestParticipants.findMany({
+      where: eq(contestParticipants.contestId, contestId),
+    });
+    const participantMap = new Map(existing.map((p) => [p.userId, p]));
+
+    // Fetch all active users
+    const allUsers = await db.query.users.findMany({
+      where: eq(users.isActive, true),
+      columns: {
+        id: true,
+        name: true,
+        email: true,
+        avatar: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    let list = allUsers.map((u) => {
+      const part = participantMap.get(u.id);
+      return {
+        ...u,
+        isParticipant: !!part,
+        participantId: part ? part.id : null,
+        participantStatus: part ? part.status : null,
+        initialPoints: part ? part.initialPoints : 0,
+        initialGoldenPredictions: part ? part.initialGoldenPredictions : 0,
+      };
+    });
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (u) =>
+          (u.name && u.name.toLowerCase().includes(q)) ||
+          (u.email && u.email.toLowerCase().includes(q)) ||
+          String(u.id) === q
+      );
+    }
+
+    return list;
+  });
+}
+
 // ==========================================
 // MATCH STATE DETERMINATION
 // ==========================================
@@ -722,15 +1069,7 @@ export function determineMatchPredictionState(
 
   if (!matchDate) return 'open';
   
-  let kickoffTime: number;
-  if (typeof matchDate === 'string' && matchDate.length > 0) {
-    const normalized = matchDate.includes('T') && !matchDate.endsWith('Z') && !matchDate.includes('+') && !matchDate.includes('-')
-      ? matchDate + 'Z'
-      : matchDate;
-    kickoffTime = new Date(normalized).getTime();
-  } else {
-    kickoffTime = new Date(matchDate).getTime();
-  }
+  const kickoffTime = parseMeccaDateTimeInput(matchDate).getTime();
 
   if (isNaN(kickoffTime)) return 'open';
 
@@ -775,15 +1114,7 @@ export function isMatchOpenForPrediction(
   }
   if (!matchDate) return true;
 
-  let kickoffTime: number;
-  if (typeof matchDate === 'string' && matchDate.length > 0) {
-    const normalized = matchDate.includes('T') && !matchDate.endsWith('Z') && !matchDate.includes('+') && !matchDate.includes('-')
-      ? matchDate + 'Z'
-      : matchDate;
-    kickoffTime = new Date(normalized).getTime();
-  } else {
-    kickoffTime = new Date(matchDate).getTime();
-  }
+  const kickoffTime = parseMeccaDateTimeInput(matchDate).getTime();
 
   if (isNaN(kickoffTime)) return true;
 
@@ -1150,7 +1481,7 @@ export function calculateGoldenPoints(goldenCount: number): {
   totalGoldenPoints: number;
 } {
   const safeCount = Math.max(0, Math.floor(Number(goldenCount) || 0));
-  const basePoints = safeCount * 1;
+  const basePoints = safeCount * 3;
   const bonusPoints = Math.floor(safeCount / 3);
   const totalGoldenPoints = basePoints + bonusPoints;
   return {
@@ -1189,6 +1520,9 @@ export async function getUserPredictionStats(userId: number, contestId?: number)
     if (targetContestId === undefined) {
       return {
         totalPoints: 0,
+        initialPoints: 0,
+        initialGoldenPredictions: 0,
+        sitePoints: 0,
         totalPredictions: 0,
         correctPredictions: 0,
         wrongPredictions: 0,
@@ -1201,6 +1535,22 @@ export async function getUserPredictionStats(userId: number, contestId?: number)
       };
     }
 
+    // 0. Fetch participant initial points and goldens if applicable
+    let initialPoints = 0;
+    let initialGoldenPredictions = 0;
+    if (targetContestId !== undefined) {
+      const part = await db.query.contestParticipants.findFirst({
+        where: and(
+          eq(contestParticipants.userId, userId),
+          eq(contestParticipants.contestId, targetContestId)
+        ),
+      });
+      if (part) {
+        initialPoints = part.initialPoints || 0;
+        initialGoldenPredictions = part.initialGoldenPredictions || 0;
+      }
+    }
+
     // 1. Total points from points ledger for contest
     const pointsConditions = [eq(predictionPoints.userId, userId)];
     if (targetContestId !== undefined) {
@@ -1211,7 +1561,8 @@ export async function getUserPredictionStats(userId: number, contestId?: number)
       .select({ total: sum(predictionPoints.points) })
       .from(predictionPoints)
       .where(and(...pointsConditions));
-    const rawTotalPoints = Number(pointsResult[0]?.total || 0);
+    const siteRawPoints = Number(pointsResult[0]?.total || 0);
+    const rawTotalPoints = siteRawPoints + initialPoints;
 
     // 2. User predictions count & breakdown for contest
     const predsConditions = [eq(predictions.userId, userId)];
@@ -1228,7 +1579,8 @@ export async function getUserPredictionStats(userId: number, contestId?: number)
     const correctPredictions = userPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
     const wrongPredictions = userPreds.filter((p) => p.isEvaluated && p.pointsEarned === 0).length;
     const pendingPredictions = userPreds.filter((p) => !p.isEvaluated).length;
-    const goldenPredictions = userPreds.filter((p) => p.isGolden).length;
+    const siteGoldens = userPreds.filter((p) => p.isGolden).length;
+    const goldenPredictions = siteGoldens + initialGoldenPredictions;
     
     // Group bonus: +1 point for every 3 completed golden predictions
     const { bonusPoints: goldenBonus, totalGoldenPoints: goldenPoints } = calculateGoldenPoints(goldenPredictions);
@@ -1247,6 +1599,9 @@ export async function getUserPredictionStats(userId: number, contestId?: number)
 
     return {
       totalPoints,
+      initialPoints,
+      initialGoldenPredictions,
+      sitePoints: siteRawPoints,
       totalPredictions,
       correctPredictions,
       wrongPredictions,
@@ -1268,7 +1623,8 @@ export async function saveUserPrediction(
   userId: number,
   predictionMatchId: number,
   homeScore: number,
-  awayScore: number
+  awayScore: number,
+  knownIsStaff?: boolean
 ) {
   // 1. Validate score inputs
   if (
@@ -1335,19 +1691,22 @@ export async function saveUserPrediction(
       ),
     });
 
-    const userObj = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
+    let isStaffUser = knownIsStaff;
+    if (isStaffUser === undefined && !participant) {
+      const userObj = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+      });
 
-    const isStaffUser = userObj && (
-      userObj.isAdmin === true ||
-      userObj.role === 'admin' ||
-      userObj.role === 'manager' ||
-      userObj.role === 'system_manager' ||
-      userObj.role === 'owner' ||
-      userObj.role === 'system_owner' ||
-      userObj.role === 'superadmin'
-    );
+      isStaffUser = userObj && (
+        userObj.isAdmin === true ||
+        userObj.role === 'admin' ||
+        userObj.role === 'manager' ||
+        userObj.role === 'system_manager' ||
+        userObj.role === 'owner' ||
+        userObj.role === 'system_owner' ||
+        userObj.role === 'superadmin'
+      );
+    }
 
     if (!participant && isStaffUser) {
       // Auto-approve staff user as participant
@@ -1380,16 +1739,8 @@ export async function saveUserPrediction(
     const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
     const matchDateVal: any = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
 
-    // 5. Strict Backend Pre-Match Lock Check (1 minute before kickoff)
-    let kickoffTime: number;
-    if (typeof matchDateVal === 'string' && matchDateVal.length > 0) {
-      const normalized = matchDateVal.includes('T') && !matchDateVal.endsWith('Z') && !matchDateVal.includes('+') && !matchDateVal.includes('-')
-        ? matchDateVal + 'Z'
-        : matchDateVal;
-      kickoffTime = new Date(normalized).getTime();
-    } else {
-      kickoffTime = new Date(matchDateVal).getTime();
-    }
+    // 5. Strict Backend Pre-Match Lock Check (1 minute before kickoff in Mecca Time)
+    const kickoffTime = matchDateVal ? parseMeccaDateTimeInput(matchDateVal).getTime() : NaN;
 
     if (!isNaN(kickoffTime) && Date.now() >= kickoffTime - 60 * 1000) {
       throw new Error('تم إغلاق التوقعات لهذه المباراة قبل دقيقة واحدة من موعد انطلاقها');
@@ -1532,7 +1883,7 @@ export async function updateUserPredictionById(
     const matchStatus = pm.customStatus || pm.match?.status || 'SCHEDULED';
     const matchDateVal = pm.customMatchDate || pm.match?.matchDate || pm.createdAt;
 
-    const kickoffTime = new Date(matchDateVal).getTime();
+    const kickoffTime = matchDateVal ? parseMeccaDateTimeInput(matchDateVal).getTime() : NaN;
     if (!isNaN(kickoffTime) && Date.now() >= kickoffTime - 60 * 1000) {
       throw new Error('تم إغلاق التوقعات لهذه المباراة قبل دقيقة من موعد انطلاقها');
     }
@@ -1825,6 +2176,7 @@ export async function getLeaderboard(currentUserId?: number, limit = 100, contes
       ),
     });
     const approvedUserIds = new Set(approvedParticipants.map((p) => p.userId));
+    const participantMap = new Map(approvedParticipants.map((p) => [p.userId, p]));
 
     // Fetch all active users with predictions & points
     const allUsers = await db.query.users.findMany({
@@ -1845,11 +2197,16 @@ export async function getLeaderboard(currentUserId?: number, limit = 100, contes
       .map((u) => {
         const filteredPoints = u.predictionPoints || [];
         const filteredPreds = u.predictions || [];
+        const part = participantMap.get(u.id);
+        const initialPoints = part?.initialPoints || 0;
+        const initialGoldens = part?.initialGoldenPredictions || 0;
 
-        const rawPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
+        const sitePoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
+        const rawPoints = sitePoints + initialPoints;
         const totalPredictions = filteredPreds.length;
         const correctPredictions = filteredPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
-        const goldenPredictions = filteredPreds.filter((p) => p.isGolden).length;
+        const siteGoldens = filteredPreds.filter((p) => p.isGolden).length;
+        const goldenPredictions = siteGoldens + initialGoldens;
         const { bonusPoints: goldenBonus, totalGoldenPoints: goldenPoints } = calculateGoldenPoints(goldenPredictions);
         const totalPoints = rawPoints + goldenBonus;
         const evaluatedCount = filteredPreds.filter((p) => p.isEvaluated).length;
@@ -1861,6 +2218,9 @@ export async function getLeaderboard(currentUserId?: number, limit = 100, contes
           avatar: u.avatar || null,
           role: u.role,
           totalPoints,
+          initialPoints,
+          initialGoldenPredictions: initialGoldens,
+          sitePoints,
           correctPredictions,
           goldenPredictions,
           goldenPoints,
@@ -1869,7 +2229,7 @@ export async function getLeaderboard(currentUserId?: number, limit = 100, contes
           isCurrentUser: currentUserId ? u.id === currentUserId : false,
         };
       })
-      .filter((u) => u.totalPredictions > 0 || u.totalPoints > 0 || (currentUserId && u.id === currentUserId && approvedUserIds.has(u.id)));
+      .filter((u) => u.totalPredictions > 0 || u.totalPoints > 0 || u.initialPoints > 0 || (currentUserId && u.id === currentUserId && approvedUserIds.has(u.id)));
 
     // 3. Strict Deterministic Sorting:
     // 1. Total Points DESC
@@ -1934,6 +2294,7 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100, 
       ),
     });
     const approvedUserIds = new Set(approvedParticipants.map((p) => p.userId));
+    const participantMap = new Map(approvedParticipants.map((p) => [p.userId, p]));
 
     // Fetch all active users with predictions for this contest
     const allUsers = await db.query.users.findMany({
@@ -1953,9 +2314,14 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100, 
       .map((u) => {
         const filteredPoints = u.predictionPoints || [];
         const filteredPreds = u.predictions || [];
+        const part = participantMap.get(u.id);
+        const initialPoints = part?.initialPoints || 0;
+        const initialGoldens = part?.initialGoldenPredictions || 0;
 
-        const rawPoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
-        const goldenPredictions = filteredPreds.filter((p) => p.isGolden).length;
+        const sitePoints = filteredPoints.reduce((acc, curr) => acc + (curr.points || 0), 0);
+        const rawPoints = sitePoints + initialPoints;
+        const siteGoldens = filteredPreds.filter((p) => p.isGolden).length;
+        const goldenPredictions = siteGoldens + initialGoldens;
         const { bonusPoints: goldenBonus, totalGoldenPoints: goldenPoints } = calculateGoldenPoints(goldenPredictions);
         const totalPoints = rawPoints + goldenBonus;
         const correctPredictions = filteredPreds.filter((p) => p.isEvaluated && p.pointsEarned > 0).length;
@@ -1970,6 +2336,9 @@ export async function getGoldenLeaderboard(currentUserId?: number, limit = 100, 
           role: u.role,
           goldenPredictions,
           goldenPoints,
+          initialGoldenPredictions: initialGoldens,
+          initialPoints,
+          sitePoints,
           totalPoints,
           correctPredictions,
           totalPredictions,
@@ -2845,89 +3214,60 @@ export async function createAdminLeague(name: string, logo?: string | null) {
   return await getOrCreateLeague(cleanName, logo);
 }
 
-/**
- * Resolves a verified team strictly from the existing DB `teams` table,
- * leveraging the full catalog recognition engine, league context, aliases, and translations.
- * Returns the DB team record (with its verified teams.logo and apiTeamId) or null if not found.
- */
-export async function findVerifiedTeam(name: string, leagueContext?: string) {
+export async function getOrCreateTeam(name: string, logo?: string | null) {
   const cleanName = name?.trim();
-  if (!cleanName) return null;
+  if (!cleanName) throw new Error('اسم الفريق مطلوب');
   const normClean = normalizeArabicText(cleanName);
-  const normSports = normalizeSportsName(cleanName);
-  const translatedAr = getArabicTeamName(cleanName);
 
-  // 1. Identify team via catalog using league context & aliases
-  const catalogMatch =
-    matchTeamFromCatalog(cleanName, leagueContext) ||
-    (translatedAr && translatedAr !== cleanName ? matchTeamFromCatalog(translatedAr, leagueContext) : null);
+  // Check known catalog for verified teams and logos (Saudi Pro League, etc.)
+  const catalogMatch = matchTeamFromCatalog(cleanName);
 
   const allTeams = await db.select().from(teams);
-
-  // 2. Lookup candidate in the DB teams table
-  let found = allTeams.find((t) => {
-    if (catalogMatch) {
-      if (t.id.toLowerCase() === catalogMatch.id.toLowerCase()) return true;
-      if (normalizeSportsName(t.name) === normalizeSportsName(catalogMatch.name)) return true;
-      if (normalizeArabicText(t.name) === normalizeArabicText(catalogMatch.name)) return true;
-      if (
-        catalogMatch.aliases &&
-        catalogMatch.aliases.some(
-          (a) => normalizeSportsName(t.name) === normalizeSportsName(a) || normalizeArabicText(t.name) === normalizeArabicText(a)
-        )
-      ) {
-        return true;
-      }
-    }
-    return (
-      t.id.toLowerCase() === cleanName.toLowerCase() ||
-      t.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+  let found = allTeams.find(
+    (t) =>
       normalizeArabicText(t.name) === normClean ||
-      normalizeSportsName(t.name) === normSports ||
-      (translatedAr &&
-        (normalizeArabicText(t.name) === normalizeArabicText(translatedAr) ||
-          normalizeSportsName(t.name) === normalizeSportsName(translatedAr)))
-    );
-  });
+      t.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+      t.id.toLowerCase() === cleanName.toLowerCase() ||
+      (catalogMatch && (t.id.toLowerCase() === catalogMatch.id.toLowerCase() || normalizeArabicText(t.name) === normalizeArabicText(catalogMatch.name)))
+  );
 
-  // 3. Special match for national teams: e.g. "مصر" vs "منتخب مصر"
+  // Special match for national teams: e.g. "مصر" matching "منتخب مصر" or vice versa
   if (!found) {
     const withoutMontakhab = normClean.replace(/^منتخب\s+/, '');
-    const withoutMontakhabSports = normSports.replace(/^منتخب\s+/, '');
     found = allTeams.find((t) => {
       const normT = normalizeArabicText(t.name);
-      const sportsT = normalizeSportsName(t.name);
       return (
         normT === withoutMontakhab ||
         normT === `منتخب ${withoutMontakhab}` ||
-        normT.replace(/^منتخب\s+/, '') === withoutMontakhab ||
-        sportsT === withoutMontakhabSports ||
-        sportsT === `منتخب ${withoutMontakhabSports}` ||
-        sportsT.replace(/^منتخب\s+/, '') === withoutMontakhabSports
+        normT.replace(/^منتخب\s+/, '') === withoutMontakhab
       );
     });
   }
 
-  return found || null;
-}
-
-export async function getOrCreateTeam(name: string, logo?: string | null, leagueContext?: string) {
-  const cleanName = name?.trim();
-  if (!cleanName) throw new Error('اسم الفريق مطلوب');
-
-  const verified = await findVerifiedTeam(cleanName, leagueContext);
-  if (verified) {
-    return verified;
+  // Alias fuzzy check if not found
+  if (!found && catalogMatch) {
+    for (const alias of catalogMatch.aliases) {
+      const normAlias = normalizeArabicText(alias);
+      found = allTeams.find((t) => normalizeArabicText(t.name) === normAlias);
+      if (found) break;
+    }
   }
 
-  const normClean = normalizeArabicText(cleanName);
-  const catalogMatch = matchTeamFromCatalog(cleanName, leagueContext);
+  const effectiveLogo =
+    (logo && logo.trim() && !logo.includes('placeholder') && !logo.includes('ui-avatars') ? logo.trim() : null) ||
+    catalogMatch?.logo ||
+    (found?.logo && !found.logo.includes('placeholder') && !found.logo.includes('ui-avatars') ? found.logo : null);
 
-  const providedLogo =
-    logo && logo.trim() && !logo.includes('placeholder') && !logo.includes('ui-avatars') ? logo.trim() : null;
+  if (found) {
+    if (effectiveLogo && (!found.logo || found.logo.includes('placeholder') || found.logo.includes('ui-avatars'))) {
+      await db.update(teams).set({ logo: effectiveLogo }).where(eq(teams.id, found.id)).catch(() => null);
+      found.logo = effectiveLogo;
+    }
+    return found;
+  }
 
   const targetId = catalogMatch?.id || `ext_t_${cleanName.toLowerCase().replace(/[^\w\u0621-\u064A\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 24) || 'cust'}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-  const finalLogo = providedLogo || null;
+  const finalLogo = effectiveLogo || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=10b981&color=fff&size=128`;
 
   const inserted = await db
     .insert(teams)
@@ -2939,31 +3279,6 @@ export async function getOrCreateTeam(name: string, logo?: string | null, league
     .returning();
 
   return inserted[0];
-}
-
-/**
- * Updates a team's logo explicitly in the database.
- */
-export async function updateTeamLogo(nameOrId: string, logo: string) {
-  const clean = nameOrId?.trim();
-  const cleanLogo = logo?.trim();
-  if (!clean || !cleanLogo) throw new Error('اسم أو معرف الفريق ورابط الشعار الجديد مطلوبان');
-
-  const normClean = normalizeArabicText(clean);
-  const allTeams = await db.select().from(teams);
-  let found = allTeams.find(
-    (t) =>
-      t.id.toLowerCase() === clean.toLowerCase() ||
-      t.name.trim().toLowerCase() === clean.toLowerCase() ||
-      normalizeArabicText(t.name) === normClean
-  );
-
-  if (found) {
-    await db.update(teams).set({ logo: cleanLogo }).where(eq(teams.id, found.id));
-    return { ...found, logo: cleanLogo };
-  } else {
-    return await getOrCreateTeam(clean, cleanLogo);
-  }
 }
 
 export async function createAdminTeam(name: string, logo?: string | null) {
@@ -2992,11 +3307,19 @@ export async function createAdminTeam(name: string, logo?: string | null) {
   return await getOrCreateTeam(cleanName, logo);
 }
 
-export async function getExistingTeamsAndLeagues() {
-  return await withDbRetry(async () => {
-    // Ensure Saudi Pro League and national teams are seeded & updated
-    await seedSaudiAndNationalTeams().catch(() => null);
+let cachedTeamsAndLeagues: { data: { leagues: any[]; teams: any[] }; expiresAt: number } | null = null;
 
+export function invalidateTeamsAndLeaguesCache() {
+  cachedTeamsAndLeagues = null;
+}
+
+export async function getExistingTeamsAndLeagues() {
+  const now = Date.now();
+  if (cachedTeamsAndLeagues && cachedTeamsAndLeagues.expiresAt > now) {
+    return cachedTeamsAndLeagues.data;
+  }
+
+  return await withDbRetry(async () => {
     const [allLeagues, allTeams] = await Promise.all([
       db.select().from(leagues).orderBy(asc(leagues.name)),
       db.select().from(teams).orderBy(asc(teams.name)),
@@ -3020,7 +3343,9 @@ export async function getExistingTeamsAndLeagues() {
       return true;
     });
 
-    return { leagues: deduplicatedLeagues, teams: deduplicatedTeams };
+    const result = { leagues: deduplicatedLeagues, teams: deduplicatedTeams };
+    cachedTeamsAndLeagues = { data: result, expiresAt: Date.now() + 60_000 }; // 1 min cache
+    return result;
   });
 }
 
@@ -3052,7 +3377,7 @@ export async function addCustomExternalMatchToPredictions(data: {
       throw new Error('يرجى ملء جميع البيانات الأساسية للمباراة (الدوري، الفريقين، والتاريخ)');
     }
 
-    const parsedDate = new Date(data.matchDate);
+    const parsedDate = parseMeccaDateTimeInput(data.matchDate);
     if (isNaN(parsedDate.getTime())) {
       throw new Error('تاريخ المباراة غير صالح');
     }
@@ -3063,27 +3388,14 @@ export async function addCustomExternalMatchToPredictions(data: {
 
     const points = typeof data.pointsPerMatch === 'number' && data.pointsPerMatch >= 1 && data.pointsPerMatch <= 20 ? data.pointsPerMatch : 2;
 
-    // 1. Identify and verify Home & Away teams in the DB
-    const homeTeamRec = await findVerifiedTeam(data.homeTeamName, data.leagueName);
-    if (!homeTeamRec) {
-      throw new Error(`لم يتم العثور على فريق موثق بهذا الاسم (${data.homeTeamName}). يرجى التحقق من اسم الفريق أو إضافته إلى قاعدة الفرق.`);
-    }
-
-    const awayTeamRec = await findVerifiedTeam(data.awayTeamName, data.leagueName);
-    if (!awayTeamRec) {
-      throw new Error(`لم يتم العثور على فريق موثق بهذا الاسم (${data.awayTeamName}). يرجى التحقق من اسم الفريق أو إضافته إلى قاعدة الفرق.`);
-    }
-
-    // 2. Get or create league
+    // 1. Get or create league and teams in existing DB tables
     const leagueRec = await getOrCreateLeague(data.leagueName, data.leagueLogo);
+    const homeTeamRec = await getOrCreateTeam(data.homeTeamName, data.homeTeamLogo);
+    const awayTeamRec = await getOrCreateTeam(data.awayTeamName, data.awayTeamLogo);
 
-    // 3. Resolve logos strictly from verified teams.logo in DB (or manual picker if provided when logo is null)
-    const customHomeLogo = homeTeamRec.logo || (data.homeTeamLogo && !data.homeTeamLogo.includes('placeholder') && !data.homeTeamLogo.includes('ui-avatars') ? data.homeTeamLogo : null);
-    const customAwayLogo = awayTeamRec.logo || (data.awayTeamLogo && !data.awayTeamLogo.includes('placeholder') && !data.awayTeamLogo.includes('ui-avatars') ? data.awayTeamLogo : null);
-
-    // 4. Insert into relational matches table
+    // 2. Insert into relational matches table
     const newMatchId = data.externalMatchId?.trim() || `m_custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const matchTimeStr = parsedDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const matchTimeStr = formatMeccaTime24(parsedDate);
 
     await db.insert(matches).values({
       id: newMatchId,
@@ -3097,7 +3409,7 @@ export async function addCustomExternalMatchToPredictions(data: {
       updatedAt: new Date(),
     }).onConflictDoNothing();
 
-    // 5. Insert into predictionMatches table linked to matches.id
+    // 3. Insert into predictionMatches table linked to matches.id
     const inserted = await db
       .insert(predictionMatches)
       .values({
@@ -3107,10 +3419,10 @@ export async function addCustomExternalMatchToPredictions(data: {
         externalMatchId: data.externalMatchId || null,
         customLeagueName: leagueRec.name,
         customLeagueLogo: leagueRec.logo,
-        customHomeName: data.homeTeamName.trim(),
-        customHomeLogo: customHomeLogo,
-        customAwayName: data.awayTeamName.trim(),
-        customAwayLogo: customAwayLogo,
+        customHomeName: homeTeamRec.name,
+        customHomeLogo: homeTeamRec.logo,
+        customAwayName: awayTeamRec.name,
+        customAwayLogo: awayTeamRec.logo,
         customMatchDate: parsedDate,
         customStatus: 'SCHEDULED',
         pointsPerMatch: points,
@@ -3122,18 +3434,6 @@ export async function addCustomExternalMatchToPredictions(data: {
       message: 'تمت إضافة مباراة الدوري الخارجي إلى مسابقة التوقعات بنجاح وربطها بقاعدة البيانات',
       id: inserted[0].id,
       predictionMatch: inserted[0],
-      homeTeam: {
-        id: homeTeamRec.id,
-        name: homeTeamRec.name,
-        apiTeamId: homeTeamRec.apiTeamId,
-        logo: customHomeLogo,
-      },
-      awayTeam: {
-        id: awayTeamRec.id,
-        name: awayTeamRec.name,
-        apiTeamId: awayTeamRec.apiTeamId,
-        logo: customAwayLogo,
-      },
     };
   });
 }
@@ -3195,7 +3495,7 @@ export async function updatePredictionMatchDetails(
     // 3. Resolve Match Date
     let parsedDate: Date | null = null;
     if (data.matchDate) {
-      const d = new Date(data.matchDate);
+      const d = parseMeccaDateTimeInput(data.matchDate);
       if (!isNaN(d.getTime())) {
         parsedDate = d;
       }
@@ -3222,7 +3522,7 @@ export async function updatePredictionMatchDetails(
 
     // 6. Update relational match in matches table
     let linkedMatchId = pm.matchId;
-    const matchTimeStr = finalDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const matchTimeStr = formatMeccaTime24(finalDate);
 
     if (linkedMatchId) {
       await db.update(matches).set({

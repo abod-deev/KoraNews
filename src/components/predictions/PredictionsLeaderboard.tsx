@@ -29,6 +29,7 @@ interface PredictionsLeaderboardProps {
   currentUserRank: LeaderboardUser | null;
   isLoading: boolean;
   contestName?: string;
+  contestDescription?: string;
   contestId?: number | null;
 }
 
@@ -37,6 +38,7 @@ export default function PredictionsLeaderboard({
   currentUserRank,
   isLoading,
   contestName,
+  contestDescription,
   contestId,
 }: PredictionsLeaderboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,30 +49,32 @@ export default function PredictionsLeaderboard({
   );
 
   const handleShare = async () => {
-    const contestTitle = contestName || 'مسابقة توقعات KoraNews';
-    let text = `🏆 جدول الترتيب العام — ${contestTitle}\n\n`;
-    text += `أقوى المتسابقين وأصحاب أعلى النقاط في توقعات المباريات:\n\n`;
+    const contestTitle = contestName || 'مسابقة التوقعات';
+    const desc = contestDescription?.trim();
+
+    let text = `🏆 الترتيب العام ↯↯↯\n\n✨ "${contestTitle}" ✨\n\n   الاسم   —   النقاط  — التوقعات الصحيحه\n\n`;
 
     if (leaderboard.length > 0) {
-      leaderboard.slice(0, 5).forEach((u) => {
-        const badge = u.rank === 1 ? '🥇 المركز الأول' : u.rank === 2 ? '🥈 المركز الثاني' : u.rank === 3 ? '🥉 المركز الثالث' : `#${u.rank}`;
-        text += `${badge}: ${u.name} — ${u.totalPoints} نقطة (${u.correctPredictions} توقع صحيح${u.goldenPredictions > 0 ? ` • 👑 ${u.goldenPredictions} ذهبية` : ''})\n`;
+      leaderboard.forEach((u) => {
+        let rankPrefix = '';
+        if (u.rank === 1) rankPrefix = '🥇/';
+        else if (u.rank === 2) rankPrefix = '🥈/';
+        else if (u.rank === 3) rankPrefix = '🥉/';
+        else rankPrefix = `  ${u.rank} /`;
+
+        text += `${rankPrefix} ${u.name} — ${u.totalPoints} نقطة (${u.correctPredictions || 0} توقع)\n`;
       });
     }
 
-    if (currentUserRank && currentUserRank.rank > 0) {
-      text += `\n🎯 ترتيبي في المسابقة: المركز #${currentUserRank.rank} برصيد ${currentUserRank.totalPoints} نقطة!\n`;
+    if (desc) {
+      text += `\nملاحظه / "${desc}".`;
     }
-
-    const shareUrl = `${window.location.origin}/predictions/leaderboard${contestId ? `?contestId=${contestId}` : ''}`;
-    text += `\nشاهد الترتيب الكامل وتوقع نتائج المباريات الآن:\n${shareUrl}`;
 
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `جدول الترتيب العام - ${contestTitle}`,
+          title: `الترتيب العام - ${contestTitle}`,
           text,
-          url: shareUrl,
         });
         return;
       } catch {

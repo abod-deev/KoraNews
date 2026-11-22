@@ -31,6 +31,30 @@ export default function MatchTimeDisplay({ match, variant = 'card-center' }: Mat
 
   // 1. Header Badge: Shows "مباشر" during 1st half, halftime, and 2nd half
   if (variant === 'header-badge') {
+    if (liveState.isPostponed) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+          مؤجلة
+        </span>
+      );
+    }
+
+    if (liveState.isCancelled) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+          ملغاة
+        </span>
+      );
+    }
+
+    if (liveState.isSuspended) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300">
+          معلقة
+        </span>
+      );
+    }
+
     if (liveState.isLive || liveState.isHalfTime) {
       return (
         <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 border border-red-200 dark:border-red-800 animate-pulse">
@@ -68,7 +92,25 @@ export default function MatchTimeDisplay({ match, variant = 'card-center' }: Mat
   // 3. Center display in Match Card (below score)
   return (
     <div className="flex flex-col items-center justify-center gap-1">
-      {liveState.isScheduled ? (
+      {liveState.isPostponed ? (
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="text-xs font-black bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50 px-2.5 py-1 rounded-lg shadow-2xs whitespace-nowrap">
+            مؤجلة
+          </div>
+        </div>
+      ) : liveState.isCancelled ? (
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="text-xs font-black bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700/50 px-2.5 py-1 rounded-lg shadow-2xs whitespace-nowrap">
+            ملغاة
+          </div>
+        </div>
+      ) : liveState.isSuspended ? (
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="text-xs font-black bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border border-orange-300 dark:border-orange-700/50 px-2.5 py-1 rounded-lg shadow-2xs whitespace-nowrap">
+            معلقة
+          </div>
+        </div>
+      ) : liveState.isScheduled ? (
         <div className="flex flex-col items-center gap-0.5">
           <div className="text-xs font-black bg-gray-100 dark:bg-gray-700/80 px-2.5 py-1 rounded-lg text-gray-800 dark:text-white border border-gray-200 dark:border-gray-600 shadow-2xs whitespace-nowrap">
             {liveState.kickoffTimeStr}

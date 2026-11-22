@@ -85,6 +85,12 @@ export const contestParticipants = pgTable('contest_participants', {
   reviewedAt: timestamp('reviewed_at'),
   reviewedBy: integer('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
   notes: text('notes'),
+  // Manual Points & Goldens Adjustment fields
+  initialPoints: integer('initial_points').default(0).notNull(),
+  initialGoldenPredictions: integer('initial_golden_predictions').default(0).notNull(),
+  manualAdjustmentReason: text('manual_adjustment_reason'),
+  pointsAdjustedAt: timestamp('points_adjusted_at'),
+  pointsAdjustedBy: integer('points_adjusted_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
@@ -104,7 +110,6 @@ export const teams = pgTable('teams', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   logo: text('logo'),
-  apiTeamId: integer('api_team_id'),
 });
 
 export const matches = pgTable('matches', {

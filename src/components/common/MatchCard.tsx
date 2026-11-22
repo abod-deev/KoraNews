@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Match } from '../../services/sportsApi';
-import { Bell, BellRing, Calendar as CalendarIcon, Clock, ShieldCheck, Play } from 'lucide-react';
+import { Bell, BellRing, Calendar as CalendarIcon, Clock, ShieldCheck, Play, AlertCircle } from 'lucide-react';
 import { useMatchReminders } from '../../contexts/MatchRemindersContext';
 import MatchTimeDisplay, { useMatchTimer } from './MatchTimeDisplay';
 import { getArabicTeamName } from '../../utils/teamTranslations';
+import { formatMeccaDate } from '../../utils/timezoneDateUtils';
 import MatchDetailsModal from './MatchDetailsModal';
 
 export interface MatchCardProps {
@@ -23,8 +24,35 @@ export default function MatchCard({ match, index = 0 }: MatchCardProps) {
   const homeTeamName = getArabicTeamName(match.homeTeam?.name) || 'فريق مضيف';
   const awayTeamName = getArabicTeamName(match.awayTeam?.name) || 'فريق ضيف';
 
-  // Render status badge clearly for LIVE, UPCOMING, and FINISHED
+  // Render status badge clearly for LIVE, UPCOMING, FINISHED, and POSTPONED
   const renderStatusBadge = () => {
+    if (liveState.isPostponed) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800">
+          <Clock className="w-3 h-3 text-amber-500" />
+          <span>مؤجلة</span>
+        </span>
+      );
+    }
+
+    if (liveState.isCancelled) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800">
+          <AlertCircle className="w-3 h-3 text-rose-500" />
+          <span>ملغاة</span>
+        </span>
+      );
+    }
+
+    if (liveState.isSuspended) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-800">
+          <AlertCircle className="w-3 h-3 text-orange-500" />
+          <span>معلقة</span>
+        </span>
+      );
+    }
+
     if (liveState.isLive || liveState.isHalfTime) {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-black px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-500/20 animate-pulse">
@@ -166,7 +194,7 @@ export default function MatchCard({ match, index = 0 }: MatchCardProps) {
           <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
             <CalendarIcon className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
             <span className="truncate">
-              {new Date(match.matchDate || Date.now()).toLocaleDateString('ar-EG', {
+              {formatMeccaDate(match.matchDate || Date.now(), {
                 weekday: 'short',
                 month: 'short',
                 day: 'numeric',

@@ -3,7 +3,7 @@ import { fetchLiveMatches, fetchUpcomingMatches } from './footballService.ts';
 export { fetchLiveMatches, fetchUpcomingMatches };
 
 const BASE_URL = 'https://api.football-data.org/v4';
-const DEFAULT_TIMEOUT_MS = 25000;
+const DEFAULT_TIMEOUT_MS = 35000;
 
 // Rate limiter state in-memory to respect football-data.org 10 requests / minute limit
 let lastRequestTime = 0;

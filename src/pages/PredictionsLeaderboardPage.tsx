@@ -41,30 +41,32 @@ export default function PredictionsLeaderboardPage() {
   const [copiedShare, setCopiedShare] = useState(false);
 
   const handleShare = async () => {
-    const contestTitle = currentContest?.name || 'مسابقة توقعات KoraNews';
-    let text = `🏆 جدول الترتيب العام — ${contestTitle}\n\n`;
-    text += `أقوى المتسابقين وأصحاب أعلى النقاط في توقعات المباريات:\n\n`;
+    const contestTitle = currentContest?.name || 'مسابقة التوقعات';
+    const desc = currentContest?.description?.trim();
+
+    let text = `🏆 الترتيب العام ↯↯↯\n\n✨ "${contestTitle}" ✨\n\n   الاسم   —   النقاط  — التوقعات الصحيحه\n\n`;
 
     if (leaderboard.length > 0) {
-      leaderboard.slice(0, 5).forEach((u) => {
-        const badge = u.rank === 1 ? '🥇 المركز الأول' : u.rank === 2 ? '🥈 المركز الثاني' : u.rank === 3 ? '🥉 المركز الثالث' : `#${u.rank}`;
-        text += `${badge}: ${u.name} — ${u.totalPoints} نقطة (${u.correctPredictions} توقع صحيح${u.goldenPredictions > 0 ? ` • 👑 ${u.goldenPredictions} ذهبية` : ''})\n`;
+      leaderboard.forEach((u) => {
+        let rankPrefix = '';
+        if (u.rank === 1) rankPrefix = '🥇/';
+        else if (u.rank === 2) rankPrefix = '🥈/';
+        else if (u.rank === 3) rankPrefix = '🥉/';
+        else rankPrefix = `  ${u.rank} /`;
+
+        text += `${rankPrefix} ${u.name} — ${u.totalPoints} نقطة (${u.correctPredictions || 0} توقع)\n`;
       });
     }
 
-    if (currentUserRank && currentUserRank.rank > 0) {
-      text += `\n🎯 ترتيبي في المسابقة: المركز #${currentUserRank.rank} برصيد ${currentUserRank.totalPoints} نقطة!\n`;
+    if (desc) {
+      text += `\nملاحظه / "${desc}".`;
     }
-
-    const shareUrl = `${window.location.origin}/predictions/leaderboard${selectedContestId ? `?contestId=${selectedContestId}` : ''}`;
-    text += `\nشاهد الترتيب الكامل وتوقع نتائج المباريات الآن:\n${shareUrl}`;
 
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `جدول الترتيب العام - ${contestTitle}`,
+          title: `الترتيب العام - ${contestTitle}`,
           text,
-          url: shareUrl,
         });
         return;
       } catch {
@@ -319,6 +321,7 @@ export default function PredictionsLeaderboardPage() {
         currentUserRank={currentUserRank}
         isLoading={isLoading}
         contestName={currentContest?.name}
+        contestDescription={currentContest?.description}
         contestId={selectedContestId}
       />
     </div>

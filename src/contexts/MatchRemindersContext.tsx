@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { Match } from '../services/sportsApi';
-import { Bell, BellOff, AlertCircle, CheckCircle2, Clock, PlayCircle, X, Sparkles, LogIn } from 'lucide-react';
+import { Bell, BellRing, AlertCircle, CheckCircle2, Clock, PlayCircle, X, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { safeStorage } from '../utils/safeStorage';
+import { formatMeccaTime } from '../utils/timezoneDateUtils';
+import { sendPhoneCurtainNotification, requestCurtainNotificationPermission } from '../services/curtainNotification';
 
 export interface MatchAlert {
   match: Match;
@@ -58,7 +60,7 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
           setRemindedMatches([]);
         }
       } catch (e) {
-        console.error("Failed to load match reminders", e);
+        console.error('Failed to load match reminders', e);
       }
     } else {
       setRemindedMatches([]);
@@ -73,7 +75,7 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         safeStorage.setItem(storageKey, JSON.stringify(matches));
       } catch (e) {
-        console.error("Failed to save match reminders", e);
+        console.error('Failed to save match reminders', e);
       }
     }
   };
@@ -88,10 +90,10 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
     setToastMessage({ text, type });
     setTimeout(() => {
       setToastMessage(null);
-    }, 3500);
+    }, 4000);
   };
 
-  const toggleReminder = (match: Match) => {
+  const toggleReminder = async (match: Match) => {
     if (!user) {
       setShowLoginModal(true);
       return;
@@ -109,9 +111,9 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
       saveReminders(updated);
       showToast(`تم تفعيل التنبيه بنجاح لمباراة ${match.homeTeam.name} ضد ${match.awayTeam.name}! 🔔`, 'success');
 
-      // Request browser notification permission if available
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
+      // Request curtain notification permission if not yet granted
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+        await requestCurtainNotificationPermission();
       }
     }
   };
@@ -130,20 +132,17 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
     };
     setActivePopup(alert);
 
-    // Also fire a native browser notification if allowed
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(`⏰ تنبيه: ${match.homeTeam.name} vs ${match.awayTeam.name}`, {
-          body: `اقترب موعد انطلاق المباراة في بطولة ${match.leagueName}!`,
-          icon: match.homeTeam.logo || '/icon.png',
-        });
-      } catch (e) {
-        console.warn('Native notification failed:', e);
-      }
-    }
+    // Send to phone curtain
+    sendPhoneCurtainNotification({
+      title: `⏰ تنبيه: ${match.homeTeam.name} vs ${match.awayTeam.name}`,
+      body: `اقترب موعد انطلاق المباراة في بطولة ${match.leagueName}!`,
+      url: '/matches',
+      tag: `match-test-${match.id}`,
+      icon: match.homeTeam.logo || '/site-logo.jpg',
+    });
   };
 
-  // Periodic background check for match start alerts
+  // Periodic background check for live/soon match start alerts
   useEffect(() => {
     if (!user || remindedMatches.length === 0) return;
 
@@ -157,7 +156,6 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
         const matchTime = new Date(match.matchDate || Date.now()).getTime();
         const diffMinutes = (matchTime - now) / (1000 * 60);
 
-        // Alert if match starts within 15 minutes or is live
         if (match.status === 'LIVE') {
           setActivePopup({
             match,
@@ -165,6 +163,13 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
             message: `انطلقت الآن مواجهة ${match.homeTeam.name} ضد ${match.awayTeam.name}!`,
             type: 'LIVE',
             timestamp: new Date(),
+          });
+          sendPhoneCurtainNotification({
+            title: `🔴 انطلقت الآن: ${match.homeTeam.name} vs ${match.awayTeam.name}`,
+            body: `بدأت الآن المباراة في بطولة ${match.leagueName}. تابع النتيجة والأحداث مباشرة!`,
+            url: '/matches',
+            tag: `match-live-${match.id}`,
+            icon: match.homeTeam.logo || '/site-logo.jpg',
           });
           setNotifiedMatchIds((prev) => new Set(prev).add(matchIdStr));
         } else if (diffMinutes > 0 && diffMinutes <= 15) {
@@ -175,10 +180,17 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
             type: 'SOON',
             timestamp: new Date(),
           });
+          sendPhoneCurtainNotification({
+            title: `⏰ اقتربت البداية: ${match.homeTeam.name} vs ${match.awayTeam.name}`,
+            body: `تبدأ المباراة بعد ${Math.ceil(diffMinutes)} دقيقة في بطولة ${match.leagueName}.`,
+            url: '/matches',
+            tag: `match-soon-${match.id}`,
+            icon: match.homeTeam.logo || '/site-logo.jpg',
+          });
           setNotifiedMatchIds((prev) => new Set(prev).add(matchIdStr));
         }
       });
-    }, 20000); // check every 20 seconds
+    }, 20000);
 
     return () => clearInterval(interval);
   }, [remindedMatches, user, notifiedMatchIds]);
@@ -206,16 +218,18 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
             initial={{ opacity: 0, y: 50, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-11/12 bg-gray-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-gray-700 flex items-center gap-3 dir-rtl"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-11/12 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 dir-rtl"
           >
             {toastMessage.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             ) : toastMessage.type === 'info' ? (
-              <BellOff className="w-5 h-5 text-amber-400 shrink-0" />
+              <BellRing className="w-5 h-5 text-amber-400 shrink-0 animate-bounce" />
             ) : (
               <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
             )}
-            <span className="text-xs sm:text-sm font-extrabold flex-1">{toastMessage.text}</span>
+            <span className="text-xs sm:text-sm font-extrabold flex-1 leading-normal">
+              {toastMessage.text}
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -235,64 +249,89 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative overflow-hidden"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative overflow-hidden"
             >
-              {/* Top Accent Line */}
-              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-brand via-emerald-400 to-amber-400" />
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-amber-400 to-sky-400" />
 
               <button
                 onClick={dismissPopup}
-                className="absolute top-4 left-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                className="absolute top-4 left-4 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
 
               <div className="flex items-center gap-3 mb-4">
-                <div className={`p-3 rounded-2xl ${activePopup.type === 'LIVE' ? 'bg-red-500/10 text-red-500 animate-pulse' : 'bg-brand/10 text-brand'}`}>
+                <div
+                  className={`p-3 rounded-2xl ${
+                    activePopup.type === 'LIVE'
+                      ? 'bg-rose-500/10 text-rose-500 animate-pulse'
+                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  }`}
+                >
                   <Bell className="w-6 h-6" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-gray-400 block">{activePopup.match.leagueName}</span>
-                  <h3 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-400 block">{activePopup.match.leagueName}</span>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                     {activePopup.title}
                   </h3>
                 </div>
               </div>
 
               {/* Match Card Preview */}
-              <div className="bg-gray-50 dark:bg-gray-800/60 rounded-2xl p-4 border border-gray-100 dark:border-gray-700/80 my-4 space-y-3">
+              <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/80 my-4 space-y-3">
                 <div className="flex items-center justify-between text-center">
-                  {/* Home Team */}
                   <div className="flex flex-col items-center gap-1.5 w-5/12">
-                    <img loading="lazy" src={activePopup.match.homeTeam.logo} alt={activePopup.match.homeTeam.name} className="w-12 h-12 object-contain" />
-                    <span className="text-xs font-bold text-gray-900 dark:text-gray-100">{activePopup.match.homeTeam.name}</span>
+                    <img
+                      loading="lazy"
+                      src={activePopup.match.homeTeam.logo}
+                      alt={activePopup.match.homeTeam.name}
+                      className="w-12 h-12 object-contain"
+                    />
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      {activePopup.match.homeTeam.name}
+                    </span>
                   </div>
 
-                  {/* VS / Score */}
                   <div className="w-2/12 flex flex-col items-center">
                     {activePopup.match.status === 'LIVE' ? (
-                      <span className="text-xs font-black bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse">مباشر</span>
+                      <span className="text-xs font-black bg-rose-500 text-white px-2 py-0.5 rounded-full animate-pulse">
+                        مباشر
+                      </span>
                     ) : (
-                      <span className="text-xs font-black text-brand bg-brand/10 px-2 py-1 rounded-lg">ضد</span>
+                      <span className="text-xs font-black text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded-lg">
+                        ضد
+                      </span>
                     )}
                   </div>
 
-                  {/* Away Team */}
                   <div className="flex flex-col items-center gap-1.5 w-5/12">
-                    <img loading="lazy" src={activePopup.match.awayTeam.logo} alt={activePopup.match.awayTeam.name} className="w-12 h-12 object-contain" />
-                    <span className="text-xs font-bold text-gray-900 dark:text-gray-100">{activePopup.match.awayTeam.name}</span>
+                    <img
+                      loading="lazy"
+                      src={activePopup.match.awayTeam.logo}
+                      alt={activePopup.match.awayTeam.name}
+                      className="w-12 h-12 object-contain"
+                    />
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      {activePopup.match.awayTeam.name}
+                    </span>
                   </div>
                 </div>
 
-                <div className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 border-t border-gray-200/50 dark:border-gray-700/50 pt-2 flex items-center justify-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-brand" />
+                <div className="text-center text-xs font-medium text-slate-500 dark:text-slate-400 border-t border-slate-200/50 dark:border-slate-700/50 pt-2 flex items-center justify-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-emerald-500" />
                   <span>
-                    موعد المباراة: {new Date(activePopup.match.matchDate || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                    موعد المباراة:{' '}
+                    {formatMeccaTime(activePopup.match.matchDate || Date.now(), {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
                   </span>
                 </div>
               </div>
 
-              <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 text-center mb-5">
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 text-center mb-5">
                 {activePopup.message}
               </p>
 
@@ -300,14 +339,14 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
                 <Link
                   to="/matches"
                   onClick={dismissPopup}
-                  className="flex-1 bg-brand text-white font-extrabold text-xs py-3 px-4 rounded-xl hover:bg-emerald-600 transition-colors text-center flex items-center justify-center gap-2"
+                  className="flex-1 bg-emerald-600 text-white font-extrabold text-xs py-3 px-4 rounded-xl hover:bg-emerald-700 transition-colors text-center flex items-center justify-center gap-2"
                 >
                   <PlayCircle className="w-4 h-4" />
                   <span>متابعة المباراة والنتائج</span>
                 </Link>
                 <button
                   onClick={dismissPopup}
-                  className="px-4 py-3 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-extrabold text-xs rounded-xl transition-colors"
+                  className="px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-extrabold text-xs rounded-xl transition-colors cursor-pointer"
                 >
                   إغلاق
                 </button>
@@ -332,11 +371,11 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4 relative"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4 relative"
             >
               <button
                 onClick={() => setShowLoginModal(false)}
-                className="absolute top-4 left-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                className="absolute top-4 left-4 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -346,9 +385,9 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
               </div>
 
               <div>
-                <h3 className="text-lg font-extrabold text-gray-900 dark:text-white">تفعيل تنبيهات المباريات</h3>
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mt-1">
-                  هذه الميزة حصرية للمستخدمين المسجلين! سجل دخولك لتصلك إشعارات وتنبيهات عند اقتراب مواعيد مباريات فريقك المفضل.
+                <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">تفعيل التنبيهات</h3>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">
+                  سجل دخولك لتصلك إشعارات وتنبيهات فورية عند اقتراب مواعيد مبارياتك المفضلة!
                 </p>
               </div>
 
@@ -356,14 +395,14 @@ export const MatchRemindersProvider: React.FC<{ children: React.ReactNode }> = (
                 <Link
                   to="/login"
                   onClick={() => setShowLoginModal(false)}
-                  className="w-full bg-brand text-white font-extrabold text-xs py-3 rounded-xl hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2"
+                  className="w-full bg-emerald-600 text-white font-extrabold text-xs py-3 rounded-xl hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
                 >
                   <LogIn className="w-4 h-4" />
                   <span>تسجيل الدخول الآن</span>
                 </Link>
                 <button
                   onClick={() => setShowLoginModal(false)}
-                  className="w-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-bold text-xs py-2.5 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700"
+                  className="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs py-2.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
                 >
                   إلغاء
                 </button>

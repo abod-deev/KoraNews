@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Loader2, Calendar as CalendarIcon, RefreshCw, AlertTriangle, Filter, ArrowUpDown, Flame, Clock, Play, ShieldCheck } from 'lucide-react';
 import { getMatchesWithResult, getLeagues, getStandings, Match, League, Standing } from '../services/sportsApi';
-import { getSystemTodayStr, getSystemOffsetDateStr } from '../utils/systemDateUtils';
+import { getSystemTodayStr, getSystemOffsetDateStr } from '../utils/timezoneDateUtils';
 import { useSEO } from '../hooks/useSEO';
 import { Link } from 'react-router-dom';
 import MatchCard from '../components/common/MatchCard';
@@ -146,6 +146,20 @@ export default function Matches() {
       return new Date(a.matchDate || a.utcDate || 0).getTime() - new Date(b.matchDate || b.utcDate || 0).getTime();
     } else if (sortBy === 'date_desc') {
       return new Date(b.matchDate || b.utcDate || 0).getTime() - new Date(a.matchDate || a.utcDate || 0).getTime();
+    } else if (sortBy === 'importance') {
+      const getPriority = (m: Match) => {
+        let p = 0;
+        const status = (m.status || '').toUpperCase();
+        if (status === 'IN_PLAY' || status === 'LIVE') p += 1000;
+        else if (status === 'SCHEDULED') p += 500;
+        const leagueId = (m.leagueId || m.league?.id || '').toUpperCase();
+        if (['CL', 'PL', 'PD', 'SA', 'BL1', '2001', '2021', '2014', '2019', '2002'].includes(leagueId)) p += 100;
+        else if (['FL1', 'ELC', 'DED', 'PPL', '2015', '2016', '2003', '2017'].includes(leagueId)) p += 50;
+        return p;
+      };
+      const diff = getPriority(b) - getPriority(a);
+      if (diff !== 0) return diff;
+      return new Date(a.matchDate || a.utcDate || 0).getTime() - new Date(b.matchDate || b.utcDate || 0).getTime();
     }
     return 0;
   });

@@ -24,14 +24,42 @@ import {
   AlertTriangle,
   Archive
 } from 'lucide-react';
-import AdminNews from '../components/admin/sections/AdminNews';
-import AdminUsers from '../components/admin/sections/AdminUsers';
-import AdminLogs from '../components/admin/sections/AdminLogs';
-import AdminErrorLogs from '../components/admin/sections/AdminErrorLogs';
-import AdminPredictionsManager from '../components/admin/AdminPredictionsManager';
-import { AdminTeamsLogos } from '../components/admin/sections/AdminTeamsLogos';
+const loadAdminNews = () => import('../components/admin/sections/AdminNews');
+const loadAdminUsers = () => import('../components/admin/sections/AdminUsers');
+const loadAdminLogs = () => import('../components/admin/sections/AdminLogs');
+const loadAdminErrorLogs = () => import('../components/admin/sections/AdminErrorLogs');
+const loadAdminPredictionsManager = () => import('../components/admin/AdminPredictionsManager');
 
-type AdminTab = 'news' | 'predictions_matches' | 'predictions_participants' | 'predictions_contests' | 'predictions_archive' | 'teams_logos' | 'users' | 'logs' | 'error_logs';
+const AdminNews = React.lazy(loadAdminNews);
+const AdminUsers = React.lazy(loadAdminUsers);
+const AdminLogs = React.lazy(loadAdminLogs);
+const AdminErrorLogs = React.lazy(loadAdminErrorLogs);
+const AdminPredictionsManager = React.lazy(loadAdminPredictionsManager);
+
+const preloadTab = (tab: AdminTab) => {
+  switch (tab) {
+    case 'news':
+      loadAdminNews();
+      break;
+    case 'users':
+      loadAdminUsers();
+      break;
+    case 'logs':
+      loadAdminLogs();
+      break;
+    case 'error_logs':
+      loadAdminErrorLogs();
+      break;
+    case 'predictions_matches':
+    case 'predictions_participants':
+    case 'predictions_contests':
+    case 'predictions_archive':
+      loadAdminPredictionsManager();
+      break;
+  }
+};
+
+type AdminTab = 'news' | 'predictions_matches' | 'predictions_participants' | 'predictions_contests' | 'predictions_archive' | 'users' | 'logs' | 'error_logs';
 
 const VALID_TABS: readonly AdminTab[] = [
   'news',
@@ -39,7 +67,6 @@ const VALID_TABS: readonly AdminTab[] = [
   'predictions_participants',
   'predictions_contests',
   'predictions_archive',
-  'teams_logos',
   'users',
   'logs',
   'error_logs',
@@ -146,8 +173,6 @@ export default function Admin() {
         return canViewContestsTab ? 'predictions_contests' : defaultTab;
       case 'predictions_archive':
         return canViewContestsTab ? 'predictions_archive' : defaultTab;
-      case 'teams_logos':
-        return canViewMatchesTab || isOwner || isManager ? 'teams_logos' : defaultTab;
       case 'users':
         return canManageUsers ? 'users' : defaultTab;
       case 'logs':
@@ -182,7 +207,6 @@ export default function Admin() {
     predictions_participants: { title: 'المشاركون بالمسابقة', subtitle: 'قائمة المتسابقين وإحصائيات التوقعات', icon: Users },
     predictions_contests: { title: 'المسابقات والإعدادات', subtitle: 'إعدادات المسابقات ونظام النقاط', icon: Trophy },
     predictions_archive: { title: 'أرشيف المسابقات المنتهية', subtitle: 'استعراض وإدارة وتصفح بيانات المسابقات السابقة', icon: Archive },
-    teams_logos: { title: 'إدارة الأندية والشعارات', subtitle: 'تعديل وتصحيح أسماء وشعارات الأندية في قاعدة البيانات', icon: Shield },
     users: { title: 'إدارة المستخدمين', subtitle: 'التحكم بالصلاحيات وحسابات المشرفين', icon: ShieldCheck },
     logs: { title: 'سجل العمليات', subtitle: 'سجل التغييرات وأحداث النظام الإدارية', icon: Activity },
     error_logs: { title: 'سجل الأخطاء', subtitle: 'متابعة ورصد استثناءات النظام وتصدير التقارير', icon: AlertTriangle },
@@ -272,6 +296,7 @@ export default function Admin() {
                 <button
                   type="button"
                   onClick={() => navigateToTab('news')}
+                  onMouseEnter={() => preloadTab('news')}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                     activeTab === 'news'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -296,6 +321,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => navigateToTab('predictions_matches')}
+                    onMouseEnter={() => preloadTab('predictions_matches')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'predictions_matches'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -310,6 +336,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => navigateToTab('predictions_participants')}
+                    onMouseEnter={() => preloadTab('predictions_participants')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'predictions_participants'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -324,6 +351,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => navigateToTab('predictions_contests')}
+                    onMouseEnter={() => preloadTab('predictions_contests')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'predictions_contests'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -338,6 +366,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => navigateToTab('predictions_archive')}
+                    onMouseEnter={() => preloadTab('predictions_archive')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'predictions_archive'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -346,20 +375,6 @@ export default function Admin() {
                   >
                     <Archive className={`w-4 h-4 shrink-0 ${activeTab === 'predictions_archive' ? 'text-white dark:text-slate-900' : 'text-slate-400'}`} />
                     <span>المسابقات المنتهية والأرشيف</span>
-                  </button>
-                )}
-                {(canViewMatchesTab || isOwner || isManager) && (
-                  <button
-                    type="button"
-                    onClick={() => navigateToTab('teams_logos')}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
-                      activeTab === 'teams_logos'
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-bold'
-                    }`}
-                  >
-                    <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'teams_logos' ? 'text-amber-400 dark:text-amber-500' : 'text-amber-500/80'}`} />
-                    <span>إدارة الأندية والشعارات</span>
                   </button>
                 )}
                 <Link
@@ -387,6 +402,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => navigateToTab('users')}
+                    onMouseEnter={() => preloadTab('users')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'users'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -401,6 +417,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => navigateToTab('logs')}
+                    onMouseEnter={() => preloadTab('logs')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'logs'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -415,6 +432,7 @@ export default function Admin() {
                   <button
                     type="button"
                     onClick={() => navigateToTab('error_logs')}
+                    onMouseEnter={() => preloadTab('error_logs')}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs transition-all cursor-pointer ${
                       activeTab === 'error_logs'
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black shadow-xs'
@@ -544,58 +562,50 @@ export default function Admin() {
             </div>
           )}
 
-          {/* Active Tab View Rendering */}
-          {activeTab === 'news' && canManageNews && (
-            <AdminNews token={token} showMsg={showMsg} />
-          )}
+          {/* Active Tab View Rendering with Lazy Loading */}
+          <React.Suspense
+            fallback={
+              <div className="flex flex-col items-center justify-center py-24 gap-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-8">
+                <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-bold text-slate-500 dark:text-slate-400">جاري تحميل بيانات القسم...</span>
+              </div>
+            }
+          >
+            {activeTab === 'news' && canManageNews && (
+              <AdminNews token={token} showMsg={showMsg} />
+            )}
 
-          {activeTab === 'predictions_matches' && canViewMatchesTab && (
-            <AdminPredictionsManager
-              token={token}
-              onShowMessage={showMsg}
-              activeSubTab="matches"
-            />
-          )}
+            {(activeTab === 'predictions_matches' ||
+              activeTab === 'predictions_participants' ||
+              activeTab === 'predictions_contests' ||
+              activeTab === 'predictions_archive') && (
+              <AdminPredictionsManager
+                token={token}
+                onShowMessage={showMsg}
+                activeSubTab={
+                  activeTab === 'predictions_matches'
+                    ? 'matches'
+                    : activeTab === 'predictions_participants'
+                    ? 'participants'
+                    : activeTab === 'predictions_contests'
+                    ? 'settings'
+                    : 'completed_contests'
+                }
+              />
+            )}
 
-          {activeTab === 'predictions_participants' && canViewParticipantsTab && (
-            <AdminPredictionsManager
-              token={token}
-              onShowMessage={showMsg}
-              activeSubTab="participants"
-            />
-          )}
+            {activeTab === 'users' && canManageUsers && (
+              <AdminUsers token={token} showMsg={showMsg} />
+            )}
 
-          {activeTab === 'predictions_contests' && canViewContestsTab && (
-            <AdminPredictionsManager
-              token={token}
-              onShowMessage={showMsg}
-              activeSubTab="settings"
-            />
-          )}
+            {activeTab === 'logs' && canViewLogs && (
+              <AdminLogs token={token} />
+            )}
 
-          {activeTab === 'predictions_archive' && canViewContestsTab && (
-            <AdminPredictionsManager
-              token={token}
-              onShowMessage={showMsg}
-              activeSubTab="completed_contests"
-            />
-          )}
-
-          {activeTab === 'teams_logos' && (canViewMatchesTab || isOwner || isManager) && (
-            <AdminTeamsLogos />
-          )}
-
-          {activeTab === 'users' && canManageUsers && (
-            <AdminUsers token={token} showMsg={showMsg} />
-          )}
-
-          {activeTab === 'logs' && canViewLogs && (
-            <AdminLogs token={token} />
-          )}
-
-          {activeTab === 'error_logs' && canViewErrorLogs && (
-            <AdminErrorLogs token={token} />
-          )}
+            {activeTab === 'error_logs' && canViewErrorLogs && (
+              <AdminErrorLogs token={token} />
+            )}
+          </React.Suspense>
 
         </div>
       </main>

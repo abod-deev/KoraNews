@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
@@ -7,7 +8,7 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { adminAuth } from './src/lib/firebase-admin.ts';
 import { db, withDbRetry, initializeDatabaseSchema } from './src/db/index.ts';
-import { users, news, categories, comments, emailVerifications, activityLogs, errorLogs, contestParticipants, predictionMatches, teams, leagues } from './src/db/schema.ts';
+import { users, news, categories, comments, emailVerifications, activityLogs, errorLogs, contestParticipants, predictionMatches } from './src/db/schema.ts';
 import { eq, desc, sql, and, or, ilike, lt } from 'drizzle-orm';
 import { checkUserHasPermission } from './src/constants/permissions.ts';
 import {
@@ -88,12 +89,15 @@ import {
   updatePredictionMatchResult,
   createAdminLeague,
   createAdminTeam,
-  updateTeamLogo,
   adminSaveUserPrediction,
   adminUpdateUserPrediction,
   adminDeleteUserPrediction,
   getAdminParticipantPredictions,
   recalculateContestPredictions,
+  adjustParticipantPointsAndGoldens,
+  addParticipantWithInitialPoints,
+  batchAdjustParticipantsPoints,
+  getEligibleUsersForContest,
 } from './src/services/predictionService.ts';
 import { seedSaudiAndNationalTeams } from './src/services/seedSaudiAndNationalTeams.ts';
 import { runSystemCompatibilityAudit } from './src/services/systemCompatibilityService.ts';
@@ -203,6 +207,9 @@ async function startServer() {
     console.warn('[Server Startup Warning] Database schema initialization warning:', dbErr?.message || dbErr);
     console.log('[Server Startup] Continuing production server startup.');
   }
+
+  // High-performance response compression (gzip/deflate)
+  app.use(compression());
 
   // Security Headers via Helmet (configured to allow iframe & images & OAuth popups)
   app.use(
@@ -1597,6 +1604,179 @@ async function startServer() {
   });
 
   /**
+   * POST /api/admin/predictions/participants/:id/adjust-points
+   * Admin: Add or set initial points and golden predictions for participants or corrections.
+   */
+  app.post(
+    '/api/admin/predictions/participants/:id/adjust-points',
+    requirePermission(['predictions_points_manage', 'predictions_participants_manage', 'predictions_manage']),
+    async (req: AuthRequest, res) => {
+      try {
+        const idCheck = validatePositiveId(req.params.id, 'معرف المشترك');
+        if (!idCheck.valid || idCheck.value === undefined) {
+          return res.status(400).json({ error: idCheck.error || 'معرف غير صحيح' });
+        }
+
+        const { points, goldenPredictions, mode = 'set', reason } = req.body;
+
+        const numPoints = Number(points);
+        if (isNaN(numPoints) || numPoints < 0) {
+          return res.status(400).json({ error: 'عدد النقاط يجب أن يكون رقماً صحيحاً غير سالب' });
+        }
+
+        const numGoldens = goldenPredictions !== undefined ? Number(goldenPredictions) : 0;
+        if (isNaN(numGoldens) || numGoldens < 0) {
+          return res.status(400).json({ error: 'عدد الذهبيات يجب أن يكون رقماً صحيحاً غير سالب' });
+        }
+
+        if (!['set', 'add'].includes(mode)) {
+          return res.status(400).json({ error: 'نوع العملية غير صالح (يجب أن يكون set أو add)' });
+        }
+
+        const result = await adjustParticipantPointsAndGoldens({
+          participantId: idCheck.value,
+          points: numPoints,
+          goldenPredictions: numGoldens,
+          mode: mode as 'set' | 'add',
+          reason: reason?.trim() || 'تعديل نقاط وذهبيات المتسابق من قبل المشرف',
+          adminUserId: req.dbUser.id,
+        });
+
+        await logActivity(req.dbUser.id, 'ADJUST_PARTICIPANT_POINTS', 'CONTEST_PARTICIPANT', String(idCheck.value), {
+          mode,
+          points: numPoints,
+          goldenPredictions: numGoldens,
+          previous: result.previous,
+          current: result.current,
+          reason,
+        });
+
+        return res.json(result);
+      } catch (error: any) {
+        console.error('Error adjusting participant points:', error);
+        return res.status(400).json({ error: error.message || 'فشل في تعديل نقاط المشترك' });
+      }
+    }
+  );
+
+  /**
+   * POST /api/admin/predictions/participants/add-with-points
+   * Admin: Add a registered user directly to a contest with points & goldens.
+   */
+  app.post(
+    '/api/admin/predictions/participants/add-with-points',
+    requirePermission(['predictions_points_manage', 'predictions_participants_manage', 'predictions_manage']),
+    async (req: AuthRequest, res) => {
+      try {
+        const { contestId, userId, points = 0, goldenPredictions = 0, reason } = req.body;
+
+        const contestIdNum = Number(contestId);
+        if (isNaN(contestIdNum) || contestIdNum <= 0) {
+          return res.status(400).json({ error: 'معرف المسابقة غير صالح' });
+        }
+
+        const userIdNum = Number(userId);
+        if (isNaN(userIdNum) || userIdNum <= 0) {
+          return res.status(400).json({ error: 'معرف المستخدم غير صالح' });
+        }
+
+        const numPoints = Number(points);
+        if (isNaN(numPoints) || numPoints < 0) {
+          return res.status(400).json({ error: 'النقاط يجب أن تكون رقماً صحيحاً موجباً أو صفر' });
+        }
+
+        const numGoldens = Number(goldenPredictions);
+        if (isNaN(numGoldens) || numGoldens < 0) {
+          return res.status(400).json({ error: 'الذهبيات يجب أن تكون رقماً صحيحاً موجباً أو صفر' });
+        }
+
+        const result = await addParticipantWithInitialPoints({
+          contestId: contestIdNum,
+          userId: userIdNum,
+          points: numPoints,
+          goldenPredictions: numGoldens,
+          reason: reason?.trim() || 'إضافة مشترك بنقاط من قبل المشرف',
+          adminUserId: req.dbUser.id,
+        });
+
+        await logActivity(req.dbUser.id, 'ADD_PARTICIPANT_WITH_POINTS', 'CONTEST_PARTICIPANT', String(result.participant.id), {
+          contestId: contestIdNum,
+          userId: userIdNum,
+          points: numPoints,
+          goldenPredictions: numGoldens,
+          reason,
+        });
+
+        return res.json(result);
+      } catch (error: any) {
+        console.error('Error adding participant with points:', error);
+        return res.status(400).json({ error: error.message || 'فشل في إضافة المتسابق بالنقاط المحددة' });
+      }
+    }
+  );
+
+  /**
+   * POST /api/admin/predictions/participants/batch-adjust
+   * Admin: Batch adjust points for multiple users/participants at once.
+   */
+  app.post(
+    '/api/admin/predictions/participants/batch-adjust',
+    requirePermission(['predictions_points_manage', 'predictions_participants_manage', 'predictions_manage']),
+    async (req: AuthRequest, res) => {
+      try {
+        const { contestId, items } = req.body;
+        const contestIdNum = Number(contestId);
+        if (isNaN(contestIdNum) || contestIdNum <= 0) {
+          return res.status(400).json({ error: 'معرف المسابقة غير صالح' });
+        }
+
+        if (!Array.isArray(items) || items.length === 0) {
+          return res.status(400).json({ error: 'يرجى إرسال قائمة المتسابقين المراد تعديل نقاطهم' });
+        }
+
+        const result = await batchAdjustParticipantsPoints({
+          contestId: contestIdNum,
+          items,
+          adminUserId: req.dbUser.id,
+        });
+
+        await logActivity(req.dbUser.id, 'BATCH_ADJUST_POINTS', 'CONTEST_PARTICIPANT', String(contestIdNum), {
+          count: items.length,
+        });
+
+        return res.json(result);
+      } catch (error: any) {
+        console.error('Error batch adjusting participant points:', error);
+        return res.status(400).json({ error: error.message || 'فشل في المعالجة الجماعية للنقاط' });
+      }
+    }
+  );
+
+  /**
+   * GET /api/admin/predictions/eligible-users
+   * Admin: Get registered users to easily pick and assign initial contest points.
+   */
+  app.get(
+    '/api/admin/predictions/eligible-users',
+    requirePermission(['predictions_points_manage', 'predictions_participants_manage', 'predictions_manage']),
+    async (req: AuthRequest, res) => {
+      try {
+        const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
+        if (!contestId || isNaN(contestId)) {
+          return res.status(400).json({ error: 'معرف المسابقة مطلوب' });
+        }
+
+        const search = req.query.search as string | undefined;
+        const list = await getEligibleUsersForContest(contestId, search);
+        return res.json(list);
+      } catch (error: any) {
+        console.error('Error fetching eligible users for contest:', error);
+        return res.status(500).json({ error: 'فشل في جلب قائمة المستخدمين' });
+      }
+    }
+  );
+
+  /**
    * DELETE /api/admin/predictions/participants/:id
    * Admin: Delete participant record.
    */
@@ -1628,7 +1808,7 @@ async function startServer() {
       }
       const contestId = req.query.contestId ? parseInt(req.query.contestId as string, 10) : undefined;
       const data = await getAdminParticipantPredictions(uidCheck.value, isNaN(contestId as number) ? undefined : contestId);
-      return res.json(data);
+      return res.json({ predictions: data, count: data.length });
     } catch (error: any) {
       console.error('Error fetching participant predictions:', error);
       return res.status(500).json({ error: 'فشل في جلب توقعات المشترك' });
@@ -1651,199 +1831,6 @@ async function startServer() {
     } catch (error: any) {
       console.error('Error recalculating contest predictions:', error);
       return res.status(400).json({ error: error.message || 'فشل في إعادة احتساب النقاط' });
-    }
-  });
-
-  // ==========================================
-  // TEAMS & LOGOS MANAGEMENT ROUTES
-  // ==========================================
-
-  /**
-   * GET /api/admin/teams
-   * Fetch all teams from database with search and filtering.
-   */
-  app.get('/api/admin/teams', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const search = (req.query.search as string || '').trim().toLowerCase();
-      const allTeams = await db.select().from(teams);
-
-      let filtered = allTeams;
-      if (search) {
-        filtered = allTeams.filter((t) =>
-          t.name.toLowerCase().includes(search) || t.id.toLowerCase().includes(search)
-        );
-      }
-
-      // Sort alphabetically by name
-      filtered.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-
-      return res.json({
-        total: allTeams.length,
-        filteredCount: filtered.length,
-        teams: filtered,
-      });
-    } catch (error: any) {
-      console.error('Error fetching teams:', error);
-      return res.status(500).json({ error: 'فشل في جلب قائمة الأندية' });
-    }
-  });
-
-  /**
-   * POST /api/admin/teams
-   * Add a new team manually to the database.
-   */
-  app.post('/api/admin/teams', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
-    try {
-      const { id, name, logo } = req.body;
-      if (!name || !name.trim()) {
-        return res.status(400).json({ error: 'اسم النادي مطلوب' });
-      }
-
-      const teamId = (id && id.trim())
-        ? id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')
-        : `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-      const cleanName = name.trim();
-      const cleanLogo = logo && logo.trim() ? logo.trim() : null;
-
-      // Check if team already exists
-      const existing = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
-      if (existing.length > 0) {
-        return res.status(400).json({ error: 'معرف النادي موجود بالفعل' });
-      }
-
-      await db.insert(teams).values({
-        id: teamId,
-        name: cleanName,
-        logo: cleanLogo,
-      });
-
-      await logActivity(req.dbUser.id, 'CREATE_TEAM', 'TEAMS', teamId, { name: cleanName, logo: cleanLogo });
-
-      return res.status(201).json({
-        success: true,
-        message: 'تمت إضافة النادي بنجاح',
-        team: { id: teamId, name: cleanName, logo: cleanLogo },
-      });
-    } catch (error: any) {
-      console.error('Error creating team:', error);
-      return res.status(500).json({ error: 'فشل في إضافة النادي' });
-    }
-  });
-
-  /**
-   * PUT /api/admin/teams/:id
-   * Update team name and/or logo URL in the database, with optional sync to prediction matches.
-   */
-  app.put('/api/admin/teams/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
-    try {
-      const teamId = String(req.params.id || '');
-      const { name, logo, syncMatches } = req.body;
-
-      if (!teamId) {
-        return res.status(400).json({ error: 'معرف النادي مطلوب' });
-      }
-
-      const existing = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
-      if (existing.length === 0) {
-        return res.status(404).json({ error: 'النادي غير موجود في قاعدة البيانات' });
-      }
-
-      const currentTeam = existing[0];
-      const newName = name !== undefined ? name.trim() : currentTeam.name;
-      const newLogo = logo !== undefined ? (logo.trim() || null) : currentTeam.logo;
-
-      await db
-        .update(teams)
-        .set({
-          name: newName,
-          logo: newLogo,
-        })
-        .where(eq(teams.id, teamId));
-
-      let matchesUpdated = 0;
-      if (syncMatches && newLogo) {
-        // Update all prediction_matches where this team name is used
-        const resHome = await db
-          .update(predictionMatches)
-          .set({ customHomeLogo: newLogo })
-          .where(eq(predictionMatches.customHomeName, currentTeam.name));
-
-        const resAway = await db
-          .update(predictionMatches)
-          .set({ customAwayLogo: newLogo })
-          .where(eq(predictionMatches.customAwayName, currentTeam.name));
-
-        if (newName !== currentTeam.name) {
-          await db
-            .update(predictionMatches)
-            .set({ customHomeName: newName, customHomeLogo: newLogo })
-            .where(eq(predictionMatches.customHomeName, currentTeam.name));
-
-          await db
-            .update(predictionMatches)
-            .set({ customAwayName: newName, customAwayLogo: newLogo })
-            .where(eq(predictionMatches.customAwayName, currentTeam.name));
-        }
-      }
-
-      await logActivity(req.dbUser.id, 'UPDATE_TEAM', 'TEAMS', teamId, {
-        oldName: currentTeam.name,
-        newName,
-        oldLogo: currentTeam.logo,
-        newLogo,
-        syncMatches: !!syncMatches,
-      });
-
-      return res.json({
-        success: true,
-        message: 'تم تحديث بيانات وشعار النادي بنجاح',
-        team: { id: teamId, name: newName, logo: newLogo },
-      });
-    } catch (error: any) {
-      console.error('Error updating team:', error);
-      return res.status(500).json({ error: 'فشل في تحديث بيانات النادي' });
-    }
-  });
-
-  /**
-   * DELETE /api/admin/teams/:id
-   * Delete a custom team from the database.
-   */
-  app.delete('/api/admin/teams/:id', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
-    try {
-      const teamId = String(req.params.id || '');
-      if (!teamId) {
-        return res.status(400).json({ error: 'معرف النادي مطلوب' });
-      }
-
-      await db.delete(teams).where(eq(teams.id, teamId));
-      await logActivity(req.dbUser.id, 'DELETE_TEAM', 'TEAMS', teamId);
-
-      return res.json({ success: true, message: 'تم حذف النادي بنجاح' });
-    } catch (error: any) {
-      console.error('Error deleting team:', error);
-      return res.status(500).json({ error: 'فشل في حذف النادي' });
-    }
-  });
-
-  /**
-   * POST /api/admin/teams/sync-official-logos
-   * Admin: One-click sync and repair of all team logos and match icons across the entire database!
-   */
-  app.post('/api/admin/teams/sync-official-logos', requirePermission('matches_manage'), async (req: AuthRequest, res) => {
-    try {
-      const result = await seedSaudiAndNationalTeams(true);
-      await logActivity(req.dbUser.id, 'SYNC_OFFICIAL_LOGOS', 'TEAMS', 'ALL', result);
-
-      return res.json({
-        success: true,
-        message: 'تمت مزامنة وتصحيح جميع شعارات الأندية والمباريات بنجاح!',
-        ...result,
-      });
-    } catch (error: any) {
-      console.error('Error syncing official logos:', error);
-      return res.status(500).json({ error: 'فشل في مزامنة الشعارات الرسمية' });
     }
   });
 
@@ -1920,7 +1907,8 @@ async function startServer() {
         return res.status(400).json({ error: aScoreCheck.error || 'أهداف الفريق الثاني غير صحيحة' });
       }
 
-      const result = await saveUserPrediction(req.dbUser.id, pIdCheck.value, hScoreCheck.value, aScoreCheck.value);
+      const isStaff = Boolean(req.dbUser.isAdmin || ['admin', 'manager', 'system_manager', 'owner', 'system_owner', 'superadmin'].includes(req.dbUser.role));
+      const result = await saveUserPrediction(req.dbUser.id, pIdCheck.value, hScoreCheck.value, aScoreCheck.value, isStaff);
       return res.json(result);
     } catch (error: any) {
       console.error('Error saving prediction:', error);
@@ -2441,27 +2429,6 @@ async function startServer() {
   });
 
   /**
-   * POST /api/admin/predictions/teams/update-logo
-   * Admin: Update the logo of a team or national team explicitly.
-   */
-  app.post('/api/admin/predictions/teams/update-logo', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
-    try {
-      const { name, logo } = req.body;
-      if (!name || typeof name !== 'string' || !name.trim()) {
-        return res.status(400).json({ error: 'اسم الفريق أو المنتخب مطلوب' });
-      }
-      if (!logo || typeof logo !== 'string' || !logo.trim()) {
-        return res.status(400).json({ error: 'رابط الشعار الجديد مطلوب' });
-      }
-      const updated = await updateTeamLogo(name.trim(), logo.trim());
-      await logActivity(req.dbUser.id, 'UPDATE', 'TEAM', updated.id, { name: updated.name, logo: updated.logo });
-      return res.json({ success: true, team: updated });
-    } catch (error: any) {
-      return res.status(400).json({ error: error.message || 'فشل في تحديث شعار الفريق' });
-    }
-  });
-
-  /**
    * POST /api/admin/predictions/user-prediction
    * Admin: Add or save a prediction for a participant on a match.
    */
@@ -2512,43 +2479,10 @@ async function startServer() {
 
   /**
    * PUT /api/admin/predictions/user-prediction/:id
-   * Admin: Edit an existing prediction score directly.
+   * Admin: Disabled to guarantee fairness and prevent score tampering.
    */
   app.put('/api/admin/predictions/user-prediction/:id', requirePermission('predictions_manage'), async (req: AuthRequest, res) => {
-    try {
-      const idCheck = validatePositiveId(req.params.id, 'معرف التوقع');
-      if (!idCheck.valid || idCheck.value === undefined) {
-        return res.status(400).json({ error: idCheck.error || 'معرف التوقع غير صالح' });
-      }
-
-      const { homeScore, awayScore } = req.body;
-      const hScoreVal = validateScore(homeScore, 'أهداف الفريق المضيف');
-      if (!hScoreVal.valid || hScoreVal.value === undefined) {
-        return res.status(400).json({ error: hScoreVal.error });
-      }
-
-      const aScoreVal = validateScore(awayScore, 'أهداف الفريق الضيف');
-      if (!aScoreVal.valid || aScoreVal.value === undefined) {
-        return res.status(400).json({ error: aScoreVal.error });
-      }
-
-      const result = await adminUpdateUserPrediction(
-        req.dbUser.id,
-        idCheck.value,
-        hScoreVal.value,
-        aScoreVal.value
-      );
-
-      await logActivity(req.dbUser.id, 'ADMIN_UPDATE', 'PREDICTION', String(idCheck.value), {
-        homeScore: hScoreVal.value,
-        awayScore: aScoreVal.value,
-      });
-
-      return res.json(result);
-    } catch (error: any) {
-      console.error('Error in admin update user prediction:', error);
-      return res.status(400).json({ error: error.message || 'فشل في تعديل التوقع' });
-    }
+    return res.status(403).json({ error: 'تم تعطيل تعديل أهداف وتوقعات المتسابقين نهائياً لضمان النزاهة ومنع التلاعب.' });
   });
 
   /**

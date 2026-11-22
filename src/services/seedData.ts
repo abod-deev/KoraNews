@@ -58,7 +58,7 @@ export const PRE_STORED_LEAGUES = [
 const createTeam = (id: string, name: string, crestId: string | number): SeedTeam => ({
   id,
   name,
-  logo: '',
+  logo: `https://crests.football-data.org/${crestId}.png`,
 });
 
 // 2. Pre-stored Standings for all 13 leagues

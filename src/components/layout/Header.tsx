@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import SideNavDrawer from './SideNavDrawer';
 import SiteLogo from './SiteLogo';
 import { preloadRoute } from '../../utils/routePreload';
+import { formatMeccaTime } from '../../utils/timezoneDateUtils';
 
 export default function Header() {
   const location = useLocation();
@@ -98,7 +99,7 @@ export default function Header() {
               <button
                 onClick={handleBellClick}
                 className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all relative cursor-pointer text-slate-600 dark:text-slate-300"
-                title="تنبيهات المباريات المفضلة"
+                title="تنبيهات المباريات"
                 aria-label="تنبيهات المباريات"
                 id="header-bell-btn"
               >
@@ -109,7 +110,7 @@ export default function Header() {
                 )}
                 {user && remindedMatches.length > 0 && (
                   <span className="absolute top-1 right-1 bg-amber-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
-                    {remindedMatches.length}
+                    {remindedMatches.length > 9 ? '+9' : remindedMatches.length}
                   </span>
                 )}
               </button>
@@ -123,17 +124,17 @@ export default function Header() {
                     exit={{ opacity: 0, y: 8, scale: 0.96 }}
                     className="absolute left-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-50 overflow-hidden dir-rtl"
                   >
-                    <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/60">
-                      <div className="flex items-center gap-1.5">
-                        <BellRing className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                        <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">
-                          تنبيهات المباريات ({remindedMatches.length})
+                    <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4 text-amber-500" />
+                        <h4 className="text-xs font-black text-slate-800 dark:text-slate-100">
+                          المباريات المنبهة ({remindedMatches.length})
                         </h4>
                       </div>
                       <Link
                         to="/matches"
                         onClick={() => setIsNotificationsOpen(false)}
-                        className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline"
+                        className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:underline"
                       >
                         جدول المباريات
                       </Link>
@@ -143,7 +144,7 @@ export default function Header() {
                       {remindedMatches.length === 0 ? (
                         <div className="text-center py-6 px-3 text-slate-500 dark:text-slate-400">
                           <Bell className="w-7 h-7 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                          <p className="text-xs font-bold">لا يوجد مباريات منبهة حالياً.</p>
+                          <p className="text-xs font-bold">لا توجد مباريات منبهة حالياً.</p>
                           <p className="text-[10px] text-slate-400 mt-1">
                             اضغط على زر التنبيه بجانب أي مباراة لتصلك إشعارات قبل انطلاقها!
                           </p>
@@ -157,7 +158,7 @@ export default function Header() {
                             <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
                               <span className="truncate max-w-[150px]">{match.leagueName}</span>
                               <span className="text-amber-500 font-extrabold shrink-0">
-                                {match.matchDate ? new Date(match.matchDate).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'وقت غير متوفر'}
+                                {match.matchDate ? formatMeccaTime(match.matchDate, { hour: '2-digit', minute: '2-digit', hour12: true }) : 'وقت غير متوفر'}
                               </span>
                             </div>
 
@@ -176,14 +177,14 @@ export default function Header() {
                             <div className="flex items-center justify-between pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
                               <button
                                 onClick={() => triggerTestNotification(match)}
-                                className="text-[10px] font-bold text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors"
+                                className="text-[10px] font-bold text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors cursor-pointer"
                               >
                                 <Play className="w-2.5 h-2.5 fill-current" />
                                 <span>تجربة الإشعار</span>
                               </button>
                               <button
                                 onClick={() => toggleReminder(match)}
-                                className="text-[10px] font-bold text-rose-500 hover:bg-rose-500/10 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors"
+                                className="text-[10px] font-bold text-rose-500 hover:bg-rose-500/10 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors cursor-pointer"
                               >
                                 <Trash2 className="w-2.5 h-2.5" />
                                 <span>إلغاء</span>

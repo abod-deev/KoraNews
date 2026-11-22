@@ -1,4 +1,4 @@
-import { cachedFetch, invalidateClientCache, getSyncCached } from '../utils/apiCache';
+import { cachedFetch, getSyncCached } from '../utils/apiCache';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -100,85 +100,4 @@ export const fetchCategories = async () => {
     console.warn('fetchCategories notice:', (error as any)?.message || error);
     return FALLBACK_CATEGORIES;
   }
-};
-
-export const createNews = async (data: any, token: string) => {
-  const res = await fetch(`${API_URL}/api/news`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(errText || 'فشل إضافة الخبر');
-  }
-  invalidateClientCache('news');
-  return res.json();
-};
-
-export const updateNews = async (id: number, data: any, token: string) => {
-  const res = await fetch(`${API_URL}/api/news/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(errText || 'فشل تعديل الخبر');
-  }
-  invalidateClientCache('news');
-  return res.json();
-};
-
-export const deleteNews = async (id: number, token: string) => {
-  const res = await fetch(`${API_URL}/api/news/${id}`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(errText || 'فشل حذف الخبر');
-  }
-  invalidateClientCache('news');
-};
-
-export const createCategory = async (data: { name: string; slug: string }, token: string) => {
-  const res = await fetch(`${API_URL}/api/categories`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(errText || 'فشل إضافة التصنيف');
-  }
-  invalidateClientCache('categories');
-  return res.json();
-};
-
-export const addComment = async (newsId: number, content: string, token: string) => {
-  const res = await fetch(`${API_URL}/api/news/${newsId}/comments`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ content }),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(errText || 'فشل إضافة التعليق');
-  }
-  return res.json();
 };

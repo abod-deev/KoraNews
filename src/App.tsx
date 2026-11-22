@@ -56,6 +56,7 @@ const GoldenLeaderboardPage = lazyWithRetry(() => import('./pages/GoldenLeaderbo
 const Admin = lazyWithRetry(() => import('./pages/Admin'));
 const Login = lazyWithRetry(() => import('./pages/Login'));
 const Profile = lazyWithRetry(() => import('./pages/Profile'));
+const TermsAndPolicies = lazyWithRetry(() => import('./pages/TermsAndPolicies'));
 import { Loader2 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { checkIsAdmin } from './utils/authHelpers';
@@ -105,6 +106,10 @@ export default function App() {
                   <Route path="admin" element={<AdminRoute />} />
                   <Route path="profile" element={<Profile />} />
                   <Route path="login" element={<Login />} />
+                  <Route path="terms" element={<TermsAndPolicies />} />
+                  <Route path="privacy" element={<TermsAndPolicies />} />
+                  <Route path="policies" element={<TermsAndPolicies />} />
+                  <Route path="contest-rules" element={<TermsAndPolicies />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
               </Routes>

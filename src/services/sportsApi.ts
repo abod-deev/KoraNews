@@ -141,7 +141,3 @@ export const getStandings = async (leagueId: string, season: string = '2026'): P
     return [];
   }
 };
-export const getTeams = async (): Promise<Team[]> => { return []; };
-export const getTeamById = async (id: string): Promise<Team | null> => { return null; };
-export const getPlayers = async (teamId?: string): Promise<Player[]> => { return []; };
-export const getPlayerById = async (id: string): Promise<Player | null> => { return null; };

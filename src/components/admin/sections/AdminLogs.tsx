@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../../../contexts/AuthContext';
 import AdminAccessDenied from '../AdminAccessDenied';
 import { PERMISSIONS } from '../../../constants/permissions';
+import { adminCache } from '../../../utils/adminCache';
 
 interface AdminLogsProps {
   token: string | null;
@@ -33,8 +34,10 @@ type CategoryType = 'ALL' | 'CONTESTS' | 'USERS' | 'NEWS' | 'SYSTEM';
 
 export default function AdminLogs({ token }: AdminLogsProps) {
   const { isOwner, isManager, hasPermission } = useAuth();
-  const [logs, setLogs] = useState<LogRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  const cachedLogs = adminCache.get<LogRecord[]>('admin_logs', 45000);
+  const [logs, setLogs] = useState<LogRecord[]>(cachedLogs || []);
+  const [isLoading, setIsLoading] = useState(!cachedLogs);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CategoryType>('ALL');
@@ -56,7 +59,7 @@ export default function AdminLogs({ token }: AdminLogsProps) {
   };
 
   const fetchLogs = async (silent = false) => {
-    if (!silent) setIsLoading(true);
+    if (!silent && !logs.length) setIsLoading(true);
     else setIsRefreshing(true);
 
     try {
@@ -67,6 +70,7 @@ export default function AdminLogs({ token }: AdminLogsProps) {
         const data = await res.json();
         const logsList = Array.isArray(data) ? data : (data.logs || []);
         setLogs(logsList);
+        adminCache.set('admin_logs', logsList);
       } else {
         const errData = await res.json().catch(() => ({}));
         showNotification('error', errData.error || 'تعذر جلب سجل العمليات');
@@ -81,7 +85,7 @@ export default function AdminLogs({ token }: AdminLogsProps) {
 
   useEffect(() => {
     if (token) {
-      fetchLogs();
+      fetchLogs(!!cachedLogs);
     }
   }, [token]);
 

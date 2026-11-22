@@ -169,7 +169,7 @@ export function isDbUserAdmin(dbUser: Partial<DbUser> | null | undefined): boole
  * 2. System Manager: passes all operational permissions (except managers_manage)
  * 3. Admin: checks explicit permissions array
  */
-export const requirePermission = (permission?: string) => {
+export const requirePermission = (permission?: string | string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !req.dbUser) {
       await new Promise<void>((resolve) => {
@@ -205,6 +205,16 @@ export const requirePermission = (permission?: string) => {
     }
 
     // 2. Check using centralized permission resolution engine
+    if (Array.isArray(permission)) {
+      const hasAny = permission.some((p) => checkUserHasPermission(dbUser, p));
+      if (!hasAny) {
+        return res.status(403).json({
+          error: `Forbidden: لا تملك الصلاحية المطلوبة (Requires any of: ${permission.join(', ')})`,
+        });
+      }
+      return next();
+    }
+
     const hasPerm = checkUserHasPermission(dbUser, permission);
     if (!hasPerm) {
       return res.status(403).json({ error: `Forbidden: لا تملك الصلاحية المطلوبة (Missing required permission: ${permission})` });

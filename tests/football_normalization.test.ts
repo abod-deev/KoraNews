@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeApiMatchPayload } from '../footballService.ts';
-import { isMatchOpenForPrediction, determineMatchPredictionState } from '../predictionService.ts';
+import { normalizeApiMatchPayload } from '../src/services/footballService.ts';
+import { isMatchOpenForPrediction, determineMatchPredictionState } from '../src/services/predictionService.ts';
 
 describe('Football API Normalization Unit Tests', () => {
   it('should correctly normalize a valid raw match payload from external API', () => {

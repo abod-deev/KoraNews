@@ -7,6 +7,7 @@ import {
 import ConfirmModal from '../../common/ConfirmModal';
 import { useAuth } from '../../../contexts/AuthContext';
 import { PERMISSIONS } from '../../../constants/permissions';
+import { adminCache } from '../../../utils/adminCache';
 
 interface AdminNewsProps {
   token: string | null;
@@ -22,8 +23,12 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
   const canFeatureNews = hasPermission(PERMISSIONS.NEWS_FEATURE);
   const canBreakingNews = hasPermission(PERMISSIONS.NEWS_BREAKING);
 
-  const [news, setNews] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
+  // Initialize from cache if available for instant 0ms tab display
+  const cachedNews = adminCache.get<any[]>('admin_news', 120000);
+  const cachedCategories = adminCache.get<any[]>('admin_categories', 300000);
+
+  const [news, setNews] = useState<any[]>(cachedNews || []);
+  const [categories, setCategories] = useState<any[]>(cachedCategories || []);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -31,14 +36,19 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
   const [filterCategory, setFilterCategory] = useState('');
   const [editingNews, setEditingNews] = useState<any>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!cachedNews);
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; item: any | null }>({ isOpen: false, item: null });
 
-  const fetchNews = async () => {
-    setIsLoading(true);
+  const fetchNews = async (silent = false) => {
+    if (!silent && !news.length) setIsLoading(true);
     try {
       const res = await fetch('/api/news');
-      if (res.ok) setNews(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        const validList = Array.isArray(data) ? data : [];
+        setNews(validList);
+        adminCache.set('admin_news', validList);
+      }
     } catch (e) {
       console.error('Failed to fetch news', e);
     } finally {
@@ -47,12 +57,13 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
   };
 
   const fetchCategoriesList = async () => {
-    setIsLoadingCategories(true);
     try {
       const res = await fetch('/api/categories');
       if (res.ok) {
         const data = await res.json();
-        setCategories(Array.isArray(data) ? data : []);
+        const validList = Array.isArray(data) ? data : [];
+        setCategories(validList);
+        adminCache.set('admin_categories', validList);
       }
     } catch (err) {
       console.error('Failed to fetch categories', err);
@@ -62,8 +73,11 @@ export default function AdminNews({ token, showMsg }: AdminNewsProps) {
   };
 
   useEffect(() => {
-    fetchNews();
-    fetchCategoriesList();
+    // SWR pattern: show cached immediately, revalidate silently in background
+    fetchNews(!!cachedNews);
+    if (!cachedCategories) {
+      fetchCategoriesList();
+    }
   }, [token]);
 
   const handleStartAddNews = () => {

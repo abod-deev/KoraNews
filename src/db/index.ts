@@ -241,6 +241,11 @@ export async function initializeDatabaseSchema() {
         reviewed_at TIMESTAMP,
         reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         notes TEXT,
+        initial_points INTEGER DEFAULT 0 NOT NULL,
+        initial_golden_predictions INTEGER DEFAULT 0 NOT NULL,
+        manual_adjustment_reason TEXT,
+        points_adjusted_at TIMESTAMP,
+        points_adjusted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
@@ -360,6 +365,11 @@ export async function initializeDatabaseSchema() {
 
       -- Ensure contest_participants columns
       ALTER TABLE contest_participants ADD COLUMN IF NOT EXISTS contest_id INTEGER REFERENCES contest_settings(id) ON DELETE CASCADE;
+      ALTER TABLE contest_participants ADD COLUMN IF NOT EXISTS initial_points INTEGER DEFAULT 0 NOT NULL;
+      ALTER TABLE contest_participants ADD COLUMN IF NOT EXISTS initial_golden_predictions INTEGER DEFAULT 0 NOT NULL;
+      ALTER TABLE contest_participants ADD COLUMN IF NOT EXISTS manual_adjustment_reason TEXT;
+      ALTER TABLE contest_participants ADD COLUMN IF NOT EXISTS points_adjusted_at TIMESTAMP;
+      ALTER TABLE contest_participants ADD COLUMN IF NOT EXISTS points_adjusted_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
     `);
 
     // 3. Safe, Relational Legacy Contest Migration (Strict isolation preservation)

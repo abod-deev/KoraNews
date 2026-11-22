@@ -141,28 +141,32 @@ export default function GoldenLeaderboardPage() {
   const isArchived = currentContest?.status === 'completed';
 
   const handleShare = async () => {
-    let text = `👑 لائحة التوقعات الذهبية — مسابقة KoraNews\n\n`;
-    text += `التوقع الذهبي يُمنح للمتسابق المنفرد بالتوقع الدقيق لمباراة ما!\n\n`;
+    const contestTitle = currentContest?.name || 'مسابقة التوقعات';
+    const desc = currentContest?.description?.trim();
+
+    let text = ` ترتيب التوقعات الذهبية ↯↯↯\n\n "${contestTitle}" \n\n         الاسم —— الذهبيات\n\n`;
 
     if (leaderboard.length > 0) {
-      leaderboard.slice(0, 5).forEach((u) => {
-        const icon = u.rank === 1 ? '🥇' : u.rank === 2 ? '🥈' : u.rank === 3 ? '🥉' : `${u.rank}.`;
-        text += `${icon} ${u.name} — ${u.goldenPredictions} ذهبية (إجمالي النقاط: ${u.totalPoints})\n`;
+      leaderboard.forEach((u) => {
+        let rankPrefix = '';
+        if (u.rank === 1) rankPrefix = '🥇/';
+        else if (u.rank === 2) rankPrefix = '🥈/';
+        else if (u.rank === 3) rankPrefix = '🥉/';
+        else rankPrefix = ` ${u.rank} /`;
+
+        text += `${rankPrefix} ${u.name} — ${u.goldenPredictions || 0} ذهبية\n`;
       });
     }
 
-    if (currentUserRank) {
-      text += `\n🎯 ترتيبي الذهبي: المركز #${currentUserRank.rank} بـ ${currentUserRank.goldenPredictions} توقع ذهبي!\n`;
+    if (desc) {
+      text += `\nملاحظه / "${desc}".`;
     }
-
-    text += `\nتابع الترتيب وتوقع الآن:\n${window.location.origin}/predictions/golden`;
 
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'الترتيب الذهبي - KoraNews',
+          title: `ترتيب التوقعات الذهبية - ${contestTitle}`,
           text,
-          url: `${window.location.origin}/predictions/golden`,
         });
         return;
       } catch {}

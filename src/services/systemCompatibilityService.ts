@@ -27,10 +27,9 @@ export interface AuditReport {
 /**
  * Safe, idempotent migration & compatibility audit service.
  * Ensures:
- * 1. The existing owner account (abod46071@gmail.com or superadmin) remains the primary System Owner.
+ * 1. The existing owner account remains the primary System Owner.
  * 2. Zero data loss across users, news, contests, predictions, and logs.
  * 3. Consistent isAdmin = true for legacy admin records.
- * 4. Safe preservation of permissions without unearned privilege grants.
  */
 export async function runSystemCompatibilityAudit(): Promise<AuditReport> {
   return withDbRetry(async () => {
@@ -113,10 +112,6 @@ export async function runSystemCompatibilityAudit(): Promise<AuditReport> {
         },
       });
     }
-
-    console.log(
-      `[System Compatibility] Audit complete. Users: ${counts.users}, News: ${counts.news}, Admins Synchronized: ${migratedAdminsCount}, System Owner: ${ownerInfo?.email || 'N/A'}`
-    );
 
     return {
       timestamp: new Date().toISOString(),

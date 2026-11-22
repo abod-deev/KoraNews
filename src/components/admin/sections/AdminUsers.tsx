@@ -20,6 +20,7 @@ import {
   ASSIGNABLE_ADMIN_PERMISSIONS,
   ASSIGNABLE_ADMIN_PERMISSION_KEYS
 } from '../../../constants/permissions';
+import { adminCache } from '../../../utils/adminCache';
 
 // Clean functional groups strictly for assignable admin permissions
 const MODAL_PERMISSION_GROUPS = [
@@ -74,10 +75,13 @@ interface AdminUsersProps {
 
 export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
   const { user: currentUser, isOwner: callerIsOwner, isManager: callerIsManager, hasPermission } = useAuth();
-  const [users, setUsers] = useState<any[]>([]);
+
+  const cachedUsers = adminCache.get<any[]>('admin_users', 60000);
+
+  const [users, setUsers] = useState<any[]>(cachedUsers || []);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!cachedUsers);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -90,15 +94,17 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
   const canPromoteAdmin = callerIsOwner || callerIsManager || hasPermission(PERMISSIONS.ADMINS_ADD);
   const canManageStatus = callerIsOwner || callerIsManager || hasPermission(PERMISSIONS.USERS_MANAGE) || hasPermission(PERMISSIONS.USERS_ACTIVATE) || hasPermission(PERMISSIONS.USERS_DEACTIVATE);
 
-  const fetchUsers = async () => {
-    setIsLoading(true);
+  const fetchUsers = async (silent = false) => {
+    if (!silent && !users.length) setIsLoading(true);
     try {
       const res = await fetch('/api/admin/users', {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
         const data = await res.json();
-        setUsers(Array.isArray(data) ? data : []);
+        const validList = Array.isArray(data) ? data : [];
+        setUsers(validList);
+        adminCache.set('admin_users', validList);
       }
     } catch (e) {
       console.error('Failed to fetch users', e);
@@ -108,7 +114,7 @@ export default function AdminUsers({ token, showMsg }: AdminUsersProps) {
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchUsers(!!cachedUsers);
   }, [token]);
 
   // Handle ESC key to close modal

@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Match } from '../../services/sportsApi';
 import { X, Calendar, Clock, Trophy, MapPin, Bell, BellRing, Sparkles, Activity, ShieldCheck } from 'lucide-react';
 import { getArabicTeamName } from '../../utils/teamTranslations';
+import { formatMeccaDate } from '../../utils/timezoneDateUtils';
 import { useMatchTimer } from './MatchTimeDisplay';
 import { useMatchReminders } from '../../contexts/MatchRemindersContext';
 
@@ -176,7 +177,7 @@ export default function MatchDetailsModal({ match, isOpen, onClose }: MatchDetai
                       <span>تاريخ المباراة</span>
                     </span>
                     <span className="font-extrabold text-slate-800 dark:text-slate-200">
-                      {new Date(match.matchDate || Date.now()).toLocaleDateString('ar-EG', {
+                      {formatMeccaDate(match.matchDate || Date.now(), {
                         weekday: 'long',
                         month: 'short',
                         day: 'numeric',
@@ -191,7 +192,7 @@ export default function MatchDetailsModal({ match, isOpen, onClose }: MatchDetai
                       <span>موعد الانطلاق</span>
                     </span>
                     <span className="font-extrabold text-slate-800 dark:text-slate-200">
-                      {liveState.kickoffTimeStr} (بتوقيت المحلي)
+                      {liveState.kickoffTimeStr} (توقيت مكة المكرمة)
                     </span>
                   </div>
 

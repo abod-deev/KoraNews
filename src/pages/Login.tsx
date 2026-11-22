@@ -762,6 +762,20 @@ export default function Login() {
                 <span>تسجيل الدخول</span>
               )}
             </button>
+
+            {mode === 'register' && (
+              <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 font-normal leading-relaxed pt-1">
+                بإنشاء الحساب، فإنك تقبل وتوافق على{' '}
+                <Link to="/terms" className="underline hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+                  سياسة الاستخدام
+                </Link>
+                {' '}و{' '}
+                <Link to="/privacy" className="underline hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+                  الخصوصية والأمان
+                </Link>
+                .
+              </p>
+            )}
           </form>
         )}
 

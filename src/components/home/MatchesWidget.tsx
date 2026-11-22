@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getMatchesWithResult, Match } from '../../services/sportsApi';
-import { getSystemTodayStr } from '../../utils/systemDateUtils';
+import { getSystemTodayStr } from '../../utils/timezoneDateUtils';
 import { Calendar, ChevronLeft, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MatchCard from '../common/MatchCard';

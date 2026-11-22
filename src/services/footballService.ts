@@ -4,6 +4,7 @@ import { eq, sql, lt, desc, and, or } from "drizzle-orm";
 import { fetchFromFootballData, RateLimitError } from "./footballApi.ts";
 import { getArabicTeamName, translateTeamName, TEAM_AR_NAMES } from "../utils/teamTranslations.ts";
 import { PRE_STORED_LEAGUES, PRE_STORED_STANDINGS } from "./seedData.ts";
+import { formatMeccaTime, getMatchDateStr, isMatchOnDate } from "../utils/timezoneDateUtils.ts";
 
 export { getArabicTeamName, translateTeamName, TEAM_AR_NAMES };
 
@@ -202,7 +203,7 @@ export async function initFootballDb() {
             await db.insert(teams).values({
               id: item.team.id,
               name: item.team.name,
-              logo: null,
+              logo: item.team.logo,
             }).catch(() => null);
           }
         }
@@ -220,13 +221,13 @@ export async function initFootballDb() {
 }
 
 /**
- * Clean outdated matches from database (older than 14 days) to keep DB performant & clean
+ * Clean outdated matches from database (prior to Season 2026) to keep DB performant & clean
  */
 export async function cleanOldMatchesFromDb() {
   try {
-    const fourteenDaysAgo = new Date(Date.now() - 14 * 86400000);
-    await withDbRetry(() => db.delete(matches).where(lt(matches.matchDate, fourteenDaysAgo)));
-    console.log("[footballService] Old historical matches pruned from DB.");
+    const season2026Start = new Date('2026-01-01T00:00:00Z');
+    await withDbRetry(() => db.delete(matches).where(lt(matches.matchDate, season2026Start)));
+    console.log("[footballService] Historical matches prior to 2026 pruned from DB.");
   } catch (err: any) {
     console.warn("[footballService] Pruning old matches notice:", err.message || err);
   }
@@ -235,13 +236,14 @@ export async function cleanOldMatchesFromDb() {
 /**
  * Cycle 1: Fetch and Sync Matches across ALL Free Tier Competitions.
  * Runs once every minute (part of the 2 req/min budget).
- * Deletes stale records, fetches live and upcoming matches for all free tier leagues, and saves to DB.
+ * Fetches live and upcoming matches for all free tier leagues, and saves to DB.
  */
 export async function syncMatchesCycle() {
   console.log("[footballSync] Running Global Matches Sync Cycle for all free competitions...");
   try {
+    // football-data.org requires date window <= 10 days
     const dateFrom = new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0]; // past 2 days
-    const dateTo = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];   // next 7 days
+    const dateTo = new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0];   // next 6 days (total 9 days <= 10 days limit)
     const competitionsParam = SUPPORTED_LEAGUES.join(',');
 
     // 1. Fetch matches from API across all free competitions in the date window
@@ -260,16 +262,13 @@ export async function syncMatchesCycle() {
     if (data && Array.isArray(data.matches) && data.matches.length > 0) {
       console.log(`[footballSync] Fetched ${data.matches.length} fresh matches across all free tier leagues.`);
       
-      // Clean old records before storing new ones
-      await cleanOldMatchesFromDb();
-
       // Store in DB
       await processAndStoreMatches(data.matches);
 
       // Refresh memory matches cache from DB
       await refreshMemoryMatchesCache();
     } else {
-      console.log("[footballSync] No matches returned in current window, rotating to individual league sync.");
+      console.log("[footballSync] Rotating to individual league sync.");
       await syncSpecificLeagueMatches(SUPPORTED_LEAGUES[currentMatchesLeagueIndex % SUPPORTED_LEAGUES.length]);
       currentMatchesLeagueIndex++;
     }
@@ -454,7 +453,7 @@ export function normalizeApiMatchPayload(apiMatch: any): NormalizedMatchData | n
 
   let formattedTime = '00:00';
   if (!isNaN(matchDateObj.getTime())) {
-    formattedTime = matchDateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    formattedTime = formatMeccaTime(matchDateObj, { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   const displayTime =
@@ -534,10 +533,10 @@ async function processAndStoreMatches(apiMatches: any[]) {
         await db.insert(teams).values({
           id: norm.homeTeam.id,
           name: norm.homeTeam.name,
-          logo: null,
+          logo: norm.homeTeam.logo,
         }).catch(() => null);
       } else {
-        await db.update(teams).set({ name: norm.homeTeam.name }).where(eq(teams.id, norm.homeTeam.id)).catch(() => null);
+        await db.update(teams).set({ name: norm.homeTeam.name, logo: norm.homeTeam.logo }).where(eq(teams.id, norm.homeTeam.id)).catch(() => null);
       }
 
       // 3. Upsert Away Team
@@ -546,10 +545,10 @@ async function processAndStoreMatches(apiMatches: any[]) {
         await db.insert(teams).values({
           id: norm.awayTeam.id,
           name: norm.awayTeam.name,
-          logo: null,
+          logo: norm.awayTeam.logo,
         }).catch(() => null);
       } else {
-        await db.update(teams).set({ name: norm.awayTeam.name }).where(eq(teams.id, norm.awayTeam.id)).catch(() => null);
+        await db.update(teams).set({ name: norm.awayTeam.name, logo: norm.awayTeam.logo }).where(eq(teams.id, norm.awayTeam.id)).catch(() => null);
       }
 
       // 4. Upsert Match & Prevent duplicates (ID check or composite team+date check)
@@ -617,7 +616,7 @@ export async function getStoredMatches(filters: {
 }) {
   const { status, date, leagueId, sortBy } = filters;
 
-  // Retrieve matches from DB
+  // 1. Retrieve matches from DB
   let allMatches = await db.query.matches.findMany({
     with: {
       league: true,
@@ -640,10 +639,18 @@ export async function getStoredMatches(filters: {
     });
   }
 
-  // Exclude any mock / pre-seeded / pre-stored matches to guarantee 100% real matches
-  let result = allMatches.filter(m => m.source === 'football-data.org');
+  // Exclude mock / pre-seeded test matches and manually added prediction matches
+  // Matches added manually via admin are for predictions only and must NOT appear in the Matches section
+  let result = allMatches.filter(m => {
+    if (!m.source) return true;
+    if (m.source === 'football-data.org') return true;
+    if (['admin_custom', 'manual', 'admin', 'prediction', 'pre-seeded', 'mock'].includes(m.source)) {
+      return false;
+    }
+    return true;
+  });
 
-  // 0. Season Filter (Strictly season 2026 ONLY - reject 2025, 2024, or any legacy seasons)
+  // 2. Season Filter (Strictly season 2026 ONLY)
   result = result.filter(m => {
     const mSeason = (m as any).season;
     if (mSeason !== undefined && mSeason !== null && String(mSeason) !== '2026') {
@@ -666,16 +673,7 @@ export async function getStoredMatches(filters: {
     return true;
   });
 
-  // 1. Status Filter
-  if (status) {
-    if (status === 'LIVE' || status === 'IN_PLAY') {
-      result = result.filter(m => ['LIVE', 'IN_PLAY', 'PAUSED'].includes(m.status));
-    } else {
-      result = result.filter(m => m.status === status);
-    }
-  }
-
-  // 2. League Filter (Bidirectional matching across code and id, case-insensitive)
+  // 3. League Filter (Bidirectional matching across code and id, case-insensitive)
   if (leagueId && leagueId !== 'all') {
     const rawUpper = String(leagueId).toUpperCase();
     const targetCode = (COMPETITION_CODE_MAP[rawUpper] || ID_TO_CODE[rawUpper] || COMPETITION_CODE_MAP[leagueId] || ID_TO_CODE[leagueId] || leagueId).toUpperCase();
@@ -694,31 +692,104 @@ export async function getStoredMatches(filters: {
       );
     });
 
+    // If 0 matches found in DB for this specific league, fetch and sync from API
+    if (leagueMatches.length === 0 && SUPPORTED_LEAGUES.includes(targetCode)) {
+      try {
+        await syncSpecificLeagueMatches(targetCode);
+        const refreshedMatches = await db.query.matches.findMany({
+          with: { league: true, homeTeam: true, awayTeam: true },
+          orderBy: [desc(matches.matchDate)]
+        });
+        leagueMatches = refreshedMatches.filter(m => {
+          const mLeague = String(m.leagueId || '').toUpperCase();
+          const mCode = String(m.league?.id || '').toUpperCase();
+          return (
+            mLeague === rawUpper ||
+            mLeague === targetCode ||
+            mLeague === targetId ||
+            mCode === rawUpper ||
+            mCode === targetCode ||
+            mCode === targetId
+          );
+        });
+      } catch (err) {
+        console.warn(`[getStoredMatches] Could not auto-sync league [${targetCode}]:`, err);
+      }
+    }
+
     result = leagueMatches;
   }
 
-  // 3. Date Filter (Strict comparison against unified system date YYYY-MM-DD)
+  // 4. Date Filter (Strict comparison against Mecca Time YYYY-MM-DD)
   if (date) {
     const reqDateStr = String(date).trim();
-    result = result.filter(m => {
+    let dateMatches = result.filter(m => {
       if (!m.matchDate) return false;
-      const rawMatchDate = m.matchDate as unknown;
-      if (typeof rawMatchDate === 'string' && rawMatchDate.startsWith(reqDateStr)) {
-        return true;
-      }
-      const d = new Date(m.matchDate);
-      if (isNaN(d.getTime())) return false;
-      const isoDateUtc = d.toISOString().split('T')[0];
-      return isoDateUtc === reqDateStr;
+      return isMatchOnDate(m.matchDate, reqDateStr);
     });
+
+    // If 0 matches found for this date, attempt on-demand date range fetch from API
+    if (dateMatches.length === 0 && /^\d{4}-\d{2}-\d{2}$/.test(reqDateStr)) {
+      try {
+        const apiData = await fetchFromFootballData(`/matches?dateFrom=${reqDateStr}&dateTo=${reqDateStr}`, { ignoreCache: true }).catch(() => null);
+        if (apiData && Array.isArray(apiData.matches) && apiData.matches.length > 0) {
+          await processAndStoreMatches(apiData.matches);
+          await refreshMemoryMatchesCache();
+          const refreshed = await db.query.matches.findMany({
+            with: { league: true, homeTeam: true, awayTeam: true },
+            orderBy: [desc(matches.matchDate)]
+          });
+          dateMatches = refreshed.filter(m => {
+            if (m.source && ['admin_custom', 'manual', 'admin', 'prediction', 'pre-seeded', 'mock'].includes(m.source)) return false;
+            if (!m.matchDate) return false;
+            return isMatchOnDate(m.matchDate, reqDateStr);
+          });
+        }
+      } catch (err) {
+        console.warn(`[getStoredMatches] On-demand date fetch notice for ${reqDateStr}:`, err);
+      }
+    }
+
+    result = dateMatches;
   }
 
-  // 3.5 Deduplicate matches by ID and team composite key
+  // 5. Status Filter & Status Normalization
+  const now = Date.now();
+  if (status) {
+    if (status === 'LIVE' || status === 'IN_PLAY') {
+      result = result.filter(m => {
+        if (!m.matchDate) return false;
+        const diffMs = now - new Date(m.matchDate).getTime();
+        // Live matches are actively between kickoff and 125 minutes
+        if (['LIVE', 'IN_PLAY', 'PAUSED'].includes(m.status)) {
+          return diffMs <= 125 * 60 * 1000;
+        }
+        return false;
+      });
+    } else if (status === 'FINISHED') {
+      result = result.filter(m => {
+        if (m.status === 'FINISHED') return true;
+        if (!m.matchDate) return false;
+        const diffMs = now - new Date(m.matchDate).getTime();
+        return diffMs > 125 * 60 * 1000 && m.status !== 'POSTPONED' && m.status !== 'CANCELLED';
+      });
+    } else if (status === 'SCHEDULED' || status === 'TIMED') {
+      result = result.filter(m => {
+        if (!m.matchDate) return false;
+        const diffMs = now - new Date(m.matchDate).getTime();
+        return diffMs < 0 && (m.status === 'SCHEDULED' || m.status === 'TIMED');
+      });
+    } else {
+      result = result.filter(m => m.status === status);
+    }
+  }
+
+  // 6. Deduplicate matches by ID and team composite key
   const seenIds = new Set<string>();
   const seenKeys = new Set<string>();
   result = result.filter(m => {
     if (seenIds.has(String(m.id))) return false;
-    const dateStr = m.matchDate ? new Date(m.matchDate).toISOString().split('T')[0] : '';
+    const dateStr = m.matchDate ? getMatchDateStr(m.matchDate) : '';
     const compositeKey = `${m.homeTeamId}_${m.awayTeamId}_${dateStr}`;
     if (seenKeys.has(compositeKey)) return false;
 
@@ -727,13 +798,15 @@ export async function getStoredMatches(filters: {
     return true;
   });
 
-  // 4. Format & Translate names safely
+  // 7. Format & Translate names safely with accurate status and time
   const formatted = result.map((m: any) => {
     const safeDate = m.matchDate ? new Date(m.matchDate).toISOString() : new Date().toISOString();
     const d = new Date(safeDate);
+    const diffMs = now - d.getTime();
+
     let formattedTime = '00:00';
     if (!isNaN(d.getTime())) {
-      formattedTime = d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+      formattedTime = formatMeccaTime(d, { hour: '2-digit', minute: '2-digit', hour12: true });
     }
 
     const homeRawName = m.homeTeam?.name || '';
@@ -744,13 +817,43 @@ export async function getStoredMatches(filters: {
     const leagueName = LEAGUE_AR_NAMES[normalizedCode] || LEAGUE_AR_NAMES[m.leagueId] || m.league?.name || 'بطولة عالمية';
 
     const statusUpper = String(m.status || '').toUpperCase();
-    const displayMatchTime =
-      statusUpper === 'LIVE' || statusUpper === 'IN_PLAY' || statusUpper === 'PAUSED' ? 'مباشر' :
-      statusUpper === 'FINISHED' ? 'انتهت' :
-      statusUpper === 'POSTPONED' ? 'مؤجلة' :
-      statusUpper === 'CANCELLED' ? 'ملغاة' :
-      statusUpper === 'SUSPENDED' || statusUpper === 'ABANDONED' ? 'معلقة' :
-      formattedTime;
+    let computedStatus: string = statusUpper;
+    let displayMatchTime: string = formattedTime;
+
+    if (statusUpper === 'FINISHED' || statusUpper === 'FT' || statusUpper === 'AET' || statusUpper === 'AP') {
+      computedStatus = 'FINISHED';
+      displayMatchTime = 'انتهت';
+    } else if (statusUpper === 'POSTPONED') {
+      computedStatus = 'POSTPONED';
+      displayMatchTime = 'مؤجلة';
+    } else if (statusUpper === 'CANCELLED') {
+      computedStatus = 'CANCELLED';
+      displayMatchTime = 'ملغاة';
+    } else if (statusUpper === 'SUSPENDED' || statusUpper === 'ABANDONED') {
+      computedStatus = 'SUSPENDED';
+      displayMatchTime = 'معلقة';
+    } else if (['LIVE', 'IN_PLAY', 'PAUSED', '1H', '2H', 'HT'].includes(statusUpper)) {
+      if (diffMs > 130 * 60 * 1000) {
+        // Match marked live but started hours/days ago without finish callback -> definitively finished
+        computedStatus = 'FINISHED';
+        displayMatchTime = 'انتهت';
+      } else {
+        computedStatus = 'LIVE';
+        displayMatchTime = 'مباشر';
+      }
+    } else if (diffMs > 125 * 60 * 1000) {
+      // Past scheduled match exceeding 125 minutes is finished
+      computedStatus = 'FINISHED';
+      displayMatchTime = 'انتهت';
+    } else if (diffMs < 0) {
+      // Future match
+      computedStatus = 'SCHEDULED';
+      displayMatchTime = formattedTime;
+    } else {
+      // Within kickoff window but not officially live yet
+      computedStatus = 'SCHEDULED';
+      displayMatchTime = formattedTime;
+    }
 
     return {
       id: String(m.id),
@@ -769,8 +872,8 @@ export async function getStoredMatches(filters: {
       },
       homeScore: m.homeScore,
       awayScore: m.awayScore,
-      status: m.status,
-      minute: statusUpper === 'LIVE' ? 'مباشر' : null,
+      status: computedStatus,
+      minute: computedStatus === 'LIVE' ? 'مباشر' : null,
       matchTime: displayMatchTime,
       matchDate: safeDate,
       kickoffTime: formattedTime,
@@ -778,7 +881,7 @@ export async function getStoredMatches(filters: {
     };
   });
 
-  // 5. Sort matches
+  // 8. Sort matches
   if (sortBy === 'date_desc') {
     formatted.sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime());
   } else {

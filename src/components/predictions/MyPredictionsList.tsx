@@ -10,8 +10,11 @@ import {
   Trophy,
   Shield,
   ArrowRight,
+  Calendar,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { formatMeccaDate, formatMeccaTime } from '../../utils/timezoneDateUtils';
+import { getArabicTeamName } from '../../utils/teamTranslations';
 
 export interface MyPredictionItem {
   id: number;
@@ -169,36 +172,38 @@ export default function MyPredictionsList({
               {/* Header: League and Date */}
               <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5 mb-3 text-[11px] font-bold text-slate-500 dark:text-slate-400">
                 <div className="flex items-center gap-1.5 truncate">
-                  <Trophy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   <span className="truncate">{m.leagueName}</span>
                 </div>
-                <span className="shrink-0 text-slate-400">
-                  {matchDate.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' })} •{' '}
-                  {matchDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0 text-slate-500 dark:text-slate-400 font-semibold">
+                  <Calendar className="w-3 h-3 text-slate-400" />
+                  <span>{formatMeccaDate(matchDate, { month: 'short', day: 'numeric' })}</span>
+                  <span>•</span>
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  <span className="font-mono dir-ltr">
+                    {formatMeccaTime(matchDate, { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </span>
+                </div>
               </div>
 
               {/* Match Score & Teams */}
               <div className="grid grid-cols-12 items-center gap-2">
                 {/* Home Team */}
                 <div className="col-span-4 flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-50 dark:bg-slate-800 p-1 flex items-center justify-center shrink-0 border border-slate-100 dark:border-slate-700">
+                  <div className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-slate-800 p-1 flex items-center justify-center shrink-0 border border-slate-100 dark:border-slate-700 shadow-2xs">
                     {m.homeTeam.logo ? (
                       <img
                         src={m.homeTeam.logo}
                         alt=""
                         className="max-w-full max-h-full object-contain"
                         loading="lazy"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
                       />
                     ) : (
                       <Shield className="w-4 h-4 text-slate-300" />
                     )}
                   </div>
                   <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">
-                    {m.homeTeam.name}
+                    {getArabicTeamName(m.homeTeam.name) || m.homeTeam.name}
                   </span>
                 </div>
 
@@ -224,18 +229,15 @@ export default function MyPredictionsList({
                 {/* Away Team */}
                 <div className="col-span-4 flex items-center justify-end gap-2 min-w-0">
                   <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate text-left">
-                    {m.awayTeam.name}
+                    {getArabicTeamName(m.awayTeam.name) || m.awayTeam.name}
                   </span>
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-50 dark:bg-slate-800 p-1 flex items-center justify-center shrink-0 border border-slate-100 dark:border-slate-700">
+                  <div className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-slate-800 p-1 flex items-center justify-center shrink-0 border border-slate-100 dark:border-slate-700 shadow-2xs">
                     {m.awayTeam.logo ? (
                       <img
                         src={m.awayTeam.logo}
                         alt=""
                         className="max-w-full max-h-full object-contain"
                         loading="lazy"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
                       />
                     ) : (
                       <Shield className="w-4 h-4 text-slate-300" />

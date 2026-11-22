@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../../../contexts/AuthContext';
 import AdminAccessDenied from '../AdminAccessDenied';
 import { ErrorLogRecord } from '../../../types';
+import { adminCache } from '../../../utils/adminCache';
 
 interface AdminErrorLogsProps {
   token: string | null;
@@ -19,8 +20,10 @@ type ResolvedFilter = 'ALL' | 'false' | 'true';
 
 export default function AdminErrorLogs({ token }: AdminErrorLogsProps) {
   const { isOwner, isManager } = useAuth();
-  const [errors, setErrors] = useState<ErrorLogRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  const cachedData = adminCache.get<{ errors: ErrorLogRecord[]; stats: any; total: number }>('admin_error_logs_initial', 45000);
+  const [errors, setErrors] = useState<ErrorLogRecord[]>(cachedData?.errors || []);
+  const [isLoading, setIsLoading] = useState(!cachedData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Filters & Pagination
@@ -31,10 +34,10 @@ export default function AdminErrorLogs({ token }: AdminErrorLogsProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(25);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(cachedData?.total || 0);
 
   // Summary stats
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState(cachedData?.stats || {
     total: 0,
     fatal: 0,
     error: 0,
@@ -81,11 +84,15 @@ export default function AdminErrorLogs({ token }: AdminErrorLogsProps) {
 
       if (res.ok) {
         const data = await res.json();
-        setErrors(data.errors || []);
+        const errList = data.errors || [];
+        setErrors(errList);
         setTotalPages(data.totalPages || 1);
         setTotalCount(data.total || 0);
         if (data.stats) {
           setStats(data.stats);
+        }
+        if (currentPage === 1 && severityFilter === 'ALL' && sourceFilter === 'ALL' && resolvedFilter === 'ALL' && !searchQuery.trim()) {
+          adminCache.set('admin_error_logs_initial', { errors: errList, stats: data.stats, total: data.total || 0 });
         }
       } else {
         const errData = await res.json().catch(() => ({}));

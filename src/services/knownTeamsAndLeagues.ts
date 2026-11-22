@@ -26,7 +26,7 @@ export const SAUDI_LEAGUES: KnownLeague[] = [
   {
     id: 'SPL',
     name: 'دوري روشن السعودي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/307.png',
     aliases: [
       'دوري روشن السعودي',
       'دوري روشن',
@@ -45,7 +45,7 @@ export const SAUDI_LEAGUES: KnownLeague[] = [
   {
     id: 'KINGS_CUP',
     name: 'كأس خادم الحرمين الشريفين',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/308.png',
     aliases: [
       'كأس خادم الحرمين الشريفين',
       'كأس الملك',
@@ -61,7 +61,7 @@ export const SAUDI_LEAGUES: KnownLeague[] = [
   {
     id: 'SA_SUPER',
     name: 'كأس السوبر السعودي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/309.png',
     aliases: [
       'كأس السوبر السعودي',
       'السوبر السعودي',
@@ -73,7 +73,7 @@ export const SAUDI_LEAGUES: KnownLeague[] = [
   {
     id: 'YELO',
     name: 'دوري يلو للدرجة الأولى',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/310.png',
     aliases: [
       'دوري يلو',
       'دوري يلو للدرجة الأولى',
@@ -88,7 +88,7 @@ export const SAUDI_LEAGUES: KnownLeague[] = [
   {
     id: 'ACL_ELITE',
     name: 'دوري أبطال آسيا للنخبة',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/17.png',
     aliases: [
       'دوري أبطال آسيا للنخبة',
       'دوري ابطال اسيا للنخبة',
@@ -105,56 +105,56 @@ export const SAUDI_LEAGUES: KnownLeague[] = [
   {
     id: 'AC',
     name: 'كأس آسيا',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/17.png',
     aliases: ['كأس آسيا', 'كاس اسيا', 'كأس أمم آسيا', 'كاس امم اسيا', 'AFC Asian Cup', 'Asian Cup'],
   },
   {
     id: 'AFCON',
     name: 'كأس أمم أفريقيا',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/6.png',
     aliases: ['كأس أمم أفريقيا', 'كاس امم افريقيا', 'كأس افريقيا', 'كاس افريقيا', 'AFCON', 'Africa Cup of Nations'],
   },
   {
     id: 'GULF',
     name: 'كأس الخليج العربي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/19.png',
     aliases: ['كأس الخليج العربي', 'كاس الخليج العربي', 'خليجي', 'كأس الخليج', 'كاس الخليج', 'Gulf Cup'],
   },
   {
     id: 'WCQ',
     name: 'تصفيات كأس العالم',
-    logo: '',
+    logo: 'https://crests.football-data.org/WC.png',
     aliases: ['تصفيات كأس العالم', 'تصفيات كاس العالم', 'World Cup Qualifiers', 'WCQ'],
   },
   {
     id: 'EPL',
     name: 'الدوري الإنجليزي الممتاز',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/39.png',
     aliases: ['الدوري الإنجليزي الممتاز', 'الدوري الانجليزي الممتاز', 'الدوري الإنجليزي', 'الدوري الانجليزي', 'البريميرليج', 'Premier League', 'EPL'],
   },
   {
     id: 'LL',
     name: 'الدوري الإسباني (لا ليغا)',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/140.png',
     aliases: ['الدوري الإسباني', 'الدوري الاسباني', 'لا ليغا', 'لاليغا', 'La Liga', 'LaLiga'],
   },
   {
     id: 'UCL',
     name: 'دوري أبطال أوروبا',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/2.png',
     aliases: ['دوري أبطال أوروبا', 'دوري ابطال اوروبا', 'التشامبيونز ليغ', 'UEFA Champions League', 'UCL'],
   },
   {
     id: 'IQ_PL',
     name: 'دوري نجوم العراق',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/570.png',
     aliases: ['دوري نجوم العراق', 'الدوري العراقي الممتاز', 'الدوري العراقي', 'دوري نجوم العراق للمحترفين', 'Iraq Stars League'],
     country: 'العراق',
   },
   {
     id: 'EG_PL',
     name: 'الدوري المصري الممتاز',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/leagues/233.png',
     aliases: ['الدوري المصري الممتاز', 'الدوري المصري', 'دوري نايل', 'دوري نايل المصري', 'Egyptian Premier League'],
     country: 'مصر',
   },
@@ -164,7 +164,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_hilal',
     name: 'الهلال',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2932.png',
     aliases: [
       'الهلال',
       'الهلال السعودي',
@@ -183,7 +183,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_nassr',
     name: 'النصر',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2939.png',
     aliases: [
       'النصر',
       'النصر السعودي',
@@ -203,7 +203,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_ittihad',
     name: 'الاتحاد',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2938.png',
     aliases: [
       'الاتحاد',
       'الاتحاد السعودي',
@@ -224,7 +224,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_ahli',
     name: 'الأهلي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2929.png',
     aliases: [
       'الأهلي',
       'الاهلي',
@@ -250,7 +250,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_shabab',
     name: 'الشباب',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2940.png',
     aliases: [
       'الشباب',
       'الشباب السعودي',
@@ -269,7 +269,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_ettifaq',
     name: 'الاتفاق',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2934.png',
     aliases: [
       'الاتفاق',
       'الاتفاق السعودي',
@@ -287,7 +287,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_taawoun',
     name: 'التعاون',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2936.png',
     aliases: [
       'التعاون',
       'التعاون السعودي',
@@ -306,7 +306,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_qadsiah',
     name: 'القادسية',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2933.png',
     aliases: [
       'القادسية',
       'القادسية السعودي',
@@ -325,7 +325,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_fateh',
     name: 'الفتح',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2931.png',
     aliases: [
       'الفتح',
       'الفتح السعودي',
@@ -343,7 +343,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_damac',
     name: 'ضمك',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2944.png',
     aliases: [
       'ضمك',
       'ضمك السعودي',
@@ -360,7 +360,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_khaleej',
     name: 'الخليج',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2928.png',
     aliases: [
       'الخليج',
       'الخليج السعودي',
@@ -378,7 +378,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_fayha',
     name: 'الفيحاء',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2944.png',
     aliases: [
       'الفيحاء',
       'الفيحاء السعودي',
@@ -397,7 +397,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_raed',
     name: 'الرائد',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2935.png',
     aliases: [
       'الرائد',
       'الرائد السعودي',
@@ -415,7 +415,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_wehda',
     name: 'الوحدة',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2937.png',
     aliases: [
       'الوحدة',
       'الوحدة السعودي',
@@ -433,7 +433,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_riyadh',
     name: 'الرياض',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10511.png',
     aliases: [
       'الرياض',
       'الرياض السعودي',
@@ -451,7 +451,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_akhdood',
     name: 'الأخدود',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10078.png',
     aliases: [
       'الأخدود',
       'الاخدود',
@@ -470,7 +470,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_orobah',
     name: 'العروبة',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2949.png',
     aliases: [
       'العروبة',
       'العروبة السعودي',
@@ -488,7 +488,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_kholood',
     name: 'الخلود',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10509.png',
     aliases: [
       'الخلود',
       'الخلود السعودي',
@@ -503,11 +503,19 @@ export const SAUDI_TEAMS: KnownTeam[] = [
     league: 'دوري روشن السعودي',
     country: 'السعودية',
   },
+  {
+    id: 'sa_neom',
+    name: 'نيوم',
+    logo: 'https://media.api-sports.io/football/teams/10513.png',
+    aliases: ['نيوم', 'نادي نيوم', 'نيوم السعودي', 'Neom', 'NEOM FC'],
+    league: 'دوري يلو للدرجة الأولى',
+    country: 'السعودية',
+  },
   // أندية دوري يلو والأندية السعودية العريقة
   {
     id: 'sa_hazem',
     name: 'الحزم',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2945.png',
     aliases: ['الحزم', 'الحزم السعودي', 'نادي الحزم', 'Al Hazem', 'Al-Hazem', 'Al Hazm'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -515,7 +523,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_tai',
     name: 'الطائي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2942.png',
     aliases: ['الطائي', 'الطائي السعودي', 'نادي الطائي', 'صائد الكبار', 'Al Tai', 'Al-Tai', 'Al Taee'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -523,7 +531,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_abha',
     name: 'أبها',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2951.png',
     aliases: ['أبها', 'ابها', 'أبها السعودي', 'ابها السعودي', 'نادي أبها', 'نادي ابها', 'زعيم الجنوب', 'Abha', 'Abha Club'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -531,7 +539,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_batin',
     name: 'الباطن',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2953.png',
     aliases: ['الباطن', 'الباطن السعودي', 'نادي الباطن', 'سماوي حفر الباطن', 'Al Batin', 'Al-Batin'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -539,7 +547,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_faisaly',
     name: 'الفيصلي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2930.png',
     aliases: ['الفيصلي', 'الفيصلي السعودي', 'نادي الفيصلي', 'عنابي سدير', 'Al Faisaly', 'Al-Faisaly'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -547,15 +555,38 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_adalah',
     name: 'العدالة',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2950.png',
     aliases: ['العدالة', 'العدالة السعودي', 'نادي العدالة', 'فارس الأحساء', 'Al Adalah', 'Al-Adalah'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
   },
   {
+    id: 'sa_jeddah',
+    name: 'نادي جدة',
+    logo: 'https://media.api-sports.io/football/teams/2947.png',
+    aliases: ['نادي جدة', 'جدة', 'جدة السعودي', 'Jeddah Club', 'Jeddah'],
+    league: 'دوري يلو للدرجة الأولى',
+    country: 'السعودية',
+  },
+  {
+    id: 'sa_ain',
+    name: 'العين السعودي',
+    logo: 'https://media.api-sports.io/football/teams/2949.png',
+    aliases: ['العين السعودي', 'نادي العين السعودي', 'العين', 'Al Ain Saudi', 'Al-Ain KSA'],
+    league: 'دوري يلو للدرجة الأولى',
+    country: 'السعودية',
+  },
+  {
+    id: 'sa_diriyah',
+    name: 'الدرعية',
+    logo: 'https://media.api-sports.io/football/teams/26738.png',
+    aliases: ['الدرعية', 'نادي الدرعية', 'Al Diriyah', 'Al-Diriyah'],
+    country: 'السعودية',
+  },
+  {
     id: 'sa_najran',
     name: 'نجران',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2956.png',
     aliases: ['نجران', 'نادي نجران', 'Najran'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -563,7 +594,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_hajer',
     name: 'هجر',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2957.png',
     aliases: ['هجر', 'نادي هجر', 'Hajer'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -571,31 +602,39 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_jabalain',
     name: 'الجبلين',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2958.png',
     aliases: ['الجبلين', 'نادي الجبلين', 'Al Jabalain', 'Al-Jabalain'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
   },
   {
-    id: 'sa_ain',
-    name: 'العين السعودي',
-    logo: '',
-    aliases: ['العين السعودي', 'نادي العين السعودي', 'Al Ain Saudi', 'Al-Ain KSA'],
+    id: 'sa_bukiryah',
+    name: 'البكيرية',
+    logo: 'https://media.api-sports.io/football/teams/10299.png',
+    aliases: ['البكيرية', 'نادي البكيرية', 'Al Bukiryah', 'Al-Bukiryah'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
   },
   {
     id: 'sa_ohod',
     name: 'أحد',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/2960.png',
     aliases: ['أحد', 'احد', 'نادي أحد', 'نادي احد', 'Ohod', 'Ohod Club'],
+    league: 'دوري يلو للدرجة الأولى',
+    country: 'السعودية',
+  },
+  {
+    id: 'sa_jandal',
+    name: 'الجندل',
+    logo: 'https://media.api-sports.io/football/teams/10300.png',
+    aliases: ['الجندل', 'نادي الجندل', 'Al Jandal', 'Al-Jandal'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
   },
   {
     id: 'sa_najma',
     name: 'النجمة',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10301.png',
     aliases: ['النجمة', 'النجمة السعودي', 'نادي النجمة', 'Al Najma', 'Al-Najma'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -603,7 +642,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_jubail',
     name: 'الجبيل',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10302.png',
     aliases: ['الجبيل', 'نادي الجبيل', 'Al Jubail', 'Al-Jubail'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -611,23 +650,15 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_zulfi',
     name: 'الزلفي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10303.png',
     aliases: ['الزلفي', 'نادي الزلفي', 'Al Zulfi', 'Al-Zulfi'],
-    league: 'دوري يلو للدرجة الأولى',
-    country: 'السعودية',
-  },
-  {
-    id: 'sa_jeddah',
-    name: 'جدة',
-    logo: '',
-    aliases: ['جدة', 'نادي جدة', 'Jeddah Club'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
   },
   {
     id: 'sa_arabi',
     name: 'العربي السعودي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10305.png',
     aliases: ['العربي السعودي', 'نادي العربي السعودي', 'Al Arabi KSA'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -635,7 +666,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_safa',
     name: 'الصفا',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10306.png',
     aliases: ['الصفا', 'نادي الصفا', 'Al Safa'],
     league: 'دوري يلو للدرجة الأولى',
     country: 'السعودية',
@@ -643,7 +674,7 @@ export const SAUDI_TEAMS: KnownTeam[] = [
   {
     id: 'sa_taraji',
     name: 'الترجي السعودي',
-    logo: '',
+    logo: 'https://media.api-sports.io/football/teams/10307.png',
     aliases: ['الترجي السعودي', 'نادي الترجي السعودي', 'Al Taraji KSA'],
     country: 'السعودية',
   },
@@ -654,180 +685,180 @@ export const NATIONAL_TEAMS: KnownTeam[] = [
   {
     id: 'nt_ksa',
     name: 'منتخب السعودية',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/sa.png',
     aliases: ['منتخب السعودية', 'السعودية', 'المنتخب السعودي', 'الأخضر السعودي', 'الصقور الخضر', 'Saudi Arabia', 'KSA'],
   },
   {
     id: 'nt_egy',
     name: 'منتخب مصر',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/eg.png',
     aliases: ['منتخب مصر', 'مصر', 'المنتخب المصري', 'الفراعنة', 'Egypt', 'EGY'],
   },
   {
     id: 'nt_irq',
     name: 'منتخب العراق',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/iq.png',
     aliases: ['منتخب العراق', 'العراق', 'المنتخب العراقي', 'أسود الرافدين', 'Iraq', 'IRQ'],
   },
   {
     id: 'nt_mar',
     name: 'منتخب المغرب',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/ma.png',
     aliases: ['منتخب المغرب', 'المغرب', 'المنتخب المغربي', 'أسود الأطلس', 'Morocco', 'MAR'],
   },
   {
     id: 'nt_dza',
     name: 'منتخب الجزائر',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/dz.png',
     aliases: ['منتخب الجزائر', 'الجزائر', 'المنتخب الجزائري', 'محاربو الصحراء', 'Algeria', 'DZA'],
   },
   {
     id: 'nt_tun',
     name: 'منتخب تونس',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/tn.png',
     aliases: ['منتخب تونس', 'تونس', 'المنتخب التونسي', 'نسور قرطاج', 'Tunisia', 'TUN'],
   },
   {
     id: 'nt_qat',
     name: 'منتخب قطر',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/qa.png',
     aliases: ['منتخب قطر', 'قطر', 'المنتخب القطري', 'العنابي', 'Qatar', 'QAT'],
   },
   {
     id: 'nt_uae',
     name: 'منتخب الإمارات',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/ae.png',
     aliases: ['منتخب الإمارات', 'منتخب الامارات', 'الإمارات', 'الامارات', 'المنتخب الإماراتي', 'الأبيض', 'UAE'],
   },
   {
     id: 'nt_jor',
     name: 'منتخب الأردن',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/jo.png',
     aliases: ['منتخب الأردن', 'منتخب الاردن', 'الأردن', 'الاردن', 'النشامى', 'Jordan', 'JOR'],
   },
   {
     id: 'nt_omn',
     name: 'منتخب عُمان',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/om.png',
     aliases: ['منتخب عُمان', 'منتخب عمان', 'عُمان', 'عمان', 'الأحمر العماني', 'Oman', 'OMN'],
   },
   {
     id: 'nt_bhr',
     name: 'منتخب البحرين',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/bh.png',
     aliases: ['منتخب البحرين', 'البحرين', 'المنتخب البحريني', 'الأحمر البحريني', 'Bahrain', 'BHR'],
   },
   {
     id: 'nt_kwt',
     name: 'منتخب الكويت',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/kw.png',
     aliases: ['منتخب الكويت', 'الكويت', 'المنتخب الكويتي', 'الأزرق الكويتي', 'Kuwait', 'KWT'],
   },
   {
     id: 'nt_pse',
     name: 'منتخب فلسطين',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/ps.png',
     aliases: ['منتخب فلسطين', 'فلسطين', 'المنتخب الفلسطيني', 'الفدائي', 'Palestine', 'PSE'],
   },
   {
     id: 'nt_syr',
     name: 'منتخب سوريا',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/sy.png',
     aliases: ['منتخب سوريا', 'سوريا', 'المنتخب السوري', 'نسور قاسيون', 'Syria', 'SYR'],
   },
   {
     id: 'nt_lbn',
     name: 'منتخب لبنان',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/lb.png',
     aliases: ['منتخب لبنان', 'لبنان', 'المنتخب اللبناني', 'رجال الأرز', 'Lebanon', 'LBN'],
   },
   {
     id: 'nt_sdn',
     name: 'منتخب السودان',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/sd.png',
     aliases: ['منتخب السودان', 'السودان', 'المنتخب السوداني', 'صقور الجديان', 'Sudan', 'SDN'],
   },
   {
     id: 'nt_lby',
     name: 'منتخب ليبيا',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/ly.png',
     aliases: ['منتخب ليبيا', 'ليبيا', 'المنتخب الليبي', 'فرسان المتوسط', 'Libya', 'LBY'],
   },
   {
     id: 'nt_yem',
     name: 'منتخب اليمن',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/ye.png',
     aliases: ['منتخب اليمن', 'اليمن', 'المنتخب اليمني', 'نسور سبأ', 'Yemen', 'YEM'],
   },
   {
     id: 'nt_mrt',
     name: 'منتخب موريتانيا',
-    logo: '',
+    logo: 'https://flagcdn.com/w160/mr.png',
     aliases: ['منتخب موريتانيا', 'موريتانيا', 'المرابطون', 'Mauritania', 'MRT'],
   },
 
   // المنتخبات العالمية الكبرى
-  { id: 'nt_bra', name: 'منتخب البرازيل', logo: '', aliases: ['منتخب البرازيل', 'البرازيل', 'السيلساو', 'Brazil', 'BRA'] },
-  { id: 'nt_arg', name: 'منتخب الأرجنتين', logo: '', aliases: ['منتخب الأرجنتين', 'الأرجنتين', 'الارجنتين', 'التانغو', 'Argentina', 'ARG'] },
-  { id: 'nt_fra', name: 'منتخب فرنسا', logo: '', aliases: ['منتخب فرنسا', 'فرنسا', 'الديوك', 'France', 'FRA'] },
-  { id: 'nt_eng', name: 'منتخب إنجلترا', logo: '', aliases: ['منتخب إنجلترا', 'منتخب انجلترا', 'إنجلترا', 'انجلترا', 'الأسود الثلاثة', 'England', 'ENG'] },
-  { id: 'nt_esp', name: 'منتخب إسبانيا', logo: '', aliases: ['منتخب إسبانيا', 'منتخب اسبانيا', 'إسبانيا', 'اسبانيا', 'الماتادور', 'Spain', 'ESP'] },
-  { id: 'nt_deu', name: 'منتخب ألمانيا', logo: '', aliases: ['منتخب ألمانيا', 'منتخب المانيا', 'ألمانيا', 'المانيا', 'المانشافت', 'Germany', 'GER', 'DEU'] },
-  { id: 'nt_ita', name: 'منتخب إيطاليا', logo: '', aliases: ['منتخب إيطاليا', 'منتخب ايطاليا', 'إيطاليا', 'ايطاليا', 'الآزوري', 'Italy', 'ITA'] },
-  { id: 'nt_prt', name: 'منتخب البرتغال', logo: '', aliases: ['منتخب البرتغال', 'البرتغال', 'برازيل أوروبا', 'Portugal', 'PRT', 'POR'] },
-  { id: 'nt_nld', name: 'منتخب هولندا', logo: '', aliases: ['منتخب هولندا', 'هولندا', 'الطواحين', 'Netherlands', 'Holland', 'NLD'] },
-  { id: 'nt_bel', name: 'منتخب بلجيكا', logo: '', aliases: ['منتخب بلجيكا', 'بلجيكا', 'الشياطين الحمر', 'Belgium', 'BEL'] },
-  { id: 'nt_hrv', name: 'منتخب كرواتيا', logo: '', aliases: ['منتخب كرواتيا', 'كرواتيا', 'الناريون', 'Croatia', 'HRV', 'CRO'] },
-  { id: 'nt_ury', name: 'منتخب الأوروغواي', logo: '', aliases: ['منتخب الأوروغواي', 'الأوروغواي', 'الاوروغواي', 'السيليستي', 'Uruguay', 'URY'] },
-  { id: 'nt_jpn', name: 'منتخب اليابان', logo: '', aliases: ['منتخب اليابان', 'اليابان', 'محاربو الساموراي', 'Japan', 'JPN'] },
-  { id: 'nt_kor', name: 'منتخب كوريا الجنوبية', logo: '', aliases: ['منتخب كوريا الجنوبية', 'كوريا الجنوبية', 'South Korea', 'KOR'] },
-  { id: 'nt_sen', name: 'منتخب السنغال', logo: '', aliases: ['منتخب السنغال', 'السنغال', 'أسود التيرانغا', 'Senegal', 'SEN'] },
-  { id: 'nt_usa', name: 'منتخب الولايات المتحدة', logo: '', aliases: ['منتخب الولايات المتحدة', 'الولايات المتحدة', 'أمريكا', 'امريكا', 'USA', 'United States'] },
+  { id: 'nt_bra', name: 'منتخب البرازيل', logo: 'https://flagcdn.com/w160/br.png', aliases: ['منتخب البرازيل', 'البرازيل', 'السيلساو', 'Brazil', 'BRA'] },
+  { id: 'nt_arg', name: 'منتخب الأرجنتين', logo: 'https://flagcdn.com/w160/ar.png', aliases: ['منتخب الأرجنتين', 'الأرجنتين', 'الارجنتين', 'التانغو', 'Argentina', 'ARG'] },
+  { id: 'nt_fra', name: 'منتخب فرنسا', logo: 'https://flagcdn.com/w160/fr.png', aliases: ['منتخب فرنسا', 'فرنسا', 'الديوك', 'France', 'FRA'] },
+  { id: 'nt_eng', name: 'منتخب إنجلترا', logo: 'https://flagcdn.com/w160/gb-eng.png', aliases: ['منتخب إنجلترا', 'منتخب انجلترا', 'إنجلترا', 'انجلترا', 'الأسود الثلاثة', 'England', 'ENG'] },
+  { id: 'nt_esp', name: 'منتخب إسبانيا', logo: 'https://flagcdn.com/w160/es.png', aliases: ['منتخب إسبانيا', 'منتخب اسبانيا', 'إسبانيا', 'اسبانيا', 'الماتادور', 'Spain', 'ESP'] },
+  { id: 'nt_deu', name: 'منتخب ألمانيا', logo: 'https://flagcdn.com/w160/de.png', aliases: ['منتخب ألمانيا', 'منتخب المانيا', 'ألمانيا', 'المانيا', 'المانشافت', 'Germany', 'GER', 'DEU'] },
+  { id: 'nt_ita', name: 'منتخب إيطاليا', logo: 'https://flagcdn.com/w160/it.png', aliases: ['منتخب إيطاليا', 'منتخب ايطاليا', 'إيطاليا', 'ايطاليا', 'الآزوري', 'Italy', 'ITA'] },
+  { id: 'nt_prt', name: 'منتخب البرتغال', logo: 'https://flagcdn.com/w160/pt.png', aliases: ['منتخب البرتغال', 'البرتغال', 'برازيل أوروبا', 'Portugal', 'PRT', 'POR'] },
+  { id: 'nt_nld', name: 'منتخب هولندا', logo: 'https://flagcdn.com/w160/nl.png', aliases: ['منتخب هولندا', 'هولندا', 'الطواحين', 'Netherlands', 'Holland', 'NLD'] },
+  { id: 'nt_bel', name: 'منتخب بلجيكا', logo: 'https://flagcdn.com/w160/be.png', aliases: ['منتخب بلجيكا', 'بلجيكا', 'الشياطين الحمر', 'Belgium', 'BEL'] },
+  { id: 'nt_hrv', name: 'منتخب كرواتيا', logo: 'https://flagcdn.com/w160/hr.png', aliases: ['منتخب كرواتيا', 'كرواتيا', 'الناريون', 'Croatia', 'HRV', 'CRO'] },
+  { id: 'nt_ury', name: 'منتخب الأوروغواي', logo: 'https://flagcdn.com/w160/uy.png', aliases: ['منتخب الأوروغواي', 'الأوروغواي', 'الاوروغواي', 'السيليستي', 'Uruguay', 'URY'] },
+  { id: 'nt_jpn', name: 'منتخب اليابان', logo: 'https://flagcdn.com/w160/jp.png', aliases: ['منتخب اليابان', 'اليابان', 'محاربو الساموراي', 'Japan', 'JPN'] },
+  { id: 'nt_kor', name: 'منتخب كوريا الجنوبية', logo: 'https://flagcdn.com/w160/kr.png', aliases: ['منتخب كوريا الجنوبية', 'كوريا الجنوبية', 'South Korea', 'KOR'] },
+  { id: 'nt_sen', name: 'منتخب السنغال', logo: 'https://flagcdn.com/w160/sn.png', aliases: ['منتخب السنغال', 'السنغال', 'أسود التيرانغا', 'Senegal', 'SEN'] },
+  { id: 'nt_usa', name: 'منتخب الولايات المتحدة', logo: 'https://flagcdn.com/w160/us.png', aliases: ['منتخب الولايات المتحدة', 'الولايات المتحدة', 'أمريكا', 'امريكا', 'USA', 'United States'] },
 ];
 
 export const ARAB_AND_GLOBAL_CLUBS: KnownTeam[] = [
   // أندية عربية كبرى
-  { id: 'eg_ahly', name: 'الأهلي المصري', logo: '', aliases: ['الأهلي المصري', 'الاهلي المصري', 'أهلي القاهرة', 'نادي القرن', 'الأهلي', 'Al Ahly', 'Al Ahly SC'] },
-  { id: 'eg_zamalek', name: 'الزمالك', logo: '', aliases: ['الزمالك', 'الزمالك المصري', 'نادي الزمالك', 'الفارس الأبيض', 'Zamalek', 'Zamalek SC'] },
-  { id: 'eg_pyramids', name: 'بيراميدز', logo: '', aliases: ['بيراميدز', 'بيراميدز المصري', 'نادي بيراميدز', 'Pyramids FC', 'Pyramids'] },
-  { id: 'iq_quwa', name: 'القوة الجوية', logo: '', aliases: ['القوة الجوية', 'القوة الجوية العراقي', 'نادي القوة الجوية', 'الصقور', 'Al-Quwa Al-Jawiya', 'Air Force Club'] },
-  { id: 'iq_zawraa', name: 'الزوراء', logo: '', aliases: ['الزوراء', 'الزوراء العراقي', 'نادي الزوراء', 'النوارس', 'Al-Zawraa', 'Al Zawra'] },
-  { id: 'iq_shorta', name: 'الشرطة العراقي', logo: '', aliases: ['الشرطة العراقي', 'الشرطة', 'نادي الشرطة', 'القيثارة الخضراء', 'Al-Shorta SC', 'Al Shorta'] },
-  { id: 'iq_talaba', name: 'الطلبة', logo: '', aliases: ['الطلبة', 'الطلبة العراقي', 'نادي الطلبة', 'الأنيق', 'Al-Talaba', 'Al Talaba'] },
-  { id: 'iq_erbil', name: 'أربيل', logo: '', aliases: ['أربيل', 'اربيل', 'نادي أربيل', 'قلعة هولير', 'Erbil SC', 'Arbil'] },
-  { id: 'iq_zakho', name: 'زاخو', logo: '', aliases: ['زاخو', 'نادي زاخو', 'Zakho SC'] },
-  { id: 'iq_najaf', name: 'النجف', logo: '', aliases: ['النجف', 'نادي النجف', 'غزلان البادية', 'Al-Najaf'] },
-  { id: 'iq_mina', name: 'الميناء', logo: '', aliases: ['الميناء', 'نادي الميناء', 'سفانة الجنوب', 'Al-Minaa'] },
-  { id: 'ae_ain', name: 'العين الإماراتي', logo: '', aliases: ['العين الإماراتي', 'العين الاماراتي', 'نادي العين الإماراتي', 'الزعيم العيناوي', 'Al Ain FC', 'Al Ain'] },
-  { id: 'ae_wasl', name: 'الوصل', logo: '', aliases: ['الوصل', 'الوصل الإماراتي', 'نادي الوصل', 'الإمبراطور', 'Al Wasl'] },
-  { id: 'ae_shabab_ahli', name: 'شباب الأهلي', logo: '', aliases: ['شباب الأهلي', 'شباب الاهلي', 'شباب الأهلي دبي', 'فرسان دبي', 'Shabab Al Ahli'] },
-  { id: 'ae_jazira', name: 'الجزيرة الإماراتي', logo: '', aliases: ['الجزيرة الإماراتي', 'نادي الجزيرة', 'فخر أبوظبي', 'Al Jazira'] },
-  { id: 'qa_sadd', name: 'السد', logo: '', aliases: ['السد', 'السد القطري', 'نادي السد', 'الزعيم السداوي', 'Al Sadd', 'Al-Sadd'] },
-  { id: 'qa_duhail', name: 'الدحيل', logo: '', aliases: ['الدحيل', 'الدحيل القطري', 'نادي الدحيل', 'الطوفان', 'Al Duhail', 'Al-Duhail'] },
-  { id: 'qa_rayyan', name: 'الريان', logo: '', aliases: ['الريان', 'الريان القطري', 'نادي الريان', 'الرهيب', 'Al Rayyan', 'Al-Rayyan'] },
-  { id: 'qa_gharafa', name: 'الغرافة', logo: '', aliases: ['الغرافة', 'الغرافة القطري', 'نادي الغرافة', 'الفهود', 'Al Gharafa'] },
-  { id: 'tn_taraji', name: 'الترجي التونسي', logo: '', aliases: ['الترجي التونسي', 'الترجي الرياضي', 'الترجي', 'شيخ الأندية التونسية', 'Esperance de Tunis', 'EST'] },
-  { id: 'tn_club_africain', name: 'النادي الإفريقي', logo: '', aliases: ['النادي الإفريقي', 'النادي الافريقي', 'الإفريقي', 'الافريقي', 'Club Africain'] },
-  { id: 'tn_etoile', name: 'النجم الساحلي', logo: '', aliases: ['النجم الساحلي', 'النجم الرياضي الساحلي', 'ليتوال', 'Etoile du Sahel', 'ESS'] },
-  { id: 'tn_css', name: 'الصفاقسي', logo: '', aliases: ['الصفاقسي', 'النادي الرياضي الصفاقسي', 'CSS', 'CS Sfaxien'] },
-  { id: 'ma_raja', name: 'الرجاء الرياضي', logo: '', aliases: ['الرجاء الرياضي', 'الرجاء البيضاوي', 'الرجاء', 'النسور الخضر', 'Raja Club Athletic', 'RCA'] },
-  { id: 'ma_wydad', name: 'الوداد الرياضي', logo: '', aliases: ['الوداد الرياضي', 'الوداد البيضاوي', 'الوداد', 'وداد الأمة', 'Wydad AC', 'WAC'] },
-  { id: 'ma_far', name: 'الجيش الملكي', logo: '', aliases: ['الجيش الملكي', 'الجيش الملكي المغربي', 'العساكر', 'AS FAR'] },
+  { id: 'eg_ahly', name: 'الأهلي المصري', logo: 'https://media.api-sports.io/football/teams/1029.png', aliases: ['الأهلي المصري', 'الاهلي المصري', 'أهلي القاهرة', 'نادي القرن', 'الأهلي', 'Al Ahly', 'Al Ahly SC'] },
+  { id: 'eg_zamalek', name: 'الزمالك', logo: 'https://media.api-sports.io/football/teams/1030.png', aliases: ['الزمالك', 'الزمالك المصري', 'نادي الزمالك', 'الفارس الأبيض', 'Zamalek', 'Zamalek SC'] },
+  { id: 'eg_pyramids', name: 'بيراميدز', logo: 'https://media.api-sports.io/football/teams/1031.png', aliases: ['بيراميدز', 'بيراميدز المصري', 'نادي بيراميدز', 'Pyramids FC', 'Pyramids'] },
+  { id: 'iq_quwa', name: 'القوة الجوية', logo: 'https://media.api-sports.io/football/teams/6462.png', aliases: ['القوة الجوية', 'القوة الجوية العراقي', 'نادي القوة الجوية', 'الصقور', 'Al-Quwa Al-Jawiya', 'Air Force Club'] },
+  { id: 'iq_zawraa', name: 'الزوراء', logo: 'https://media.api-sports.io/football/teams/6463.png', aliases: ['الزوراء', 'الزوراء العراقي', 'نادي الزوراء', 'النوارس', 'Al-Zawraa', 'Al Zawra'] },
+  { id: 'iq_shorta', name: 'الشرطة العراقي', logo: 'https://media.api-sports.io/football/teams/6464.png', aliases: ['الشرطة العراقي', 'الشرطة', 'نادي الشرطة', 'القيثارة الخضراء', 'Al-Shorta SC', 'Al Shorta'] },
+  { id: 'iq_talaba', name: 'الطلبة', logo: 'https://media.api-sports.io/football/teams/6465.png', aliases: ['الطلبة', 'الطلبة العراقي', 'نادي الطلبة', 'الأنيق', 'Al-Talaba', 'Al Talaba'] },
+  { id: 'iq_erbil', name: 'أربيل', logo: 'https://media.api-sports.io/football/teams/6466.png', aliases: ['أربيل', 'اربيل', 'نادي أربيل', 'قلعة هولير', 'Erbil SC', 'Arbil'] },
+  { id: 'iq_zakho', name: 'زاخو', logo: 'https://media.api-sports.io/football/teams/6467.png', aliases: ['زاخو', 'نادي زاخو', 'Zakho SC'] },
+  { id: 'iq_najaf', name: 'النجف', logo: 'https://media.api-sports.io/football/teams/6468.png', aliases: ['النجف', 'نادي النجف', 'غزلان البادية', 'Al-Najaf'] },
+  { id: 'iq_mina', name: 'الميناء', logo: 'https://media.api-sports.io/football/teams/6469.png', aliases: ['الميناء', 'نادي الميناء', 'سفانة الجنوب', 'Al-Minaa'] },
+  { id: 'ae_ain', name: 'العين الإماراتي', logo: 'https://media.api-sports.io/football/teams/3300.png', aliases: ['العين الإماراتي', 'العين الاماراتي', 'نادي العين الإماراتي', 'الزعيم العيناوي', 'Al Ain FC', 'Al Ain'] },
+  { id: 'ae_wasl', name: 'الوصل', logo: 'https://media.api-sports.io/football/teams/3301.png', aliases: ['الوصل', 'الوصل الإماراتي', 'نادي الوصل', 'الإمبراطور', 'Al Wasl'] },
+  { id: 'ae_shabab_ahli', name: 'شباب الأهلي', logo: 'https://media.api-sports.io/football/teams/3302.png', aliases: ['شباب الأهلي', 'شباب الاهلي', 'شباب الأهلي دبي', 'فرسان دبي', 'Shabab Al Ahli'] },
+  { id: 'ae_jazira', name: 'الجزيرة الإماراتي', logo: 'https://media.api-sports.io/football/teams/3303.png', aliases: ['الجزيرة الإماراتي', 'نادي الجزيرة', 'فخر أبوظبي', 'Al Jazira'] },
+  { id: 'qa_sadd', name: 'السد', logo: 'https://media.api-sports.io/football/teams/3280.png', aliases: ['السد', 'السد القطري', 'نادي السد', 'الزعيم السداوي', 'Al Sadd', 'Al-Sadd'] },
+  { id: 'qa_duhail', name: 'الدحيل', logo: 'https://media.api-sports.io/football/teams/3281.png', aliases: ['الدحيل', 'الدحيل القطري', 'نادي الدحيل', 'الطوفان', 'Al Duhail', 'Al-Duhail'] },
+  { id: 'qa_rayyan', name: 'الريان', logo: 'https://media.api-sports.io/football/teams/3282.png', aliases: ['الريان', 'الريان القطري', 'نادي الريان', 'الرهيب', 'Al Rayyan', 'Al-Rayyan'] },
+  { id: 'qa_gharafa', name: 'الغرافة', logo: 'https://media.api-sports.io/football/teams/3283.png', aliases: ['الغرافة', 'الغرافة القطري', 'نادي الغرافة', 'الفهود', 'Al Gharafa'] },
+  { id: 'tn_taraji', name: 'الترجي التونسي', logo: 'https://media.api-sports.io/football/teams/1020.png', aliases: ['الترجي التونسي', 'الترجي الرياضي', 'الترجي', 'شيخ الأندية التونسية', 'Esperance de Tunis', 'EST'] },
+  { id: 'tn_club_africain', name: 'النادي الإفريقي', logo: 'https://media.api-sports.io/football/teams/1021.png', aliases: ['النادي الإفريقي', 'النادي الافريقي', 'الإفريقي', 'الافريقي', 'Club Africain'] },
+  { id: 'tn_etoile', name: 'النجم الساحلي', logo: 'https://media.api-sports.io/football/teams/1022.png', aliases: ['النجم الساحلي', 'النجم الرياضي الساحلي', 'ليتوال', 'Etoile du Sahel', 'ESS'] },
+  { id: 'tn_css', name: 'الصفاقسي', logo: 'https://media.api-sports.io/football/teams/1023.png', aliases: ['الصفاقسي', 'النادي الرياضي الصفاقسي', 'CSS', 'CS Sfaxien'] },
+  { id: 'ma_raja', name: 'الرجاء الرياضي', logo: 'https://media.api-sports.io/football/teams/1010.png', aliases: ['الرجاء الرياضي', 'الرجاء البيضاوي', 'الرجاء', 'النسور الخضر', 'Raja Club Athletic', 'RCA'] },
+  { id: 'ma_wydad', name: 'الوداد الرياضي', logo: 'https://media.api-sports.io/football/teams/1011.png', aliases: ['الوداد الرياضي', 'الوداد البيضاوي', 'الوداد', 'وداد الأمة', 'Wydad AC', 'WAC'] },
+  { id: 'ma_far', name: 'الجيش الملكي', logo: 'https://media.api-sports.io/football/teams/1012.png', aliases: ['الجيش الملكي', 'الجيش الملكي المغربي', 'العساكر', 'AS FAR'] },
 
   // أندية عالمية كبرى
-  { id: 'eu_rm', name: 'ريال مدريد', logo: '', aliases: ['ريال مدريد', 'ريال مدريد الإسباني', 'الملكي', 'Real Madrid', 'Real Madrid CF', 'RM'] },
-  { id: 'eu_barca', name: 'برشلونة', logo: '', aliases: ['برشلونة', 'برشلونه', 'برشلونة الإسباني', 'البارسا', 'البارشا', 'FC Barcelona', 'Barcelona', 'Barca'] },
-  { id: 'eu_mancity', name: 'مانشستر سيتي', logo: '', aliases: ['مانشستر سيتي', 'مان سيتي', 'السيتي', 'Manchester City', 'Man City', 'MCFC'] },
-  { id: 'eu_liverpool', name: 'ليفربول', logo: '', aliases: ['ليفربول', 'الريدز', 'Liverpool', 'Liverpool FC', 'LFC'] },
-  { id: 'eu_arsenal', name: 'أرسنال', logo: '', aliases: ['أرسنال', 'ارسنال', 'الغانرز', 'Arsenal', 'Arsenal FC'] },
-  { id: 'eu_manutd', name: 'مانشستر يونايتد', logo: '', aliases: ['مانشستر يونايتد', 'مان يونايتد', 'الشياطين الحمر', 'Manchester United', 'Man Utd', 'MUFC'] },
-  { id: 'eu_chelsea', name: 'تشيلسي', logo: '', aliases: ['تشيلسي', 'البلوز', 'Chelsea', 'Chelsea FC'] },
-  { id: 'eu_bayern', name: 'بايرن ميونخ', logo: '', aliases: ['بايرن ميونخ', 'البايرن', 'العملاق البافاري', 'Bayern Munich', 'FC Bayern München'] },
-  { id: 'eu_psg', name: 'باريس سان جيرمان', logo: '', aliases: ['باريس سان جيرمان', 'باريس', 'بي اس جي', 'PSG', 'Paris Saint-Germain'] },
-  { id: 'eu_inter', name: 'إنتر ميلان', logo: '', aliases: ['إنتر ميلان', 'انتر ميلان', 'إنتر', 'انتر', 'النيراتزوري', 'Inter Milan', 'Inter'] },
-  { id: 'eu_milan', name: 'ميلان', logo: '', aliases: ['ميلان', 'إيه سي ميلان', 'اي سي ميلان', 'الروسونيري', 'AC Milan', 'Milan'] },
-  { id: 'eu_juve', name: 'يوفنتوس', logo: '', aliases: ['يوفنتوس', 'اليوفي', 'السيدة العجوز', 'البيانكونيري', 'Juventus', 'Juve'] },
-  { id: 'eu_atletico', name: 'أتلتيكو مدريد', logo: '', aliases: ['أتلتيكو مدريد', 'اتلتيكو مدريد', 'الروخيبلانكوس', 'Atletico Madrid', 'Atletico'] },
+  { id: 'eu_rm', name: 'ريال مدريد', logo: 'https://media.api-sports.io/football/teams/541.png', aliases: ['ريال مدريد', 'ريال مدريد الإسباني', 'الملكي', 'Real Madrid', 'Real Madrid CF', 'RM'] },
+  { id: 'eu_barca', name: 'برشلونة', logo: 'https://media.api-sports.io/football/teams/529.png', aliases: ['برشلونة', 'برشلونه', 'برشلونة الإسباني', 'البارسا', 'البارشا', 'FC Barcelona', 'Barcelona', 'Barca'] },
+  { id: 'eu_mancity', name: 'مانشستر سيتي', logo: 'https://media.api-sports.io/football/teams/50.png', aliases: ['مانشستر سيتي', 'مان سيتي', 'السيتي', 'Manchester City', 'Man City', 'MCFC'] },
+  { id: 'eu_liverpool', name: 'ليفربول', logo: 'https://media.api-sports.io/football/teams/40.png', aliases: ['ليفربول', 'الريدز', 'Liverpool', 'Liverpool FC', 'LFC'] },
+  { id: 'eu_arsenal', name: 'أرسنال', logo: 'https://media.api-sports.io/football/teams/42.png', aliases: ['أرسنال', 'ارسنال', 'الغانرز', 'Arsenal', 'Arsenal FC'] },
+  { id: 'eu_manutd', name: 'مانشستر يونايتد', logo: 'https://media.api-sports.io/football/teams/33.png', aliases: ['مانشستر يونايتد', 'مان يونايتد', 'الشياطين الحمر', 'Manchester United', 'Man Utd', 'MUFC'] },
+  { id: 'eu_chelsea', name: 'تشيلسي', logo: 'https://media.api-sports.io/football/teams/49.png', aliases: ['تشيلسي', 'البلوز', 'Chelsea', 'Chelsea FC'] },
+  { id: 'eu_bayern', name: 'بايرن ميونخ', logo: 'https://media.api-sports.io/football/teams/157.png', aliases: ['بايرن ميونخ', 'البايرن', 'العملاق البافاري', 'Bayern Munich', 'FC Bayern München'] },
+  { id: 'eu_psg', name: 'باريس سان جيرمان', logo: 'https://media.api-sports.io/football/teams/85.png', aliases: ['باريس سان جيرمان', 'باريس', 'بي اس جي', 'PSG', 'Paris Saint-Germain'] },
+  { id: 'eu_inter', name: 'إنتر ميلان', logo: 'https://media.api-sports.io/football/teams/505.png', aliases: ['إنتر ميلان', 'انتر ميلان', 'إنتر', 'انتر', 'النيراتزوري', 'Inter Milan', 'Inter'] },
+  { id: 'eu_milan', name: 'ميلان', logo: 'https://media.api-sports.io/football/teams/489.png', aliases: ['ميلان', 'إيه سي ميلان', 'اي سي ميلان', 'الروسونيري', 'AC Milan', 'Milan'] },
+  { id: 'eu_juve', name: 'يوفنتوس', logo: 'https://media.api-sports.io/football/teams/496.png', aliases: ['يوفنتوس', 'اليوفي', 'السيدة العجوز', 'البيانكونيري', 'Juventus', 'Juve'] },
+  { id: 'eu_atletico', name: 'أتلتيكو مدريد', logo: 'https://media.api-sports.io/football/teams/530.png', aliases: ['أتلتيكو مدريد', 'اتلتيكو مدريد', 'الروخيبلانكوس', 'Atletico Madrid', 'Atletico'] },
 ];
 
 export const ALL_KNOWN_TEAMS: KnownTeam[] = [
@@ -870,167 +901,33 @@ export function normalizeSportsName(str: string): string {
 }
 
 /**
- * Detects if a tournament or league name is for national teams.
- */
-export function isNationalTournament(leagueName?: string): boolean {
-  if (!leagueName) return false;
-  const raw = leagueName.toLowerCase();
-  const norm = normalizeSportsName(leagueName);
-  return (
-    norm.includes('منتخب') ||
-    norm.includes('عالم') ||
-    norm.includes('امم') ||
-    norm.includes('خليج') ||
-    norm.includes('وديه دوليه') ||
-    norm.includes('اولمبياد') ||
-    norm.includes('fifa') ||
-    norm.includes('nations') ||
-    norm.includes('qualifiers') ||
-    raw.includes('world cup') ||
-    raw.includes('asian cup') ||
-    raw.includes('afcon') ||
-    raw.includes('euro') ||
-    (norm.includes('اسيا') && !norm.includes('نخبه') && !norm.includes('انديه') && !norm.includes('ابطال')) ||
-    (norm.includes('افريقيا') && !norm.includes('انديه') && !norm.includes('ابطال')) ||
-    (norm.includes('عرب') && !norm.includes('انديه') && !norm.includes('ابطال')) ||
-    (norm.includes('تصفيات') && !norm.includes('انديه'))
-  );
-}
-
-/**
- * Detects if a tournament is a Saudi domestic club league or cup.
- */
-export function isSaudiTournament(leagueName?: string): boolean {
-  if (!leagueName) return false;
-  const raw = leagueName.toLowerCase();
-  const norm = normalizeSportsName(leagueName);
-  return (
-    norm.includes('روشن') ||
-    norm.includes('يلو') ||
-    norm.includes('خادم الحرمين') ||
-    norm.includes('كاس الملك') ||
-    norm.includes('السوبر السعودي') ||
-    raw.includes('spl') ||
-    (norm.includes('سعودي') && !norm.includes('منتخب'))
-  );
-}
-
-/**
- * Returns whether a team belongs to national teams.
- */
-export function isNationalTeam(team: KnownTeam | { id?: string; name: string }): boolean {
-  if (!team) return false;
-  if (team.id && team.id.startsWith('nt_')) return true;
-  const norm = normalizeSportsName(team.name);
-  if (team.name.startsWith('منتخب') || norm.startsWith('منتخب')) return true;
-  return NATIONAL_TEAMS.some((nt) => nt.id === team.id || normalizeSportsName(nt.name) === norm);
-}
-
-/**
- * Returns candidate teams categorized for a specific league/tournament context.
- */
-export function getSuggestedTeamsForLeague(leagueName?: string): {
-  category: 'national' | 'saudi' | 'all';
-  teams: KnownTeam[];
-} {
-  if (isNationalTournament(leagueName)) {
-    return { category: 'national', teams: NATIONAL_TEAMS };
-  }
-  if (isSaudiTournament(leagueName)) {
-    return { category: 'saudi', teams: SAUDI_TEAMS };
-  }
-  return { category: 'all', teams: ALL_KNOWN_TEAMS };
-}
-
-/**
  * Smart lookup in the team catalog.
  * Returns the matched team with its official logo if found.
- * Supports leagueContext to disambiguate national teams vs clubs.
  */
-export function matchTeamFromCatalog(query: string, leagueContext?: string): KnownTeam | null {
+export function matchTeamFromCatalog(query: string): KnownTeam | null {
   if (!query || !query.trim()) return null;
   const raw = query.trim().toLowerCase();
   const normalized = normalizeSportsName(raw);
 
   if (!normalized && !raw) return null;
 
-  const isNationalContext =
-    isNationalTournament(leagueContext) ||
-    raw.includes('منتخب') ||
-    raw.startsWith('nt_');
-
-  const isClubExplicit =
-    raw.includes('نادي') ||
-    raw.includes('fc') ||
-    raw.includes('sc') ||
-    raw.includes('club') ||
-    isSaudiTournament(leagueContext);
-
-  // Group candidate teams according to context
-  let orderedTeams: KnownTeam[];
-  if (isNationalContext && !isClubExplicit) {
-    orderedTeams = [...NATIONAL_TEAMS, ...SAUDI_TEAMS, ...ARAB_AND_GLOBAL_CLUBS];
-  } else if (isClubExplicit) {
-    orderedTeams = [...SAUDI_TEAMS, ...ARAB_AND_GLOBAL_CLUBS, ...NATIONAL_TEAMS];
-  } else {
-    orderedTeams = ALL_KNOWN_TEAMS;
-  }
-
-  // 1. Direct exact or ID match (Highest priority)
-  for (const team of orderedTeams) {
+  // 1. Direct exact or ID match
+  for (const team of ALL_KNOWN_TEAMS) {
     if (team.id.toLowerCase() === raw) return team;
     if (team.name.trim().toLowerCase() === raw) return team;
     if (normalizeSportsName(team.name) === normalized) return team;
   }
 
-  // 2. Exact Alias match (High priority)
-  for (const team of orderedTeams) {
+  // 2. Alias match
+  for (const team of ALL_KNOWN_TEAMS) {
     for (const alias of team.aliases) {
       if (alias.trim().toLowerCase() === raw) return team;
       if (normalizeSportsName(alias) === normalized) return team;
     }
   }
 
-  // 3. Starts-with / Prefix match within appropriate domain
-  if (normalized.length >= 2) {
-    for (const team of orderedTeams) {
-      const isTeamNt = isNationalTeam(team);
-      if (isNationalContext && !isClubExplicit && !isTeamNt) continue;
-      if (isClubExplicit && isTeamNt) continue;
-
-      const teamNorm = normalizeSportsName(team.name);
-      if (teamNorm.startsWith(normalized)) {
-        return team;
-      }
-      for (const alias of team.aliases) {
-        const aliasNorm = normalizeSportsName(alias);
-        if (aliasNorm.startsWith(normalized)) {
-          return team;
-        }
-      }
-    }
-  }
-
-  // 4. Substring / Token match within appropriate domain
-  for (const team of orderedTeams) {
-    const isTeamNt = isNationalTeam(team);
-    if (isNationalContext && !isClubExplicit && !isTeamNt) continue;
-    if (isClubExplicit && isTeamNt) continue;
-
-    const teamNorm = normalizeSportsName(team.name);
-    if (normalized.length >= 3 && (teamNorm.includes(normalized) || normalized.includes(teamNorm))) {
-      return team;
-    }
-    for (const alias of team.aliases) {
-      const aliasNorm = normalizeSportsName(alias);
-      if (aliasNorm.length >= 3 && (aliasNorm.includes(normalized) || normalized.includes(aliasNorm))) {
-        return team;
-      }
-    }
-  }
-
-  // 5. General fallback substring match across all teams
-  for (const team of orderedTeams) {
+  // 3. Substring / Token match (e.g. user typed "الهلال" and team alias has "الهلال السعودي")
+  for (const team of ALL_KNOWN_TEAMS) {
     const teamNorm = normalizeSportsName(team.name);
     if (normalized.length >= 3 && (teamNorm.includes(normalized) || normalized.includes(teamNorm))) {
       return team;
@@ -1044,92 +941,6 @@ export function matchTeamFromCatalog(query: string, leagueContext?: string): Kno
   }
 
   return null;
-}
-
-/**
- * Returns multiple matching teams from catalog for search suggestions, ranked by relevance.
- */
-export function searchTeamsFromCatalog(
-  query: string,
-  leagueContext?: string,
-  limit = 8
-): KnownTeam[] {
-  if (!query || !query.trim()) return [];
-  const raw = query.trim().toLowerCase();
-  const normalized = normalizeSportsName(raw);
-
-  if (!normalized && !raw) return [];
-
-  const isNationalContext =
-    isNationalTournament(leagueContext) ||
-    raw.includes('منتخب') ||
-    raw.startsWith('nt_');
-
-  const isClubExplicit =
-    raw.includes('نادي') ||
-    raw.includes('fc') ||
-    raw.includes('sc') ||
-    raw.includes('club') ||
-    isSaudiTournament(leagueContext);
-
-  let orderedTeams: KnownTeam[];
-  if (isNationalContext && !isClubExplicit) {
-    orderedTeams = [...NATIONAL_TEAMS, ...SAUDI_TEAMS, ...ARAB_AND_GLOBAL_CLUBS];
-  } else if (isClubExplicit) {
-    orderedTeams = [...SAUDI_TEAMS, ...ARAB_AND_GLOBAL_CLUBS, ...NATIONAL_TEAMS];
-  } else {
-    orderedTeams = ALL_KNOWN_TEAMS;
-  }
-
-  const results: KnownTeam[] = [];
-  const addedIds = new Set<string>();
-
-  const addTeam = (team: KnownTeam) => {
-    if (!addedIds.has(team.id)) {
-      addedIds.add(team.id);
-      results.push(team);
-    }
-  };
-
-  // 1. Exact match (name, id, or alias)
-  for (const team of orderedTeams) {
-    if (
-      team.id.toLowerCase() === raw ||
-      team.name.trim().toLowerCase() === raw ||
-      normalizeSportsName(team.name) === normalized ||
-      team.aliases.some(
-        (a) => a.trim().toLowerCase() === raw || normalizeSportsName(a) === normalized
-      )
-    ) {
-      addTeam(team);
-    }
-  }
-
-  // 2. Starts-with / Prefix match
-  for (const team of orderedTeams) {
-    const tNorm = normalizeSportsName(team.name);
-    if (tNorm.startsWith(normalized)) {
-      addTeam(team);
-    } else if (team.aliases.some((a) => normalizeSportsName(a).startsWith(normalized))) {
-      addTeam(team);
-    }
-    if (results.length >= limit) return results.slice(0, limit);
-  }
-
-  // 3. Substring match
-  if (normalized.length >= 2) {
-    for (const team of orderedTeams) {
-      const tNorm = normalizeSportsName(team.name);
-      if (tNorm.includes(normalized)) {
-        addTeam(team);
-      } else if (team.aliases.some((a) => normalizeSportsName(a).includes(normalized))) {
-        addTeam(team);
-      }
-      if (results.length >= limit) return results.slice(0, limit);
-    }
-  }
-
-  return results.slice(0, limit);
 }
 
 /**

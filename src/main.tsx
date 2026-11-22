@@ -138,3 +138,12 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+// Register service worker for phone curtain notifications
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+

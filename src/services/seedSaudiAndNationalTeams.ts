@@ -1,6 +1,6 @@
 import { db } from '../db/index.ts';
-import { leagues, teams, predictionMatches } from '../db/schema.ts';
-import { eq } from 'drizzle-orm';
+import { leagues, teams } from '../db/schema.ts';
+import { eq, or, sql } from 'drizzle-orm';
 import {
   ALL_KNOWN_TEAMS,
   ALL_KNOWN_LEAGUES,
@@ -9,7 +9,6 @@ import {
   NATIONAL_TEAMS,
   ARAB_AND_GLOBAL_CLUBS,
   normalizeSportsName,
-  isNationalTeam,
   matchTeamFromCatalog,
   matchLeagueFromCatalog,
 } from './knownTeamsAndLeagues.ts';
@@ -27,17 +26,16 @@ export {
 };
 
 let hasSeeded = false;
-let seedingPromise: Promise<{ leaguesCount: number; teamsCount: number; matchesUpdatedCount: number }> | null = null;
+let seedingPromise: Promise<{ leaguesCount: number; teamsCount: number }> | null = null;
 
 /**
- * Ensures Saudi League, Clubs and National Teams exist in the database with their correct identification (names and IDs).
- * Does not overwrite team logos with hardcoded URLs.
+ * Ensures Saudi League, Clubs and National Teams are seeded and up-to-date with official logos in the database.
  */
-export async function seedSaudiAndNationalTeams(force = false): Promise<{ leaguesCount: number; teamsCount: number; matchesUpdatedCount: number }> {
-  if (hasSeeded && !force) {
-    return { leaguesCount: 0, teamsCount: 0, matchesUpdatedCount: 0 };
+export async function seedSaudiAndNationalTeams(): Promise<{ leaguesCount: number; teamsCount: number }> {
+  if (hasSeeded) {
+    return { leaguesCount: 0, teamsCount: 0 };
   }
-  if (seedingPromise && !force) {
+  if (seedingPromise) {
     return seedingPromise;
   }
 
@@ -45,9 +43,8 @@ export async function seedSaudiAndNationalTeams(force = false): Promise<{ league
     try {
       let seededLeagues = 0;
       let seededTeams = 0;
-      let matchesUpdated = 0;
 
-      // 1. Seed Leagues
+      // 1. Seed & Update Leagues
       const existingDbLeagues = await db.select().from(leagues);
       const dbLeagueMap = new Map<string, typeof leagues.$inferSelect>();
       for (const l of existingDbLeagues) {
@@ -65,39 +62,39 @@ export async function seedSaudiAndNationalTeams(force = false): Promise<{ league
             .values({
               id: league.id,
               name: league.name,
-              logo: league.logo || null,
+              logo: league.logo,
             })
             .onConflictDoNothing();
           seededLeagues++;
+        } else if (
+          league.logo &&
+          (!existing.logo || existing.logo.includes('placeholder') || existing.logo.includes('ui-avatars'))
+        ) {
+          // Upgrade missing or placeholder logo to official logo
+          await db
+            .update(leagues)
+            .set({ logo: league.logo })
+            .where(eq(leagues.id, existing.id))
+            .catch(() => null);
         }
       }
 
-      // 2. Seed Teams (Identifiers & Names only, logos start clean)
+      // 2. Seed & Update Teams
       const existingDbTeams = await db.select().from(teams);
-      const dbTeamMapById = new Map<string, typeof teams.$inferSelect>();
-      const dbNtMap = new Map<string, typeof teams.$inferSelect>();
-      const dbClubMap = new Map<string, typeof teams.$inferSelect>();
-
+      const dbTeamMap = new Map<string, typeof teams.$inferSelect>();
       for (const t of existingDbTeams) {
-        dbTeamMapById.set(t.id.toLowerCase(), t);
-        const norm = normalizeSportsName(t.name);
-        if (isNationalTeam(t)) {
-          dbNtMap.set(norm, t);
-        } else {
-          dbClubMap.set(norm, t);
-        }
+        dbTeamMap.set(t.id.toLowerCase(), t);
+        dbTeamMap.set(normalizeSportsName(t.name), t);
       }
 
       for (const team of ALL_KNOWN_TEAMS) {
-        const isNt = isNationalTeam(team);
         const normName = normalizeSportsName(team.name);
-        const targetMap = isNt ? dbNtMap : dbClubMap;
-
-        let existing = dbTeamMapById.get(team.id.toLowerCase()) || targetMap.get(normName);
+        let existing = dbTeamMap.get(team.id.toLowerCase()) || dbTeamMap.get(normName);
 
         if (!existing) {
+          // Check aliases
           for (const alias of team.aliases) {
-            const matchAlias = targetMap.get(normalizeSportsName(alias));
+            const matchAlias = dbTeamMap.get(normalizeSportsName(alias));
             if (matchAlias) {
               existing = matchAlias;
               break;
@@ -111,18 +108,24 @@ export async function seedSaudiAndNationalTeams(force = false): Promise<{ league
             .values({
               id: team.id,
               name: team.name,
-              logo: null,
+              logo: team.logo,
             })
             .onConflictDoNothing();
           seededTeams++;
+        } else if (team.logo && existing.logo !== team.logo) {
+          // Upgrade or fix shifted logo to the official accurate logo
+          await db
+            .update(teams)
+            .set({ logo: team.logo })
+            .where(eq(teams.id, existing.id))
+            .catch(() => null);
         }
       }
 
       hasSeeded = true;
-      return { leaguesCount: seededLeagues, teamsCount: seededTeams, matchesUpdatedCount: matchesUpdated };
-    } catch (error) {
-      console.error('Error during team and league seeding:', error);
-      return { leaguesCount: 0, teamsCount: 0, matchesUpdatedCount: 0 };
+      return { leaguesCount: seededLeagues, teamsCount: seededTeams };
+    } finally {
+      seedingPromise = null;
     }
   })();
 
